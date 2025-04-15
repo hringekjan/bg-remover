@@ -1,35 +1,42 @@
-FROM python:3.9-slim-buster
+# Dockerfile for Backend Service
 
+# Use an official Python runtime as a parent image
+FROM python:3.11-slim
+
+# Set environment variables to prevent Python from writing pyc files
+# and prevent buffering stdout/stderr
+ENV PYTHONDONTWRITEBYTECODE 1
+ENV PYTHONUNBUFFERED 1
+
+# Set the working directory in the container
 WORKDIR /app
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
-    libgl1 \
+# Install system dependencies that might be needed by Python packages (e.g., opencv)
+# Add any other required system libs here if installation fails later
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    libgl1-mesa-glx \
     libglib2.0-0 \
-    libsm6 \
-    libxext6 \
-    libxrender-dev \
-    --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements and install Python dependencies
+# Install pip dependencies
+# Copy only requirements first to leverage Docker cache
 COPY requirements.txt .
+# Ensure pip, setuptools, and wheel are up-to-date
+RUN pip install --upgrade pip setuptools wheel
+# Install project dependencies (allow pip to resolve latest compatible versions)
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application code
-COPY processor.py .
+# Copy the rest of the application code into the container
+# Use .dockerignore to exclude unnecessary files/dirs (like venv, .git, etc.)
+COPY . .
 
-# Create input and output directories
-RUN mkdir -p /app/input /app/output
+# Make port 8001 available to the world outside this container
+EXPOSE 8001
 
-# Set environment variables
-ENV INPUT_DIR=/app/input
-ENV OUTPUT_DIR=/app/output
-ENV MODEL_NAME=u2net
-ENV NUM_WORKERS=2
-
-# Run the application
-CMD ["python", "processor.py"]
+# Define the command to run the application
+# Use 0.0.0.0 to allow connections from outside the container
+CMD ["uvicorn", "src.api:app", "--host", "0.0.0.0", "--port", "8001"]
 
 # Docker healthcheck
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \

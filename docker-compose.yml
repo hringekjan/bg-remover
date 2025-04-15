@@ -1,40 +1,46 @@
 version: '3.8'
 
 services:
-  bg-remover:
+  backend:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: bg-remover
+    container_name: bg_remover_backend
+    ports:
+      - "8001:8001"
     volumes:
+      # Mount src for potential code changes if using --reload later
+      - ./src:/app/src 
+      # Mount input/output directories
       - ./input:/app/input
       - ./output:/app/output
-    environment:
-      - INPUT_DIR=/app/input
-      - OUTPUT_DIR=/app/output
-      - NUM_WORKERS=4
-      - MODEL_NAME=u2net
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "python", "-c", "import os; exit(0 if os.path.exists('/app/processor.py') else 1)"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 5s
-    
-  # Development utility service for monitoring and testing
-  bg-remover-dev:
-    image: python:3.9-slim
-    container_name: bg-remover-dev
+      # Mount the .env file
+      - ./.env:/app/.env 
+    networks:
+      - app-network
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: bg_remover_frontend
+    ports:
+      - "3000:3000"
     volumes:
-      - ./:/app
-    working_dir: /app
-    command: >
-      bash -c "
-        apt-get update && 
-        apt-get install -y procps htop &&
-        pip install pytest pytest-cov &&
-        tail -f /dev/null
-      "
+      # Mount source code for development changes 
+      # NOTE: Changes outside of src/ and public/ might require rebuild
+      - ./frontend:/app
+      # Use anonymous volumes for node_modules and .next to prevent host overriding
+      - /app/node_modules 
+      - /app/.next
+    environment:
+      NEXT_PUBLIC_API_URL: http://backend:8001
+      WATCHPACK_POLLING: "true" # Helps with file watching in Docker
     depends_on:
-      - bg-remover 
+      - backend
+    networks:
+      - app-network
+
+networks:
+  app-network:
+    driver: bridge 
