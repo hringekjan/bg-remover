@@ -1,0 +1,40 @@
+version: '3.8'
+
+services:
+  bg-remover:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: bg-remover
+    volumes:
+      - ./input:/app/input
+      - ./output:/app/output
+    environment:
+      - INPUT_DIR=/app/input
+      - OUTPUT_DIR=/app/output
+      - NUM_WORKERS=4
+      - MODEL_NAME=u2net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import os; exit(0 if os.path.exists('/app/processor.py') else 1)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+    
+  # Development utility service for monitoring and testing
+  bg-remover-dev:
+    image: python:3.9-slim
+    container_name: bg-remover-dev
+    volumes:
+      - ./:/app
+    working_dir: /app
+    command: >
+      bash -c "
+        apt-get update && 
+        apt-get install -y procps htop &&
+        pip install pytest pytest-cov &&
+        tail -f /dev/null
+      "
+    depends_on:
+      - bg-remover 
