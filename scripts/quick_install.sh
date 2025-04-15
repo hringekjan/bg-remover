@@ -44,7 +44,7 @@ check_command() {
 download_file() {
     local file_path="$1"
     local download_url="${RAW_BASE_URL}/${file_path}"
-    echo "Downloading ${file_path} from ${download_url}..."
+    echo_info "Downloading '${file_path}' from URL: ${download_url}"
     if command -v curl &> /dev/null; then
         curl -fsSL "${download_url}" -o "${file_path}"
     elif command -v wget &> /dev/null; then
