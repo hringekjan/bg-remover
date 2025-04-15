@@ -16,7 +16,6 @@ RAW_BASE_URL="https://raw.githubusercontent.com/${REPO_OWNER}/${REPO_NAME}/${BRA
 FILES=(
     "docker-compose.yml"
     "Dockerfile"
-    ".env.example"
     "processor.py"
     "requirements.txt"
 )
@@ -131,14 +130,36 @@ mkdir -p output
 echo_info "Created input/ and output/ directories."
 
 # Setup .env file
-if [ ! -f ".env" ] && [ -f ".env.example" ]; then
-    cp .env.example .env
-    echo_info "Created .env file from .env.example."
-    echo_warning "Default settings will be used. You may want to customize the .env file in the '${INSTALL_DIR}' directory later."
-elif [ -f ".env" ]; then
-    echo_info ".env file already exists. Skipping creation."
+if [ ! -f ".env" ]; then
+    echo_info "Creating default .env file..."
+    cat << EOF > .env
+# --- Background Remover Configuration ---
+
+# Directory monitored for new images (relative to the container's /app directory)
+INPUT_DIR=./input
+
+# Directory where processed images are saved (relative to the container's /app directory)
+OUTPUT_DIR=./output
+
+# Model to use for background removal (e.g., u2net, u2netp, u2net_human_seg, silueta)
+# See rembg documentation for available models: https://github.com/danielgatis/rembg#models
+REMBG_MODEL=u2net
+
+# Optional: Alpha matting settings (post-processing) - uncomment to enable
+# ALPHA_MATTING=true
+# ALPHA_MATTING_FOREGROUND_THRESHOLD=240
+# ALPHA_MATTING_BACKGROUND_THRESHOLD=10
+# ALPHA_MATTING_ERODE_SIZE=10
+
+# Optional: Set umask for created files (e.g., 002 for group write)
+# UMASK=002
+
+# Optional: Log level (DEBUG, INFO, WARNING, ERROR)
+LOG_LEVEL=INFO
+EOF
+    echo_warning "Default settings written to .env. You may want to customize it later in the '${INSTALL_DIR}' directory."
 else
-    echo_warning ".env.example was not downloaded. Cannot create .env file."
+    echo_info ".env file already exists. Skipping creation."
 fi
 
 # --- Run Service ---
