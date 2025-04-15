@@ -6,8 +6,9 @@ MONOREPO_SERVICE_DIR="./services/bg-remover"
 STANDALONE_REPO_URL="git@github.com:hringekjan/bg-remover.git"
 STANDALONE_BRANCH="main"
 TEMP_DIR="bg-remover-standalone-temp-sync"
-VERSION="v0.1.0"
-COMMIT_MESSAGE="Sync code from monorepo release ${VERSION}"
+# Use GitHub run number for patch version, default to 0 if not provided
+VERSION="v0.1.${GITHUB_RUN_NUMBER:-0}"
+COMMIT_MESSAGE="Sync code from monorepo build ${GITHUB_RUN_NUMBER:-dev}"
 
 # Get the absolute path of the script's directory
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" &> /dev/null && pwd)"
@@ -72,6 +73,16 @@ echo_info "Changes detected. Committing with message: ${COMMIT_MESSAGE}"
 git commit -m "${COMMIT_MESSAGE}"
 if [ $? -ne 0 ]; then echo_error "Failed to commit changes."; exit 1; fi
 
+# Handle existing tag
+echo_info "Checking for existing tag ${VERSION}..."
+if git rev-parse "${VERSION}" >/dev/null 2>&1; then
+    echo_warning "Tag ${VERSION} exists locally. Deleting it."
+    git tag -d "${VERSION}"
+    # Also try deleting remotely, ignore error if it doesn't exist there
+    echo_info "Attempting to delete remote tag ${VERSION}..."
+    git push origin --delete "${VERSION}" || true
+fi
+
 # Tag the release
 echo_info "Tagging commit with ${VERSION}..."
 git tag -a "${VERSION}" -m "Release ${VERSION}"
@@ -82,9 +93,9 @@ echo_info "Pushing changes to ${STANDALONE_BRANCH} branch..."
 git push origin "${STANDALONE_BRANCH}"
 if [ $? -ne 0 ]; then echo_error "Failed to push commit."; exit 1; fi
 
-# Push the tag
-echo_info "Pushing tag ${VERSION}..."
-git push origin "${VERSION}"
+# Push the tag (forcefully)
+echo_info "Pushing tag ${VERSION} (force)..."
+git push origin --force "${VERSION}"
 if [ $? -ne 0 ]; then echo_error "Failed to push tag."; exit 1; fi
 
 # Clean up
