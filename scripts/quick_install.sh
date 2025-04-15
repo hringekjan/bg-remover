@@ -118,14 +118,28 @@ if ! docker info > /dev/null 2>&1; then
     if [[ "$MACHINE" == "Mac" ]]; then
         echo_info "Attempting to start Docker Desktop..."
         if open -a Docker; then
-            echo_info "Attempted to launch Docker Desktop. Waiting a few seconds..."
-            sleep 10 # Give Docker time to start
-            if ! docker info > /dev/null 2>&1; then
-                echo_error "Docker daemon still not running after attempting to start Docker Desktop."
-                echo_error "Please ensure Docker Desktop is running properly and try again."
-                exit 1
-            else
+            echo_info "Attempted to launch Docker Desktop. Waiting for daemon to start (up to 60 seconds)..."
+            # Poll for Docker daemon readiness
+            timeout_seconds=60
+            interval_seconds=3
+            end_time=$(( $(date +%s) + timeout_seconds ))
+            docker_ready=false
+            while [[ $(date +%s) -lt $end_time ]]; do
+                if docker info > /dev/null 2>&1; then
+                    docker_ready=true
+                    break
+                fi
+                echo -n "."
+                sleep $interval_seconds
+            done
+            echo # Newline after dots
+
+            if [[ "$docker_ready" == "true" ]]; then
                 echo_info "Docker daemon is now running."
+            else
+                echo_error "Docker daemon did not start within ${timeout_seconds} seconds."
+                echo_error "Please ensure Docker Desktop can start properly and try again."
+                exit 1
             fi
         else
             echo_error "Failed to launch Docker Desktop using 'open -a Docker'."
@@ -184,7 +198,7 @@ fi
 # --- Run Service ---
 echo_info "Building and starting the background remover service..."
 
-if $DOCKER_COMPOSE_CMD up --build -d; then
+if $DOCKER_COMPOSE_CMD build && $DOCKER_COMPOSE_CMD up -d; then
     INSTALL_PATH=$(pwd)
     echo_info "-----------------------------------------------------"
     echo_info "Background Remover service started successfully!"
