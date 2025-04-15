@@ -83,9 +83,29 @@ if [[ "$MACHINE" == "Linux" ]] && grep -qi microsoft /proc/version; then IS_WSL=
 
 # Check Docker Command
 if ! check_command docker; then
-    echo "Docker command is required but not found." 
-    # (Guidance message based on OS - same as install.sh)
-    if [[ "$MACHINE" == "Mac" ]]; then echo "Install Docker Desktop for Mac: https://www.docker.com/products/docker-desktop/ (or brew install --cask docker)";
+    echo_error "Docker command is required but not found."
+    if [[ "$MACHINE" == "Mac" ]]; then
+        echo_info "Attempting to install Docker using Homebrew..."
+        if check_command brew; then
+            if ! brew list --cask docker &> /dev/null; then
+                echo_info "Docker cask not found via Homebrew. Installing..."
+                if brew install --cask docker; then
+                    echo_info "Docker cask installed successfully via Homebrew."
+                    echo_warning "Please launch Docker Desktop manually for the first time if needed."
+                else
+                    echo_error "Failed to install Docker cask via Homebrew."
+                    echo_error "Please install Docker Desktop manually: https://www.docker.com/products/docker-desktop/"
+                    exit 1
+                fi
+            else
+                echo_info "Docker cask already installed via Homebrew."
+            fi
+        else
+            echo_error "Homebrew ('brew') command not found. Cannot automatically install Docker."
+            echo_info "Please install Homebrew first (see https://brew.sh/) and then install Docker manually: https://www.docker.com/products/docker-desktop/"
+            exit 1
+        fi
+    # Original guidance for other OSes
     elif [[ "$MACHINE" == "Linux" ]] && [[ "$IS_WSL" == "false" ]]; then echo "Install Docker Engine: https://docs.docker.com/engine/install/";
     elif [[ "$IS_WSL" == "true" ]] || [[ "$MACHINE" =~ ^(Cygwin|MinGw|Msys)$ ]]; then echo "Install Docker Desktop for Windows (enable WSL2): https://www.docker.com/products/docker-desktop/";
     else echo "Consult Docker installation guide: https://docs.docker.com/engine/install/"; fi
@@ -94,8 +114,28 @@ fi
 
 # Check Docker Daemon
 if ! docker info > /dev/null 2>&1; then
-    echo_error "Docker daemon is not running. Please start Docker Desktop or the Docker service."
-    exit 1
+    echo_warning "Docker daemon is not running."
+    if [[ "$MACHINE" == "Mac" ]]; then
+        echo_info "Attempting to start Docker Desktop..."
+        if open -a Docker; then
+            echo_info "Attempted to launch Docker Desktop. Waiting a few seconds..."
+            sleep 10 # Give Docker time to start
+            if ! docker info > /dev/null 2>&1; then
+                echo_error "Docker daemon still not running after attempting to start Docker Desktop."
+                echo_error "Please ensure Docker Desktop is running properly and try again."
+                exit 1
+            else
+                echo_info "Docker daemon is now running."
+            fi
+        else
+            echo_error "Failed to launch Docker Desktop using 'open -a Docker'."
+            echo_error "Please start Docker Desktop manually and try again."
+            exit 1
+        fi
+    else
+        echo_error "Please start Docker Desktop or the Docker service manually."
+        exit 1
+    fi
 fi
 echo_info "Docker daemon is running."
 
