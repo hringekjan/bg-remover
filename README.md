@@ -25,111 +25,35 @@ This service monitors a specified input directory for new image files. When an i
 
 ## Setup & Installation
 
-1.  **Clone the Repository:**
-    ```bash
-    # Replace <repository-url> with the actual URL
-    git clone <repository-url>
-    cd <repository-name>/services/bg-remover
-    ```
+### Standard Setup (Within Monorepo)
 
-2.  **Run the Installation Script:**
-    This script checks prerequisites, prepares the environment (`.env` file), builds the Docker image, and starts the service.
-    ```bash
-    cd ../scripts # Navigate to the script directory relative to bg-remover
-    bash ./install.sh
-    ```
-    *(Note: The install script location might change based on where we decide to put it. This assumes it's in `bg-remover/scripts/`)*
+Use this method if you have cloned the main `carousel-fresh` monorepo and want to run the service from within its structure.
 
+1.  **Navigate to the Service Directory:**
+    Make sure you are in the `services/bg-remover` directory within the cloned monorepo.
+
+2.  **Run the Local Installation Script:**
+    This script checks prerequisites (Docker), prepares the environment (`.env` file), builds the Docker image, and starts the service.
+    ```bash
+    # Run from the services/bg-remover directory
+    bash scripts/install.sh 
+    ```
     The script will guide you if Docker or Docker Compose are missing or not running.
+
+### Alternative: Quick Install (Standalone Service Only)
+
+Use this method if you *only* want this background remover service and not the rest of the monorepo. This command downloads and executes an installation script that sets up the service in a *new, separate directory* named `bg-remover-service`.
+
+```bash
+curl -sSL https://raw.githubusercontent.com/hringekjan/bg-remover/main/quick_install.sh | bash
+```
+
+**Notes for Quick Install:**
+*   Run this command in the directory where you want the `bg-remover-service` folder to be created.
+*   Requires `curl` or `wget` on your system.
+*   The script checks for Docker/Docker Compose.
+*   This installation will *not* be part of the monorepo structure.
 
 ## Configuration
 
-Configuration is handled via an `.env` file in the `bg-remover` directory. The installation script copies the template `.env.example` to `.env` if `.env` doesn't exist. You may want to customize the `.env` file before or after running the install script.
-
-| Variable      | Description                                                     | Default     |
-| :------------ | :-------------------------------------------------------------- | :---------- |
-| `INPUT_DIR`   | Container path to monitor for input images                      | `/app/input`  |
-| `OUTPUT_DIR`  | Container path to save processed images                         | `/app/output` |
-| `MODEL_NAME`  | The `rembg` model to use (e.g., `u2net`, `u2netp`, `isnet-general-use`) | `u2net`     |
-| `NUM_WORKERS` | (Currently unused - processing is sequential via watchdog)      | `1`         |
-
-**Important:** The `INPUT_DIR` and `OUTPUT_DIR` paths *inside the container* are mapped to local directories on your host machine via the `docker-compose.yml` file. By default, it maps the local `./input` and `./output` directories relative to `bg-remover`.
-
-## Usage
-
-1.  **Place Images:** Copy or move your `.jpg`, `.jpeg`, `.png`, or `.heic` files into the `bg-remover/input` directory on your host machine.
-2.  **Check Output:** The service will process the images, and the resulting background-removed PNG files will appear in the `bg-remover/output` directory.
-3.  **View Logs:** To see the service's activity or troubleshoot errors, view the Docker logs:
-    ```bash
-    # Run this from the bg-remover directory
-    docker compose logs -f
-    # Or if using legacy docker-compose:
-    # docker-compose logs -f
-    ```
-
-## Dependencies
-
-### Key Python Libraries:
-
--   `rembg`: Core library for background removal.
--   `watchdog`: For monitoring the input directory for file changes.
--   `Pillow`: Image processing library.
--   `pillow-heif`: Adds HEIC support to Pillow.
--   `python-dotenv`: For loading environment variables from the `.env` file.
-
-### Base Docker Image:
-
--   `python:3.10-slim` (or as specified in the `Dockerfile`)
-
-## Development (Optional)
-
-### Setting Up Local Environment (Without Docker)
-
-1.  Ensure Python 3.10+ is installed.
-2.  Create and activate a virtual environment:
-    ```bash
-    python -m venv .venv
-    source .venv/bin/activate  # Linux/macOS
-    # .venv\Scripts\activate    # Windows
-    ```
-3.  Install dependencies:
-    ```bash
-    pip install -r requirements.txt
-    ```
-4.  Create an `.env` file from `.env.example` and configure it.
-5.  Run the processor directly:
-    ```bash
-    python processor.py
-    ```
-
-### Running Tests
-
-Pytest is used for testing.
-
-```bash
-# Ensure dependencies are installed in your virtual environment
-# Run from the 'bg-remover' directory
-pytest tests/
-```
-
-## Project Structure
-
-```
-bg-remover/
-├── .env.example        # Environment variable template
-├── .env                # Local environment variables (created by script/user)
-├── Dockerfile          # Docker image definition
-├── docker-compose.yml  # Docker Compose configuration
-├── input/              # Default host directory for input images
-├── output/             # Default host directory for output images
-├── processor.py        # Main processing script
-├── README.md           # This file
-├── requirements.txt    # Python dependencies
-├── scripts/
-│   └── install.sh      # Installation script (to be created)
-└── tests/              # Unit/Integration tests
-```
-
-## License
-
-MIT 
+Configuration is handled via an `.env`
