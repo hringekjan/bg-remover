@@ -45,7 +45,7 @@ Use this method if you have cloned the main `carousel-fresh` monorepo and want t
 Use this method if you *only* want this background remover service and not the rest of the monorepo. This command downloads and executes an installation script that sets up the service in a *new, separate directory* named `bg-remover-service`.
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/hringekjan/bg-remover/main/quick_install.sh | bash
+curl -sSL https://raw.githubusercontent.com/hringekjan/bg-remover/main/scripts/quick_install.sh | bash
 ```
 
 **Notes for Quick Install:**
