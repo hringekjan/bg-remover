@@ -1,0 +1,42 @@
+[
+  {
+    "file": "pants.png",
+    "clothing_type": null,
+    "confidence": 0.0,
+    "threshold": 0.1,
+    "detected": false,
+    "description": "None"
+  },
+  {
+    "file": "pants.png",
+    "clothing_type": null,
+    "confidence": 0.0,
+    "threshold": 0.2,
+    "detected": false,
+    "description": "None"
+  },
+  {
+    "file": "pants.png",
+    "clothing_type": null,
+    "confidence": 0.0,
+    "threshold": 0.3,
+    "detected": false,
+    "description": "None"
+  },
+  {
+    "file": "pants.png",
+    "clothing_type": null,
+    "confidence": 0.0,
+    "threshold": 0.5,
+    "detected": false,
+    "description": "None"
+  },
+  {
+    "file": "pants.png",
+    "clothing_type": null,
+    "confidence": 0.0,
+    "threshold": 0.7,
+    "detected": false,
+    "description": "None"
+  }
+]
