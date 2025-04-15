@@ -198,7 +198,7 @@ fi
 # --- Run Service ---
 echo_info "Building and starting the background remover service..."
 
-if $DOCKER_COMPOSE_CMD build . && $DOCKER_COMPOSE_CMD up -d; then
+if $DOCKER_COMPOSE_CMD build && $DOCKER_COMPOSE_CMD up -d; then
     INSTALL_PATH=$(pwd)
     echo_info "-----------------------------------------------------"
     echo_info "Background Remover service started successfully!"
