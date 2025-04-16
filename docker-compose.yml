@@ -30,8 +30,6 @@ services:
       # Mount source code for development changes 
       # NOTE: Changes outside of src/ and public/ might require rebuild
       - ./frontend:/app
-      # Use anonymous volumes for node_modules to prevent host overriding
-      - /app/node_modules 
     environment:
       NEXT_PUBLIC_API_URL: http://localhost:8001
       WATCHPACK_POLLING: "true" # Helps with file watching in Docker
