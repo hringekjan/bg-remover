@@ -1,0 +1,186 @@
+service: bg-remover
+
+frameworkVersion: '4'
+
+# No extends, manually merge base.yml properties
+# plugins: # Plugins section goes here if needed
+
+provider:
+  name: aws
+  runtime: nodejs22.x # User requested Node 22, overrides base.yml's nodejs20.x
+  region: eu-west-1 # Inherited from base.yml, can be overridden by env:AWS_REGION
+  stage: ${opt:stage, 'dev'} # Inherited from base.yml
+  architecture: arm64
+  memorySize: 1536 # Overridden for Next.js app needs
+  timeout: 60      # Overridden for Next.js app needs
+  logs:
+    httpApi: false # Disabled as HTTP API is externally configured
+  httpApi:
+    id: ${ssm:/tf/${sls:stage}/platform/api-gateway/id} # Kept from original
+  environment:
+    STAGE: ${self:provider.stage} # From original
+    NODE_OPTIONS: '--enable-source-maps' # From original
+
+    # Cognito JWT Authentication Configuration
+    COGNITO_USER_POOL_ID: ${ssm:/tf/${sls:stage}/platform/cognito/user-pool-id}
+    COGNITO_ISSUER_URL: ${ssm:/tf/${sls:stage}/platform/cognito/issuer-url}
+    REQUIRE_AUTH: 'true'  # Authentication required for all environments
+
+    # Credits Service Integration
+    # Uses shared HTTP API Gateway for credits service communication
+    CREDITS_API_URL: https://api.${sls:stage}.carousellabs.co/credits
+    REQUIRE_CREDITS: ${env:REQUIRE_CREDITS, 'false'}  # Set to 'true' for production
+
+    # Mem0 Service Integration (for classification memories)
+    # Uses shared HTTP API Gateway with IAM authentication
+    MEM0_API_ENDPOINT: https://api.${sls:stage}.carousellabs.co/mem0
+    TENANT: ${env:TENANT, 'carousel-labs'}
+  iam:
+    role:
+      statements:
+        # SSM Parameter Access - Platform config + All tenant configs (from original)
+        - Effect: Allow
+          Action:
+            - ssm:GetParameter
+            - ssm:GetParameters
+          Resource:
+            - "arn:aws:ssm:${aws:region}:${aws:accountId}:parameter/tf/${self:provider.stage}/platform/bg-remover/*"
+            - "arn:aws:ssm:${aws:region}:${aws:accountId}:parameter/tf/${self:provider.stage}/*/services/bg-remover/*"
+        # From base.yml (for generic SSM access)
+        - Effect: Allow
+          Action:
+            - ssm:GetParameter
+            - ssm:GetParameters
+          Resource: "arn:aws:ssm:${aws:region}:${aws:accountId}:parameter/tf/${sls:stage}/*"
+        # Allow writing settings parameter (for persistent similarity detection config)
+        - Effect: Allow
+          Action:
+            - ssm:PutParameter
+          Resource:
+            - "arn:aws:ssm:${aws:region}:${aws:accountId}:parameter/tf/${self:provider.stage}/*/services/bg-remover/settings"
+        - Effect: Deny # From base.yml
+          Action:
+            - ssm:PutParameter
+          Resource: "arn:aws:ssm:${aws:region}:${aws:accountId}:parameter/tf/${sls:stage}/${env:TENANT, 'carousel-labs'}/services/${self:service}/secrets"
+        # Specific permissions for Bedrock (from original)
+        - Effect: Allow
+          Action:
+            - bedrock:InvokeModel
+          Resource: "arn:aws:bedrock:${aws:region}::foundation-model/*"
+        # S3 GetObject access if API routes fetch from S3 directly (from original)
+        - Effect: Allow
+          Action:
+            - s3:GetObject
+          Resource: "arn:aws:s3:::*/*"
+        # API Gateway IAM auth for service-to-service calls (mem0, credits)
+        - Effect: Allow
+          Action:
+            - execute-api:Invoke
+          Resource:
+            - "arn:aws:execute-api:${aws:region}:${aws:accountId}:*/*/POST/mem0/*"
+            - "arn:aws:execute-api:${aws:region}:${aws:accountId}:*/*/POST/credits/*"
+        # Rekognition for image classification
+        - Effect: Allow
+          Action:
+            - rekognition:DetectLabels
+          Resource: "*"
+        # EventBridge for emitting CarouselImageProcessed events
+        - Effect: Allow
+          Action:
+            - events:PutEvents
+          Resource:
+            - "arn:aws:events:${aws:region}:${aws:accountId}:event-bus/default"
+
+package:
+  individually: true
+  patterns:
+    - '!**'
+    - 'dist/**' # Include all compiled files from the dist directory
+    - 'src/lib/**' # Include library source files
+    - 'node_modules/zod/**' # Include zod dependency
+    - 'node_modules/jose/**' # Include jose for JWT validation
+    - 'classifier_handler.py' # Include Python classifier handler
+    - '!node_modules/@aws-sdk/**' # Exclude AWS SDK from deployment package
+
+
+custom:
+  serviceId: bg-remover
+  tags: # From base.yml
+    project: ${env:PROJECT, 'carousellabs'}
+    service: ${self:service}
+    stage: ${sls:stage}
+
+# Define Next.js API routes as individual Lambda functions
+# Assuming `npm run build:handler` generates dist/handler.js for these.
+functions:
+  health:
+    handler: dist/handler.health
+    description: Health check endpoint (forced redeploy path fix)
+    memorySize: 512 # Standard Lambda memory
+    timeout: 30     # Standard Lambda timeout
+    events:
+      - httpApi:
+          path: /bg-remover/health
+          method: ANY
+
+  process:
+    handler: dist/handler.process
+    description: Process single image for background removal
+    memorySize: 1536 # Increased memory for image processing
+    timeout: 60      # Increased timeout for image processing
+    events:
+      - httpApi:
+          path: /bg-remover/process
+          method: POST
+      - httpApi:
+          path: /bg-remover/process
+          method: OPTIONS
+
+  status:
+    handler: dist/handler.status
+    description: Get job status by ID or cancel job
+    memorySize: 512
+    timeout: 30
+    events:
+      - httpApi:
+          path: /bg-remover/status/{jobId}
+          method: GET
+      - httpApi:
+          path: /bg-remover/status/{jobId}
+          method: DELETE
+      - httpApi:
+          path: /bg-remover/status/{jobId}
+          method: OPTIONS
+
+  settings:
+    handler: dist/handler.settings
+    description: Get and update similarity detection settings
+    memorySize: 512
+    timeout: 30
+    events:
+      - httpApi:
+          path: /bg-remover/settings
+          method: GET
+      - httpApi:
+          path: /bg-remover/settings
+          method: PUT
+      - httpApi:
+          path: /bg-remover/settings
+          method: OPTIONS
+
+  classifier:
+    handler: classifier_handler.handle
+    runtime: python3.11
+    description: Classify processed images and store memories in mem0
+    memorySize: 512
+    timeout: 30
+    events:
+      - eventBridge:
+          pattern:
+            source:
+              - carousel.bg-remover
+            detail-type:
+              - CarouselImageProcessed
+
+resources:
+  extensions: {} # From base.yml
