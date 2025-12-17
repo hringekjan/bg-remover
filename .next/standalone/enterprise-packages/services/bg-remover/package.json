@@ -1,0 +1,45 @@
+{
+  "name": "@carousellabs/bg-remover",
+  "version": "1.0.0",
+  "private": true,
+  "description": "AI-powered background removal service using AWS Bedrock Claude 3.5 Sonnet",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "type-check": "tsc --noEmit",
+    "build:handler": "tsc -p tsconfig.handler.json",
+    "deploy:dev": "npx serverless@4 deploy --stage dev --region eu-west-1",
+    "deploy:prod": "npx serverless@4 deploy --stage prod --region eu-west-1"
+  },
+  "dependencies": {
+    "@aws-lambda-powertools/logger": "^2.10.0",
+    "@aws-lambda-powertools/metrics": "^2.10.0",
+    "@aws-lambda-powertools/tracer": "^2.10.0",
+    "@aws-sdk/client-bedrock-runtime": "^3.682.0",
+    "@aws-sdk/client-eventbridge": "^3.682.0",
+    "@aws-sdk/client-s3": "^3.682.0",
+    "@aws-sdk/client-ssm": "^3.682.0",
+    "@aws-sdk/s3-request-presigner": "^3.943.0",
+    "next": "^16.0.7",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "sharp": "^0.33.5",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@carousellabs/serverless-ssm-json-env": "^0.1.50",
+    "@types/node": "^22.9.0",
+    "@types/react": "18.3.27",
+    "@types/react-dom": "^18.3.1",
+    "eslint": "^9.14.0",
+    "eslint-config-next": "15.0.3",
+    "typescript": "^5.6.3",
+    "@carousellabs/serverless-nextjs-frontend-kit": "^0.2.26",
+    "serverless-open-next": "^0.2.1"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  }
+}

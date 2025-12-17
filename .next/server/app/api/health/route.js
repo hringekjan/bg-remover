@@ -1,0 +1,10 @@
+var R=require("../../../chunks/[turbopack]_runtime.js")("server/app/api/health/route.js")
+R.c("server/chunks/[root-of-the-server]__9272bf24._.js")
+R.c("server/chunks/[root-of-the-server]__9d8ae5e7._.js")
+R.c("server/chunks/[root-of-the-server]__ac74d86d._.js")
+R.c("server/chunks/[root-of-the-server]__d6f1e5c5._.js")
+R.c("server/chunks/7e3ac_@aws-sdk_client-ssm_d9d9e9d9._.js")
+R.c("server/chunks/[root-of-the-server]__0e2c0238._.js")
+R.c("server/chunks/592cc_services_bg-remover__next-internal_server_app_api_health_route_actions_05df06c3.js")
+R.m(358)
+module.exports=R.m(358).exports

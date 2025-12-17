@@ -21,6 +21,9 @@ provider:
     STAGE: ${self:provider.stage} # From original
     NODE_OPTIONS: '--enable-source-maps' # From original
 
+    # DynamoDB Job Store
+    JOB_STORE_TABLE_NAME: ${self:service}-jobs-${self:provider.stage}
+
     # Cognito JWT Authentication Configuration
     COGNITO_USER_POOL_ID: ${ssm:/tf/${sls:stage}/platform/cognito/user-pool-id}
     COGNITO_ISSUER_URL: ${ssm:/tf/${sls:stage}/platform/cognito/issuer-url}
@@ -90,6 +93,15 @@ provider:
             - events:PutEvents
           Resource:
             - "arn:aws:events:${aws:region}:${aws:accountId}:event-bus/default"
+        # DynamoDB Job Store permissions
+        - Effect: Allow
+          Action:
+            - dynamodb:GetItem
+            - dynamodb:PutItem
+            - dynamodb:UpdateItem
+            - dynamodb:DeleteItem
+          Resource:
+            - "arn:aws:dynamodb:${aws:region}:${aws:accountId}:table/${self:service}-jobs-${self:provider.stage}"
 
 package:
   individually: true
@@ -183,4 +195,25 @@ functions:
               - CarouselImageProcessed
 
 resources:
+  Resources:
+    # DynamoDB table for job status persistence
+    JobStoreTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:service}-jobs-${self:provider.stage}
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: jobId
+            AttributeType: S
+        KeySchema:
+          - AttributeName: jobId
+            KeyType: HASH
+        TimeToLiveSpecification:
+          AttributeName: expiresAt
+          Enabled: true
+        Tags:
+          - Key: Service
+            Value: ${self:service}
+          - Key: Stage
+            Value: ${self:provider.stage}
   extensions: {} # From base.yml

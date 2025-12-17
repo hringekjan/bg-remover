@@ -51,6 +51,9 @@ logs/
 .env.local
 .python-version
 
+# Serverless deployment artifacts
+.serverless/
+
 # Test cache
 .pytest_cache/
 .coverage

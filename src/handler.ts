@@ -32,18 +32,25 @@ interface HealthResponse {
 
 const startTime = Date.now();
 
-exports.health = async (event: any) => {
+export const health = async (event: any) => {
    console.log('Health check requested', {
      path: event.requestContext?.http?.path,
      method: event.requestContext?.http?.method,
    });
    // Check if the request path matches /bg-remover/health
-   // Note: API Gateway includes stage prefix (e.g., /dev/bg-remover/health)
-   // We need to strip the stage prefix for path comparison
+   // Accept both /{stage}/bg-remover/health and /bg-remover/health patterns
    const path = event.requestContext?.http?.path || '';
-   const pathWithoutStage = path.replace(/^\/[^\/]+/, ''); // Remove stage prefix
-   if (pathWithoutStage !== '/bg-remover/health') {
-     console.warn('Health check 404 - unexpected path:', path, 'stripped:', pathWithoutStage);
+   const stage = global.process.env.STAGE || 'dev';
+   const validPaths = [
+     `/bg-remover/health`,
+     `/${stage}/bg-remover/health`,
+   ];
+
+   // Check if path matches any valid pattern (exact match or ends with pattern)
+   const isValidPath = validPaths.some(p => path === p || path.endsWith('/bg-remover/health'));
+
+   if (!isValidPath) {
+     console.warn('Health check 404 - unexpected path:', path);
      return {
        statusCode: 404,
        body: JSON.stringify({ message: 'Not Found' }),
@@ -103,7 +110,7 @@ exports.health = async (event: any) => {
   };
 };
 
-exports.process = async (event: any) => {
+export const process = async (event: any) => {
   console.log('Process function called with event:', JSON.stringify(event, null, 2));
   const httpMethod = event.requestContext?.http?.method || event.httpMethod;
   if (httpMethod === 'OPTIONS') {
@@ -519,7 +526,7 @@ interface JobStatus {
 // In-memory job storage (for demo - use DynamoDB in production)
 const jobStorage = new Map<string, JobStatus>();
 
-exports.status = async (event: any) => {
+export const status = async (event: any) => {
    // Check if the request path matches /bg-remover/status/{jobId}
    const path = event.requestContext?.http?.path || '';
    const pathWithoutStage = path.replace(/^\/[^\/]+/, ''); // Remove stage prefix
@@ -723,14 +730,14 @@ exports.status = async (event: any) => {
  * GET /bg-remover/settings - Retrieve similarity detection settings
  * PUT /bg-remover/settings - Update similarity detection settings
  */
-exports.settings = async (event: any) => {
+export const settings = async (event: any) => {
   console.log('Settings handler invoked', {
     httpMethod: event.requestContext?.http?.method,
     headers: event.headers,
   });
 
   const httpMethod = event.requestContext?.http?.method || 'GET';
-  const stage = process.env.STAGE || 'dev';
+  const stage = global.process.env.STAGE || 'dev';
 
   // Extract tenant from host header (e.g., api.dev.carousellabs.co -> carousel-labs)
   const host = event.headers?.host || '';
@@ -790,16 +797,33 @@ exports.settings = async (event: any) => {
   }
   // ===== END JWT AUTHENTICATION =====
 
-  const ssmClient = new SSMClient({ region: process.env.AWS_REGION || 'eu-west-1' });
+  const ssmClient = new SSMClient({ region: global.process.env.AWS_REGION || 'eu-west-1' });
   const ssmPath = `/tf/${stage}/${tenant}/services/bg-remover/settings`;
 
-  // Default settings
+  // Default settings (includes both legacy duplicate detection and new Product Identity)
   const defaultSettings = {
+    // Legacy duplicate detection settings
     detectDuplicates: true,
     groupByColor: true,
     duplicateThreshold: 0.85,  // Lowered from 0.95 for bg-removed images
     colorGroups: 3,
     maxImagesPerGroup: 10,
+
+    // Product Identity Detection settings
+    productIdentity: {
+      enabled: true,
+      threshold: 0.70,
+      minGroupSize: 1,
+      maxGroupSize: 6,
+      useRekognition: true,
+      signalWeights: {
+        spatial: 0.40,
+        feature: 0.35,
+        semantic: 0.15,
+        composition: 0.05,
+        background: 0.05,
+      },
+    },
   };
 
   // GET - Retrieve settings
@@ -866,22 +890,56 @@ exports.settings = async (event: any) => {
         };
       }
 
-      // Validate settings fields
+      // Validate settings fields (legacy duplicate detection)
       const validationErrors: string[] = [];
-      if (typeof settings.detectDuplicates !== 'boolean') {
+      if (settings.detectDuplicates !== undefined && typeof settings.detectDuplicates !== 'boolean') {
         validationErrors.push('detectDuplicates must be a boolean');
       }
-      if (typeof settings.groupByColor !== 'boolean') {
+      if (settings.groupByColor !== undefined && typeof settings.groupByColor !== 'boolean') {
         validationErrors.push('groupByColor must be a boolean');
       }
-      if (typeof settings.duplicateThreshold !== 'number' || settings.duplicateThreshold < 0 || settings.duplicateThreshold > 1) {
+      if (settings.duplicateThreshold !== undefined && (typeof settings.duplicateThreshold !== 'number' || settings.duplicateThreshold < 0 || settings.duplicateThreshold > 1)) {
         validationErrors.push('duplicateThreshold must be a number between 0 and 1');
       }
-      if (typeof settings.colorGroups !== 'number' || settings.colorGroups < 1 || settings.colorGroups > 10) {
+      if (settings.colorGroups !== undefined && (typeof settings.colorGroups !== 'number' || settings.colorGroups < 1 || settings.colorGroups > 10)) {
         validationErrors.push('colorGroups must be a number between 1 and 10');
       }
-      if (typeof settings.maxImagesPerGroup !== 'number' || settings.maxImagesPerGroup < 1) {
+      if (settings.maxImagesPerGroup !== undefined && (typeof settings.maxImagesPerGroup !== 'number' || settings.maxImagesPerGroup < 1)) {
         validationErrors.push('maxImagesPerGroup must be a positive number');
+      }
+
+      // Validate Product Identity settings
+      if (settings.productIdentity) {
+        const pi = settings.productIdentity;
+        if (pi.enabled !== undefined && typeof pi.enabled !== 'boolean') {
+          validationErrors.push('productIdentity.enabled must be a boolean');
+        }
+        if (pi.threshold !== undefined && (typeof pi.threshold !== 'number' || pi.threshold < 0 || pi.threshold > 1)) {
+          validationErrors.push('productIdentity.threshold must be a number between 0 and 1');
+        }
+        if (pi.minGroupSize !== undefined && (typeof pi.minGroupSize !== 'number' || pi.minGroupSize < 1)) {
+          validationErrors.push('productIdentity.minGroupSize must be a positive number');
+        }
+        if (pi.maxGroupSize !== undefined && (typeof pi.maxGroupSize !== 'number' || pi.maxGroupSize < 1)) {
+          validationErrors.push('productIdentity.maxGroupSize must be a positive number');
+        }
+        if (pi.useRekognition !== undefined && typeof pi.useRekognition !== 'boolean') {
+          validationErrors.push('productIdentity.useRekognition must be a boolean');
+        }
+        if (pi.signalWeights) {
+          const sw = pi.signalWeights;
+          const weightFields = ['spatial', 'feature', 'semantic', 'composition', 'background'];
+          for (const field of weightFields) {
+            if (sw[field] !== undefined && (typeof sw[field] !== 'number' || sw[field] < 0 || sw[field] > 1)) {
+              validationErrors.push(`productIdentity.signalWeights.${field} must be a number between 0 and 1`);
+            }
+          }
+          // Validate sum of weights equals 1.0 (with tolerance for floating point)
+          const sum = (sw.spatial ?? 0) + (sw.feature ?? 0) + (sw.semantic ?? 0) + (sw.composition ?? 0) + (sw.background ?? 0);
+          if (Math.abs(sum - 1.0) > 0.01) {
+            validationErrors.push('productIdentity.signalWeights must sum to 1.0');
+          }
+        }
       }
 
       if (validationErrors.length > 0) {

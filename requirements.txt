@@ -1,12 +1,3 @@
-watchdog
-rembg
-Pillow
-numpy
-opencv-python-headless
-python-dotenv
-pillow-heif
-# API dependencies
-fastapi
-uvicorn[standard]
-python-multipart
-aiofiles 
+boto3==1.35.0
+requests==2.32.0
+aws-lambda-powertools==2.40.0

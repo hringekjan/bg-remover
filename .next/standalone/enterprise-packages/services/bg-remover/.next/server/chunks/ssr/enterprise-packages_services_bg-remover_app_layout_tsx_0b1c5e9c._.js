@@ -1,0 +1,3 @@
+module.exports=[82553,a=>{"use strict";var b=a.i(83552);function c({children:a}){return(0,b.jsx)("html",{lang:"en",children:(0,b.jsx)("body",{style:{margin:0,padding:0,fontFamily:'-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',backgroundColor:"#f5f5f5",minHeight:"100vh"},children:a})})}a.s(["default",()=>c,"metadata",0,{title:"BG-Remover - CarouselLabs",description:"AI-powered background removal service using AWS Bedrock Claude Vision"}])}];
+
+//# sourceMappingURL=enterprise-packages_services_bg-remover_app_layout_tsx_0b1c5e9c._.js.map
