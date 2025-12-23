@@ -4,7 +4,17 @@
 import { loadConfig } from './lib/config/loader';
 import { randomUUID } from 'crypto';
 import { z } from 'zod';
-import { ProcessRequestSchema, JobStatusParamsSchema, type ProcessResult, type ProductDescription, type BilingualProductDescription, createProcessResult } from './lib/types';
+import {
+  ProcessRequestSchema,
+  JobStatusParamsSchema,
+  type ProcessResult,
+  type ProductDescription,
+  type MultilingualProductDescription,
+  type BilingualProductDescription,
+  createProcessResult
+} from './lib/types';
+import { languageManager } from './lib/language-manager';
+import { multilingualDescriptionGenerator } from './lib/multilingual-description';
 import { validateRequest, validatePathParams, ValidationError } from './lib/validation';
 import { resolveTenantFromRequest, loadTenantConfig } from './lib/tenant/resolver';
 import {
@@ -16,6 +26,33 @@ import { EventBridgeClient, PutEventsCommand } from '@aws-sdk/client-eventbridge
 import { validateJWTFromEvent } from './lib/auth/jwt-validator';
 import { SSMClient, GetParameterCommand, PutParameterCommand } from '@aws-sdk/client-ssm';
 import { validateAndDebitCredits, refundCredits } from './lib/credits/client';
+import {
+  getJobStatus,
+  setJobStatus,
+  updateJobStatus,
+  deleteJob,
+  type JobStatus,
+} from './lib/job-store';
+import {
+  ErrorCode,
+  AppError,
+  Errors,
+  DEFAULT_HEADERS,
+  createErrorResponse,
+  createSuccessResponse,
+  handleError,
+  extractRequestId,
+} from './lib/errors';
+import {
+  log,
+  logHandlerInvocation,
+  logResponse,
+  logTiming,
+  logServiceCall,
+  logSecurityEvent,
+  logCreditOperation,
+  clearLogContext,
+} from './lib/logger';
 
 interface HealthResponse {
   status: 'healthy' | 'degraded' | 'unhealthy';
@@ -51,10 +88,7 @@ export const health = async (event: any) => {
 
    if (!isValidPath) {
      console.warn('Health check 404 - unexpected path:', path);
-     return {
-       statusCode: 404,
-       body: JSON.stringify({ message: 'Not Found' }),
-     };
+     return createErrorResponse(ErrorCode.NOT_FOUND, 'Endpoint not found');
    }
 
   const checks: HealthResponse['checks'] = [];
@@ -106,30 +140,32 @@ export const health = async (event: any) => {
 
   return {
     statusCode: httpStatus,
+    headers: DEFAULT_HEADERS,
     body: JSON.stringify(response),
   };
 };
 
 export const process = async (event: any) => {
-  console.log('Process function called with event:', JSON.stringify(event, null, 2));
+  const requestId = extractRequestId(event);
   const httpMethod = event.requestContext?.http?.method || event.httpMethod;
+
+  log.debug('Process function called', {
+    requestId,
+    httpMethod,
+    path: event.requestContext?.http?.path,
+    hasBody: !!event.body,
+  });
+
   if (httpMethod === 'OPTIONS') {
     return {
       statusCode: 200,
-      headers: {
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'POST, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Tenant-Id',
-      },
+      headers: DEFAULT_HEADERS,
       body: '',
     };
   }
 
   if (httpMethod !== 'POST') {
-    return {
-      statusCode: 405,
-      body: JSON.stringify({ message: 'Method Not Allowed' }),
-    };
+    return createErrorResponse(ErrorCode.METHOD_NOT_ALLOWED, 'Only POST method is allowed', undefined, requestId);
   }
 
   // ===== JWT AUTHENTICATION =====
@@ -142,37 +178,39 @@ export const process = async (event: any) => {
   });
 
   if (!authResult.isValid && requireAuth) {
-    console.warn('Authentication failed', {
+    logSecurityEvent('auth_failure', {
       error: authResult.error,
       stage,
       path: event.requestContext?.http?.path,
+      requestId,
     });
 
-    return {
-      statusCode: 401,
-      headers: {
-        'Access-Control-Allow-Origin': '*',
-        'WWW-Authenticate': 'Bearer realm="bg-remover", error="invalid_token"',
-      },
-      body: JSON.stringify({
-        error: 'Unauthorized',
-        message: 'Valid JWT token required',
-        details: authResult.error,
-      }),
+    const response = createErrorResponse(
+      ErrorCode.AUTH_ERROR,
+      'Valid JWT token required',
+      authResult.error,
+      requestId
+    );
+    response.headers = {
+      ...response.headers,
+      'WWW-Authenticate': 'Bearer realm="bg-remover", error="invalid_token"',
     };
+    return response;
   }
 
   if (authResult.isValid && authResult.userId) {
-    console.info('Authenticated request', {
+    logSecurityEvent('auth_success', {
       userId: authResult.userId,
       email: authResult.email,
       groups: authResult.groups,
+      requestId,
     });
   } else {
-    console.info('Unauthenticated request (dev mode)', {
+    logSecurityEvent('auth_skip', {
       stage,
       requireAuth,
       path: event.requestContext?.http?.path,
+      requestId,
     });
   }
   // ===== END JWT AUTHENTICATION =====
@@ -194,29 +232,31 @@ export const process = async (event: any) => {
     try {
       body = JSON.parse(event.body || '{}');
     } catch (error) {
-      console.warn('Invalid JSON in request body', { error: error instanceof Error ? error.message : String(error) });
-      return {
-        statusCode: 400,
-        body: JSON.stringify({
-          error: 'Invalid JSON',
-          message: 'Request body must be valid JSON',
-        }),
-      };
+      log.warn('Invalid JSON in request body', {
+        error: error instanceof Error ? error.message : String(error),
+        requestId,
+      });
+      return createErrorResponse(
+        ErrorCode.VALIDATION_ERROR,
+        'Request body must be valid JSON',
+        undefined,
+        requestId
+      );
     }
 
     const validation = validateRequest(ProcessRequestSchema, body, 'process-request');
     if (!validation.success) {
-      console.warn('Request validation failed', {
+      log.warn('Request validation failed', {
         tenant,
         errors: validation.error?.details,
+        requestId,
       });
-      return {
-        statusCode: 400,
-        body: JSON.stringify({
-          error: validation.error?.message || 'Validation failed',
-          details: validation.error?.details,
-        }),
-      };
+      return createErrorResponse(
+        ErrorCode.VALIDATION_ERROR,
+        validation.error?.message || 'Request validation failed',
+        validation.error?.details,
+        requestId
+      );
     }
 
     const validatedRequest = validation.data!;
@@ -234,9 +274,12 @@ export const process = async (event: any) => {
       targetHeight,
       generateDescription,
       productName,
+      languages = ['en', 'is'],
+      generatePriceSuggestion = false,
+      generateRatingSuggestion = false,
     } = validatedRequest;
 
-    console.info('Processing image request', {
+    log.info('Processing image request', {
       jobId,
       tenant,
       productId,
@@ -244,6 +287,7 @@ export const process = async (event: any) => {
       hasBase64: !!imageBase64,
       outputFormat,
       quality,
+      requestId,
     });
 
     // ===== CREDITS VALIDATION =====
@@ -253,11 +297,12 @@ export const process = async (event: any) => {
     const creditsRequired = stage === 'prod' || global.process.env.REQUIRE_CREDITS === 'true';
 
     if (creditsRequired && authResult.isValid && authResult.userId) {
-      console.info('Validating credits', {
+      logCreditOperation('check', true, {
         jobId,
         tenant,
         userId: authResult.userId,
         imageCount: 1,
+        requestId,
       });
 
       const creditResult = await validateAndDebitCredits(
@@ -269,46 +314,43 @@ export const process = async (event: any) => {
       );
 
       if (!creditResult.success) {
-        console.warn('Insufficient credits', {
+        logCreditOperation('debit', false, {
           jobId,
           tenant,
           userId: authResult.userId,
           error: creditResult.error,
           errorCode: creditResult.errorCode,
+          requestId,
         });
 
-        return {
-          statusCode: creditResult.httpStatus || 402,
-          headers: {
-            'Access-Control-Allow-Origin': '*',
-          },
-          body: JSON.stringify({
-            error: 'Payment Required',
-            message: creditResult.error || 'Insufficient credits',
-            errorCode: creditResult.errorCode,
-            jobId,
-          }),
-        };
+        return createErrorResponse(
+          ErrorCode.INSUFFICIENT_CREDITS,
+          creditResult.error || 'Insufficient credits',
+          { errorCode: creditResult.errorCode, jobId },
+          requestId
+        );
       }
 
       // Track successful debit for potential refund
       creditTransactionId = creditResult.transactionId;
       creditsDebited = true;
 
-      console.info('Credits debited successfully', {
+      logCreditOperation('debit', true, {
         jobId,
         tenant,
         userId: authResult.userId,
         creditsUsed: creditResult.creditsUsed,
         newBalance: creditResult.newBalance,
         transactionId: creditResult.transactionId,
+        requestId,
       });
     } else if (!creditsRequired) {
-      console.info('Credits not required (dev mode)', {
+      log.debug('Credits not required (dev mode)', {
         jobId,
         tenant,
         stage,
         requireCredits: creditsRequired,
+        requestId,
       });
     }
     // ===== END CREDITS VALIDATION =====
@@ -326,7 +368,8 @@ export const process = async (event: any) => {
         processedSize: number;
       };
       productDescription?: ProductDescription;
-      bilingualDescription?: BilingualProductDescription;
+      multilingualDescription?: MultilingualProductDescription;
+      bilingualDescription?: BilingualProductDescription; // Backwards compatibility
     };
 
     const processingOptions = {
@@ -345,12 +388,12 @@ export const process = async (event: any) => {
     } else if (imageBase64) {
       result = await processImageFromBase64(imageBase64, 'image/png', processingOptions, tenant);
     } else {
-      return {
-        statusCode: 400,
-        body: JSON.stringify(
-          createProcessResult(false, undefined, undefined, 'No image provided', Date.now() - processingStartTime)
-        ),
-      };
+      return createErrorResponse(
+        ErrorCode.VALIDATION_ERROR,
+        'No image provided. Either imageUrl or imageBase64 is required.',
+        { processingTimeMs: Date.now() - processingStartTime },
+        requestId
+      );
     }
 
     // For dev: Return base64 data URL instead of uploading to S3
@@ -363,14 +406,14 @@ export const process = async (event: any) => {
 
     const processingTimeMs = Date.now() - processingStartTime;
 
-    console.info('Image processed successfully', {
+    logTiming('image-processing', processingTimeMs, {
       jobId,
-      processingTimeMs,
       outputSize: base64Image.length,
       originalSize: result.metadata.originalSize,
       processedSize: result.metadata.processedSize,
       tenant,
       outputFormat,
+      requestId,
     });
 
     // Emit CarouselImageProcessed event
@@ -398,46 +441,92 @@ export const process = async (event: any) => {
         ],
       };
       await eventBridge.send(new PutEventsCommand(eventBridgeCommand));
-      console.info('CarouselImageProcessed event emitted', { jobId, tenant });
+      logServiceCall('eventbridge', 'putEvents', true, undefined, { jobId, tenant, requestId });
     } catch (error) {
-      console.error('Failed to emit CarouselImageProcessed event', {
+      logServiceCall('eventbridge', 'putEvents', false, undefined, {
         jobId,
         tenant,
         error: error instanceof Error ? error.message : String(error),
+        requestId,
       });
     }
 
-    return {
-      statusCode: 200,
-      body: JSON.stringify({
-        success: true,
-        jobId,
-        outputUrl,
-        processingTimeMs,
-        metadata: result.metadata,
-        productDescription: result.productDescription,
-        bilingualDescription: result.bilingualDescription,
-      }),
-    };
+    // Generate multilingual descriptions if requested
+    let multilingualDescription: MultilingualProductDescription | undefined;
+    let bilingualDescription: BilingualProductDescription | undefined;
+    
+    if (generateDescription) {
+      try {
+        // Extract product features from existing description or generate basic ones
+        const productFeatures = result.productDescription ? {
+          name: productName || 'Product',
+          category: result.productDescription.category || 'general',
+          colors: result.productDescription.colors,
+          condition: result.productDescription.condition || 'good',
+          brand: result.productDescription.priceSuggestion?.factors.brand,
+        } : {
+          name: productName || 'Product',
+          category: 'general',
+          condition: 'good' as const,
+        };
+
+        // Generate multilingual descriptions
+        multilingualDescription = await multilingualDescriptionGenerator.generateMultilingualDescriptions(
+          productFeatures,
+          languages,
+          generatePriceSuggestion,
+          generateRatingSuggestion
+        );
+
+        // For backwards compatibility, create bilingual description from multilingual
+        if (multilingualDescription.en && multilingualDescription.is) {
+          bilingualDescription = {
+            en: multilingualDescription.en,
+            is: multilingualDescription.is,
+          };
+        }
+      } catch (error) {
+        log.warn('Failed to generate multilingual descriptions', {
+          jobId,
+          error: error instanceof Error ? error.message : String(error),
+          requestId,
+        });
+        // Continue without descriptions - don't fail the entire request
+      }
+    }
+
+    logResponse(200, processingTimeMs, { jobId, tenant, requestId });
+
+    return createSuccessResponse({
+      success: true,
+      jobId,
+      outputUrl,
+      processingTimeMs,
+      metadata: result.metadata,
+      productDescription: result.productDescription,
+      multilingualDescription,
+      bilingualDescription,
+      requestId,
+    });
   } catch (error) {
     const processingTimeMs = Date.now() - processingStartTime;
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
 
-    console.error('Image processing failed', {
+    log.error('Image processing failed', error, {
       jobId,
-      error: errorMessage,
       processingTimeMs,
       tenant,
+      requestId,
     });
 
     // ===== CREDITS REFUND ON FAILURE =====
     // If we debited credits and processing failed, issue a refund
     if (creditsDebited && creditTransactionId && authResult.userId) {
-      console.info('Initiating credit refund due to processing failure', {
+      log.info('Initiating credit refund due to processing failure', {
         jobId,
         tenant,
         userId: authResult.userId,
         originalTransactionId: creditTransactionId,
+        requestId,
       });
 
       try {
@@ -450,91 +539,58 @@ export const process = async (event: any) => {
         );
 
         if (refundResult.success) {
-          console.info('Credit refund successful', {
+          logCreditOperation('refund', true, {
             jobId,
             tenant,
             userId: authResult.userId,
             newBalance: refundResult.newBalance,
             refundTransactionId: refundResult.transactionId,
+            requestId,
           });
         } else {
-          console.error('Credit refund failed', {
+          logCreditOperation('refund', false, {
             jobId,
             tenant,
             userId: authResult.userId,
             error: refundResult.error,
             errorCode: refundResult.errorCode,
             originalTransactionId: creditTransactionId,
+            requestId,
           });
           // Note: Don't fail the response - the processing already failed
           // This should be handled via dead-letter queue or manual reconciliation
         }
       } catch (refundError) {
-        console.error('Credit refund exception', {
+        log.error('Credit refund exception', refundError, {
           jobId,
           tenant,
           userId: authResult.userId,
-          error: refundError instanceof Error ? refundError.message : String(refundError),
           originalTransactionId: creditTransactionId,
+          requestId,
         });
       }
     }
     // ===== END CREDITS REFUND =====
 
-    // Handle validation errors
-    if (error instanceof Error && error.name === 'ZodError') {
-      return {
-        statusCode: 400,
-        body: JSON.stringify(
-          createProcessResult(false, undefined, undefined, `Validation error: ${errorMessage}`, processingTimeMs)
-        ),
-      };
-    }
-
-    return {
-      statusCode: 500,
-      body: JSON.stringify(
-        createProcessResult(false, undefined, undefined, errorMessage, processingTimeMs)
-      ),
-    };
+    // Use standardized error handling
+    clearLogContext();
+    return handleError(error, 'process-image', requestId);
   }
 };
 
 
 
-// Job status types
-interface JobStatus {
-  jobId: string;
-  status: 'pending' | 'processing' | 'completed' | 'failed';
-  progress?: number;
-  result?: {
-    success: boolean;
-    outputUrl?: string;
-    error?: string;
-    processingTimeMs?: number;
-    metadata?: {
-      width: number;
-      height: number;
-      originalSize: number;
-      processedSize: number;
-    };
-  };
-  createdAt: string;
-  updatedAt: string;
-}
-
-// In-memory job storage (for demo - use DynamoDB in production)
-const jobStorage = new Map<string, JobStatus>();
+// Job storage is now backed by DynamoDB via src/lib/job-store.ts
+// This provides persistent job status storage across Lambda invocations
 
 export const status = async (event: any) => {
+  const requestId = extractRequestId(event);
+
    // Check if the request path matches /bg-remover/status/{jobId}
    const path = event.requestContext?.http?.path || '';
    const pathWithoutStage = path.replace(/^\/[^\/]+/, ''); // Remove stage prefix
    if (!event.pathParameters?.jobId || !pathWithoutStage?.startsWith('/bg-remover/status/')) {
-     return {
-       statusCode: 404,
-       body: JSON.stringify({ message: 'Not Found' }),
-     };
+     return createErrorResponse(ErrorCode.NOT_FOUND, 'Endpoint not found', undefined, requestId);
    }
 
   const jobId = event.pathParameters.jobId;
@@ -554,30 +610,27 @@ export const status = async (event: any) => {
       error: authResult.error,
       jobId,
       stage,
+      requestId,
     });
 
-    return {
-      statusCode: 401,
-      headers: {
-        'Access-Control-Allow-Origin': '*',
-        'WWW-Authenticate': 'Bearer realm="bg-remover", error="invalid_token"',
-      },
-      body: JSON.stringify({
-        error: 'Unauthorized',
-        message: 'Valid JWT token required',
-      }),
+    const response = createErrorResponse(
+      ErrorCode.AUTH_ERROR,
+      'Valid JWT token required',
+      undefined,
+      requestId
+    );
+    response.headers = {
+      ...response.headers,
+      'WWW-Authenticate': 'Bearer realm="bg-remover", error="invalid_token"',
     };
+    return response;
   }
   // ===== END JWT AUTHENTICATION =====
 
   if (httpMethod === 'OPTIONS') {
     return {
       statusCode: 200,
-      headers: {
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'GET, DELETE, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Tenant-Id',
-      },
+      headers: DEFAULT_HEADERS,
       body: '',
     };
   }
@@ -586,64 +639,52 @@ export const status = async (event: any) => {
     try {
       const pathValidation = validatePathParams(event.pathParameters, ['jobId'], 'status-get');
       if (!pathValidation.success) {
-        return {
-          statusCode: 400,
-          body: JSON.stringify({
-            error: pathValidation.error?.message || 'Invalid path parameters',
-            details: pathValidation.error?.details,
-          }),
-        };
+        return createErrorResponse(
+          ErrorCode.VALIDATION_ERROR,
+          pathValidation.error?.message || 'Invalid path parameters',
+          pathValidation.error?.details,
+          requestId
+        );
       }
 
       const validation = validateRequest(JobStatusParamsSchema, { jobId }, 'job-status-params');
       if (!validation.success) {
-        return {
-          statusCode: 400,
-          body: JSON.stringify({
-            error: validation.error?.message || 'Invalid job ID format',
-            details: validation.error?.details,
-          }),
-        };
+        return createErrorResponse(
+          ErrorCode.VALIDATION_ERROR,
+          validation.error?.message || 'Invalid job ID format',
+          validation.error?.details,
+          requestId
+        );
       }
 
-      const job = jobStorage.get(jobId);
+      const job = await getJobStatus(jobId);
 
       if (!job) {
-        return {
-          statusCode: 404,
-          body: JSON.stringify({
-            error: 'Job not found',
-            jobId,
-            message: 'The job may have expired or does not exist. Jobs are stored for 24 hours.',
-          }),
-        };
+        return createErrorResponse(
+          ErrorCode.NOT_FOUND,
+          'Job not found. The job may have expired or does not exist. Jobs are stored for 24 hours.',
+          { jobId },
+          requestId
+        );
       }
 
-      return {
-        statusCode: 200,
-        body: JSON.stringify({
-          jobId: job.jobId,
-          status: job.status,
-          progress: job.progress,
-          result: job.result,
-          createdAt: job.createdAt,
-          updatedAt: job.updatedAt,
-          expiresAt: new Date(new Date(job.createdAt).getTime() + 24 * 60 * 60 * 1000).toISOString(),
-        }),
-      };
+      return createSuccessResponse({
+        jobId: job.jobId,
+        status: job.status,
+        progress: job.progress,
+        result: job.result,
+        createdAt: job.createdAt,
+        updatedAt: job.updatedAt,
+        expiresAt: new Date(new Date(job.createdAt).getTime() + 24 * 60 * 60 * 1000).toISOString(),
+      });
     } catch (error) {
       console.error('Error fetching job status', {
         jobId,
         error: error instanceof Error ? error.message : 'Unknown error',
+        requestId,
       });
 
-      return {
-        statusCode: 500,
-        body: JSON.stringify({
-          error: 'Internal server error',
-          message: 'Failed to fetch job status',
-        }),
-      };
+      return handleError(error, 'get-job-status', requestId);
     }
   }
 
@@ -651,78 +692,65 @@ export const status = async (event: any) => {
     try {
       const pathValidation = validatePathParams(event.pathParameters, ['jobId'], 'status-delete');
       if (!pathValidation.success) {
-        return {
-          statusCode: 400,
-          body: JSON.stringify({
-            error: pathValidation.error?.message || 'Invalid path parameters',
-            details: pathValidation.error?.details,
-          }),
-        };
+        return createErrorResponse(
+          ErrorCode.VALIDATION_ERROR,
+          pathValidation.error?.message || 'Invalid path parameters',
+          pathValidation.error?.details,
+          requestId
+        );
       }
 
       const validation = validateRequest(JobStatusParamsSchema, { jobId }, 'job-status-params');
       if (!validation.success) {
-        return {
-          statusCode: 400,
-          body: JSON.stringify({
-            error: validation.error?.message || 'Invalid job ID format',
-            details: validation.error?.details,
-          }),
-        };
+        return createErrorResponse(
+          ErrorCode.VALIDATION_ERROR,
+          validation.error?.message || 'Invalid job ID format',
+          validation.error?.details,
+          requestId
+        );
       }
 
-      const job = jobStorage.get(jobId);
+      const job = await getJobStatus(jobId);
 
       if (!job) {
-        return {
-          statusCode: 404,
-          body: JSON.stringify({ error: 'Job not found' }),
-        };
+        return createErrorResponse(ErrorCode.NOT_FOUND, 'Job not found', { jobId }, requestId);
       }
 
       if (job.status !== 'pending' && job.status !== 'processing') {
-        return {
-          statusCode: 409,
-          body: JSON.stringify({
-            error: 'Cannot cancel job',
-            message: `Job is already ${job.status}`,
-          }),
-        };
+        return createErrorResponse(
+          ErrorCode.CONFLICT,
+          `Cannot cancel job - job is already ${job.status}`,
+          { jobId, currentStatus: job.status },
+          requestId
+        );
       }
 
-      job.status = 'failed';
-      job.result = {
-        success: false,
-        error: 'Job cancelled by user',
-      };
-      job.updatedAt = new Date().toISOString();
-      jobStorage.set(jobId, job);
+      // Update job status to cancelled/failed
+      await updateJobStatus(jobId, {
+        status: 'failed',
+        result: {
+          success: false,
+          error: 'Job cancelled by user',
+        },
+      });
 
-      return {
-        statusCode: 200,
-        body: JSON.stringify({
-          jobId,
-          status: 'cancelled',
-          message: 'Job has been cancelled',
-        }),
-      };
+      return createSuccessResponse({
+        jobId,
+        status: 'cancelled',
+        message: 'Job has been cancelled',
+      });
     } catch (error) {
       console.error('Error cancelling job', {
         jobId,
         error: error instanceof Error ? error.message : 'Unknown error',
+        requestId,
       });
 
-      return {
-        statusCode: 500,
-        body: JSON.stringify({ error: 'Internal server error' }),
-      };
+      return handleError(error, 'cancel-job', requestId);
     }
   }
 
-  return {
-    statusCode: 405,
-    body: JSON.stringify({ message: 'Method Not Allowed' }),
-  };
+  return createErrorResponse(ErrorCode.METHOD_NOT_ALLOWED, 'Method not allowed', undefined, requestId);
 };
 
 /**
@@ -731,9 +759,12 @@ export const status = async (event: any) => {
  * PUT /bg-remover/settings - Update similarity detection settings
  */
 export const settings = async (event: any) => {
+  const requestId = extractRequestId(event);
+
   console.log('Settings handler invoked', {
     httpMethod: event.requestContext?.http?.method,
     headers: event.headers,
+    requestId,
   });
 
   const httpMethod = event.requestContext?.http?.method || 'GET';
@@ -743,18 +774,11 @@ export const settings = async (event: any) => {
   const host = event.headers?.host || '';
   const tenant = host.includes('carousellabs') ? 'carousel-labs' : 'hringekjan';
 
-  // CORS headers
-  const corsHeaders = {
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'GET, PUT, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-  };
-
   // Handle OPTIONS preflight
   if (httpMethod === 'OPTIONS') {
     return {
       statusCode: 200,
-      headers: corsHeaders,
+      headers: DEFAULT_HEADERS,
       body: '',
     };
   }
@@ -772,20 +796,20 @@ export const settings = async (event: any) => {
       error: authResult.error,
       stage,
       path: event.requestContext?.http?.path,
+      requestId,
     });
 
-    return {
-      statusCode: 401,
-      headers: {
-        ...corsHeaders,
-        'WWW-Authenticate': 'Bearer realm="bg-remover", error="invalid_token"',
-      },
-      body: JSON.stringify({
-        error: 'Unauthorized',
-        message: 'Valid JWT token required',
-        details: authResult.error,
-      }),
+    const response = createErrorResponse(
+      ErrorCode.AUTH_ERROR,
+      'Valid JWT token required',
+      authResult.error,
+      requestId
+    );
+    response.headers = {
+      ...response.headers,
+      'WWW-Authenticate': 'Bearer realm="bg-remover", error="invalid_token"',
     };
+    return response;
   }
 
   if (authResult.isValid && authResult.userId) {
@@ -793,6 +817,7 @@ export const settings = async (event: any) => {
       userId: authResult.userId,
       email: authResult.email,
       method: httpMethod,
+      requestId,
     });
   }
   // ===== END JWT AUTHENTICATION =====
@@ -839,36 +864,22 @@ export const settings = async (event: any) => {
         ? JSON.parse(response.Parameter.Value)
         : defaultSettings;
 
-      console.log('Retrieved settings from SSM', { ssmPath, settings });
+      console.log('Retrieved settings from SSM', { ssmPath, settings, requestId });
 
-      return {
-        statusCode: 200,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ settings }),
-      };
+      return createSuccessResponse({ settings });
     } catch (error: any) {
       if (error.name === 'ParameterNotFound') {
-        console.log('Settings parameter not found, returning defaults', { ssmPath });
-        return {
-          statusCode: 200,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ settings: defaultSettings }),
-        };
+        console.log('Settings parameter not found, returning defaults', { ssmPath, requestId });
+        return createSuccessResponse({ settings: defaultSettings });
       }
 
       console.error('Error retrieving settings from SSM', {
         error: error.message,
         ssmPath,
+        requestId,
       });
 
-      return {
-        statusCode: 500,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          error: 'Failed to retrieve settings',
-          message: error.message,
-        }),
-      };
+      return handleError(error, 'get-settings', requestId);
     }
   }
 
@@ -880,14 +891,12 @@ export const settings = async (event: any) => {
 
       // Validate settings
       if (!settings || typeof settings !== 'object') {
-        return {
-          statusCode: 400,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            error: 'Invalid request body',
-            message: 'Settings object is required',
-          }),
-        };
+        return createErrorResponse(
+          ErrorCode.VALIDATION_ERROR,
+          'Settings object is required',
+          undefined,
+          requestId
+        );
       }
 
       // Validate settings fields (legacy duplicate detection)
@@ -943,14 +952,12 @@ export const settings = async (event: any) => {
       }
 
       if (validationErrors.length > 0) {
-        return {
-          statusCode: 400,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            error: 'Invalid settings',
-            details: validationErrors,
-          }),
-        };
+        return createErrorResponse(
+          ErrorCode.VALIDATION_ERROR,
+          'Invalid settings',
+          validationErrors,
+          requestId
+        );
       }
 
       // Save to SSM
@@ -964,37 +971,23 @@ export const settings = async (event: any) => {
 
       await ssmClient.send(command);
 
-      console.log('Saved settings to SSM', { ssmPath, settings });
+      console.log('Saved settings to SSM', { ssmPath, settings, requestId });
 
-      return {
-        statusCode: 200,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          success: true,
-          settings,
-          message: 'Settings saved successfully',
-        }),
-      };
+      return createSuccessResponse({
+        success: true,
+        settings,
+        message: 'Settings saved successfully',
+      });
     } catch (error: any) {
       console.error('Error saving settings to SSM', {
         error: error.message,
         ssmPath,
+        requestId,
       });
 
-      return {
-        statusCode: 500,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          error: 'Failed to save settings',
-          message: error.message,
-        }),
-      };
+      return handleError(error, 'save-settings', requestId);
     }
   }
 
-  return {
-    statusCode: 405,
-    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ error: 'Method Not Allowed' }),
-  };
+  return createErrorResponse(ErrorCode.METHOD_NOT_ALLOWED, 'Method not allowed', undefined, requestId);
 };
