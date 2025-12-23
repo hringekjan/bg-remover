@@ -116,6 +116,7 @@ package:
     - 'src/handlers/**' # Include handler source files
     - 'node_modules/zod/**' # Include zod dependency
     - 'node_modules/jose/**' # Include jose for JWT validation
+    - 'node_modules/@aws-lambda-powertools/**' # Include Lambda Powertools (logger, metrics, tracer)
     - 'classifier_handler.py' # Include Python classifier handler
     - '!node_modules/@aws-sdk/**' # Exclude AWS SDK from deployment package
 
