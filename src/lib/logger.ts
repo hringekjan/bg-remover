@@ -1,28 +1,121 @@
 /**
- * Structured Logging for bg-remover service using Lambda Powertools
+ * Structured Logging for bg-remover service
  *
  * Provides consistent structured logging with:
  * - Request ID correlation
  * - Tenant context
- * - Sampling for high-volume logs
  * - CloudWatch Insights compatible JSON format
  *
  * @module lib/logger
  */
 
-import { Logger } from '@aws-lambda-powertools/logger';
-import type { LogLevel } from '@aws-lambda-powertools/logger/types';
+// Log levels mapping
+const LOG_LEVELS = {
+  DEBUG: 0,
+  INFO: 1,
+  WARN: 2,
+  ERROR: 3,
+} as const;
 
-// Singleton logger instance
-const logger = new Logger({
-  serviceName: 'bg-remover',
-  logLevel: (process.env.LOG_LEVEL as LogLevel) || 'INFO',
-  persistentLogAttributes: {
-    environment: process.env.STAGE || 'dev',
-    version: process.env.npm_package_version || '1.0.0',
-    region: process.env.AWS_REGION || 'eu-west-1',
+type LogLevelName = keyof typeof LOG_LEVELS;
+
+const currentLogLevel = LOG_LEVELS[(process.env.LOG_LEVEL?.toUpperCase() as LogLevelName) || 'INFO'] || LOG_LEVELS.INFO;
+
+// Persistent attributes
+const persistentAttributes = {
+  service: 'bg-remover',
+  environment: process.env.STAGE || 'dev',
+  version: process.env.npm_package_version || '1.0.0',
+  region: process.env.AWS_REGION || 'eu-west-1',
+};
+
+// Additional keys that can be appended
+let additionalKeys: Record<string, unknown> = {};
+
+// Simple structured logger interface matching Lambda Powertools
+interface SimpleLogger {
+  debug: (message: string, extra?: Record<string, unknown>) => void;
+  info: (message: string, extra?: Record<string, unknown>) => void;
+  warn: (message: string, extra?: Record<string, unknown>) => void;
+  error: (message: string, extra?: Record<string, unknown>) => void;
+  appendKeys: (keys: Record<string, unknown>) => void;
+  resetKeys: () => void;
+  createChild: (options: { persistentLogAttributes: Record<string, unknown> }) => SimpleLogger;
+}
+
+function formatLog(level: string, message: string, extra?: Record<string, unknown>): string {
+  const timestamp = new Date().toISOString();
+  const logEntry = {
+    timestamp,
+    level,
+    message,
+    ...persistentAttributes,
+    ...additionalKeys,
+    ...extra,
+  };
+  return JSON.stringify(logEntry);
+}
+
+const logger: SimpleLogger = {
+  debug: (message: string, extra?: Record<string, unknown>) => {
+    if (currentLogLevel <= LOG_LEVELS.DEBUG) {
+      console.debug(formatLog('DEBUG', message, extra));
+    }
   },
-});
+  info: (message: string, extra?: Record<string, unknown>) => {
+    if (currentLogLevel <= LOG_LEVELS.INFO) {
+      console.info(formatLog('INFO', message, extra));
+    }
+  },
+  warn: (message: string, extra?: Record<string, unknown>) => {
+    if (currentLogLevel <= LOG_LEVELS.WARN) {
+      console.warn(formatLog('WARN', message, extra));
+    }
+  },
+  error: (message: string, extra?: Record<string, unknown>) => {
+    if (currentLogLevel <= LOG_LEVELS.ERROR) {
+      console.error(formatLog('ERROR', message, extra));
+    }
+  },
+  appendKeys: (keys: Record<string, unknown>) => {
+    additionalKeys = { ...additionalKeys, ...keys };
+  },
+  resetKeys: () => {
+    additionalKeys = {};
+  },
+  createChild: (options: { persistentLogAttributes: Record<string, unknown> }): SimpleLogger => {
+    const childKeys = { ...options.persistentLogAttributes };
+    return {
+      debug: (message: string, extra?: Record<string, unknown>) => {
+        if (currentLogLevel <= LOG_LEVELS.DEBUG) {
+          console.debug(formatLog('DEBUG', message, { ...childKeys, ...extra }));
+        }
+      },
+      info: (message: string, extra?: Record<string, unknown>) => {
+        if (currentLogLevel <= LOG_LEVELS.INFO) {
+          console.info(formatLog('INFO', message, { ...childKeys, ...extra }));
+        }
+      },
+      warn: (message: string, extra?: Record<string, unknown>) => {
+        if (currentLogLevel <= LOG_LEVELS.WARN) {
+          console.warn(formatLog('WARN', message, { ...childKeys, ...extra }));
+        }
+      },
+      error: (message: string, extra?: Record<string, unknown>) => {
+        if (currentLogLevel <= LOG_LEVELS.ERROR) {
+          console.error(formatLog('ERROR', message, { ...childKeys, ...extra }));
+        }
+      },
+      appendKeys: (keys: Record<string, unknown>) => {
+        Object.assign(childKeys, keys);
+      },
+      resetKeys: () => {
+        Object.keys(childKeys).forEach(k => delete childKeys[k]);
+      },
+      createChild: logger.createChild,
+    };
+  },
+};
 
 /**
  * Request context for structured logging
@@ -39,7 +132,7 @@ export interface LogContext {
  * Create a child logger with request-specific context
  * Use this at the start of each Lambda handler
  */
-export function createRequestLogger(context: LogContext): Logger {
+export function createRequestLogger(context: LogContext): SimpleLogger {
   const childLogger = logger.createChild({
     persistentLogAttributes: {
       ...context,
