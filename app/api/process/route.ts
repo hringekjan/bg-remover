@@ -13,7 +13,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { randomUUID } from 'crypto';
+import { randomUUID, timingSafeEqual } from 'crypto';
 import { ProcessRequestSchema, type ProcessResult, type ProductDescription, type BilingualProductDescription } from '@/lib/types';
 import { resolveTenantFromRequest, loadTenantConfig } from '@/lib/tenant/resolver';
 import {
@@ -26,7 +26,49 @@ import { EventBridgeClient, PutEventsCommand } from '@aws-sdk/client-eventbridge
 import { validateAndDebitCredits, refundCredits } from '@/src/lib/credits/client';
 
 // Admin/internal API keys that bypass credit validation
-const ADMIN_API_KEYS = new Set((process.env.ADMIN_API_KEYS || '').split(',').filter(Boolean));
+const ADMIN_API_KEYS = (process.env.ADMIN_API_KEYS || '').split(',').filter(Boolean);
+
+/**
+ * Timing-safe string comparison to prevent timing attacks on API key validation.
+ * Always compares in constant time regardless of where strings differ.
+ */
+function timingSafeCompare(a: string, b: string): boolean {
+  if (typeof a !== 'string' || typeof b !== 'string') {
+    return false;
+  }
+
+  const aBuffer = Buffer.from(a, 'utf8');
+  const bBuffer = Buffer.from(b, 'utf8');
+
+  // If lengths differ, still perform comparison to prevent timing leak
+  if (aBuffer.length !== bBuffer.length) {
+    const maxLen = Math.max(aBuffer.length, bBuffer.length);
+    const paddedA = Buffer.alloc(maxLen, 0);
+    const paddedB = Buffer.alloc(maxLen, 0);
+    aBuffer.copy(paddedA);
+    bBuffer.copy(paddedB);
+    timingSafeEqual(paddedA, paddedB);
+    return false;
+  }
+
+  return timingSafeEqual(aBuffer, bBuffer);
+}
+
+/**
+ * Check if provided API key matches any admin key using timing-safe comparison.
+ */
+function isValidAdminApiKey(apiKey: string): boolean {
+  // Perform timing-safe comparison against all admin keys
+  // This ensures constant time regardless of which key (if any) matches
+  let isValid = false;
+  for (const adminKey of ADMIN_API_KEYS) {
+    if (timingSafeCompare(apiKey, adminKey)) {
+      isValid = true;
+      // Continue loop to maintain constant time
+    }
+  }
+  return isValid;
+}
 
 /**
  * Extract user ID from request using hierarchy:
@@ -64,16 +106,17 @@ function extractUserId(request: NextRequest, bodyUserId?: string): string | null
 
 /**
  * Check if request should bypass credit validation
+ * Uses timing-safe comparison for API key validation to prevent timing attacks.
  */
 function shouldBypassCreditValidation(request: NextRequest, skipFlag?: boolean): boolean {
-  // Check for admin API key
+  // Check for admin API key using timing-safe comparison
   const apiKey = request.headers.get('x-api-key');
-  if (apiKey && ADMIN_API_KEYS.has(apiKey)) {
+  if (apiKey && isValidAdminApiKey(apiKey)) {
     return true;
   }
 
   // Check for explicit skip flag (must be combined with admin key or internal call)
-  if (skipFlag && apiKey && ADMIN_API_KEYS.has(apiKey)) {
+  if (skipFlag && apiKey && isValidAdminApiKey(apiKey)) {
     return true;
   }
 
