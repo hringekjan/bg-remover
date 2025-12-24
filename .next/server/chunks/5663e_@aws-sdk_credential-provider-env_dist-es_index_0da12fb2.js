@@ -1,3 +1,0 @@
-module.exports=[63577,E=>{"use strict";E.s([],9408),E.i(9408);var N=E.i(80055);E.s(["ENV_ACCOUNT_ID",()=>N.ENV_ACCOUNT_ID,"ENV_CREDENTIAL_SCOPE",()=>N.ENV_CREDENTIAL_SCOPE,"ENV_EXPIRATION",()=>N.ENV_EXPIRATION,"ENV_KEY",()=>N.ENV_KEY,"ENV_SECRET",()=>N.ENV_SECRET,"ENV_SESSION",()=>N.ENV_SESSION,"fromEnv",()=>N.fromEnv],63577)}];
-
-//# sourceMappingURL=5663e_%40aws-sdk_credential-provider-env_dist-es_index_0da12fb2.js.map
