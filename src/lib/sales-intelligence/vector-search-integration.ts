@@ -110,7 +110,7 @@ export class VectorSearchIntegration {
       const duration = Date.now() - startTime;
 
       this.logger.info('Similar product search complete', {
-        results: results.length,
+        resultCount: results.length,
         duration,
         ...this.vectorSearch.getMetrics(),
       });

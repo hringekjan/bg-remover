@@ -1,0 +1,148 @@
+/**
+ * CloudFormation Resource Definition for Sales Intelligence Table
+ *
+ * This file is referenced in serverless.yml under resources.Resources.SalesIntelligenceTable
+ *
+ * Table Design:
+ * - Single-table design with multi-tenant partitioning
+ * - Primary Key: PK (tenant/product), SK (sale date/ID)
+ * - 3 Global Secondary Indexes for analytics queries:
+ *   * GSI-1: Category-Season trends (10 shards for write distribution)
+ *   * GSI-2: Embedding product lookup (5 shards for read distribution)
+ *   * GSI-3: Brand pricing analysis (sparse index, only records with brand)
+ * - TTL enabled (2-year retention on records)
+ * - Stream enabled (NEW_AND_OLD_IMAGES for audit trail)
+ *
+ * Cost Model:
+ * - BillingMode: PAY_PER_REQUEST (cost scales with usage, no capacity planning)
+ * - Estimated: $0.25-0.50/month per 1M records stored + read/write costs
+ * - On-demand pricing: Read $1.25/M units, Write $6.25/M units
+ *
+ * Access Patterns:
+ * 1. Get sale by product: Query pk (with sk range) - O(1) partition
+ * 2. Find category trends: Query GSI-1 across shards - O(10) parallel
+ * 3. Lookup product embeddings: Query GSI-2 across shards - O(5) parallel
+ * 4. Brand analysis: Query GSI-3 - O(1) partition
+ * 5. Time-based cleanup: TTL automatic (no manual delete needed)
+ */
+
+SalesIntelligenceTable:
+  Type: AWS::DynamoDB::Table
+  Properties:
+    TableName: ${self:service}-${self:provider.stage}-sales-intelligence
+    BillingMode: PAY_PER_REQUEST
+
+    # Attribute Definitions
+    # Only list attributes used in keys (PK, SK, or GSI keys)
+    # Other attributes stored as-is without schema definition
+    AttributeDefinitions:
+      # Primary Table Keys
+      - AttributeName: PK
+        AttributeType: S
+      - AttributeName: SK
+        AttributeType: S
+
+      # GSI-1: Category-Season trends (sharded for write distribution)
+      - AttributeName: GSI1PK
+        AttributeType: S
+      - AttributeName: GSI1SK
+        AttributeType: S
+
+      # GSI-2: Embedding lookup (sharded for read distribution)
+      - AttributeName: GSI2PK
+        AttributeType: S
+      - AttributeName: GSI2SK
+        AttributeType: S
+
+      # GSI-3: Brand pricing (sparse index)
+      - AttributeName: GSI3PK
+        AttributeType: S
+      - AttributeName: GSI3SK
+        AttributeType: S
+
+    # Primary Table Key Schema
+    KeySchema:
+      - AttributeName: PK
+        KeyType: HASH
+      - AttributeName: SK
+        KeyType: RANGE
+
+    # Time To Live Configuration
+    # Records automatically deleted 2 years after sale date
+    # Cost savings: Prevents unbounded table growth
+    TimeToLiveSpecification:
+      AttributeName: ttl
+      Enabled: true
+
+    # Global Secondary Indexes for analytical queries
+    GlobalSecondaryIndexes:
+      # GSI-1: Category-Season Trends Analysis
+      # Purpose: Analyze pricing trends by category and season
+      # Sharding: 10 shards to distribute writes evenly
+      # Access Pattern: GetCategorySeason(tenant, category, season) → [SalesRecord]
+      - IndexName: GSI-1
+        KeySchema:
+          - AttributeName: GSI1PK
+            KeyType: HASH
+          - AttributeName: GSI1SK
+            KeyType: RANGE
+        Projection:
+          ProjectionType: KEYS_ONLY
+        # On-demand pricing - no capacity management needed
+
+      # GSI-2: Embedding Lookup Index
+      # Purpose: Find products by embedding characteristics
+      # Sharding: 5 shards based on product hash
+      # Access Pattern: GetProductEmbeddings(tenant, productId) → [EmbeddingRef]
+      - IndexName: GSI-2
+        KeySchema:
+          - AttributeName: GSI2PK
+            KeyType: HASH
+          - AttributeName: GSI2SK
+            KeyType: RANGE
+        Projection:
+          ProjectionType: INCLUDE
+          NonKeyAttributes:
+            - embeddingS3Key
+            - productId
+            - category
+            - salePrice
+            - brand
+        # Include frequently accessed fields to reduce main table queries
+
+      # GSI-3: Brand Pricing Analysis
+      # Purpose: Analyze pricing by brand across all products
+      # Sparse Index: Only includes items with brand attribute
+      # Cost: Only pays for records with brand set
+      - IndexName: GSI-3
+        KeySchema:
+          - AttributeName: GSI3PK
+            KeyType: HASH
+          - AttributeName: GSI3SK
+            KeyType: RANGE
+        Projection:
+          ProjectionType: KEYS_ONLY
+
+    # DynamoDB Streams for audit and event-driven processing
+    StreamSpecification:
+      StreamViewType: NEW_AND_OLD_IMAGES
+
+    # CloudWatch Logs for monitoring
+    Tags:
+      - Key: Service
+        Value: ${self:service}
+      - Key: Purpose
+        Value: pricing-intelligence
+      - Key: Stage
+        Value: ${self:provider.stage}
+      - Key: Tenant
+        Value: ${env:TENANT, 'carousel-labs'}
+      - Key: ManagedBy
+        Value: Serverless Framework
+
+# Note: This resource is embedded in serverless.yml rather than separate
+# because CloudFormation requires single deployment unit for consistency.
+# To use this separately, move to resources/sales-intelligence-table.yml
+# and reference via: resources:
+#   Resources:
+#     SalesIntelligenceTable: ${file(resources/sales-intelligence-table.yml)}

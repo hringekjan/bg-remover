@@ -1,11 +1,44 @@
-import { processImageFromUrl, processImageFromBase64 } from '../src/lib/bedrock/image-processor';
+// Mock AWS SDK before imports
+const mockSSMSend = jest.fn();
+jest.mock('@aws-sdk/client-ssm', () => ({
+  SSMClient: jest.fn(() => ({
+    send: mockSSMSend,
+  })),
+  GetParametersCommand: jest.fn((input: unknown) => ({ input })),
+}));
 
 // Mock fetch globally
-const mockFetch = global.fetch as jest.MockedFunction<typeof fetch>;
+const mockFetch = jest.fn() as jest.MockedFunction<typeof fetch>;
+global.fetch = mockFetch;
+
+import { processImageFromUrl, processImageFromBase64 } from '../src/lib/bedrock/image-processor';
 
 describe('Image Processor', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+
+    // Set environment variables for tenant/stage resolution
+    process.env.STAGE = 'dev';
+    process.env.TENANT = 'test-tenant';
+
+    // Mock SSM to return valid config with serviceApiKey (required by image-processor)
+    mockSSMSend.mockResolvedValue({
+      Parameters: [
+        {
+          Name: '/tf/dev/test-tenant/services/bg-remover/config',
+          Value: JSON.stringify({
+            apiBaseUrl: 'https://api.image-optimizer.example.com',
+          }),
+        },
+        {
+          Name: '/tf/dev/test-tenant/services/bg-remover/secrets',
+          Value: JSON.stringify({
+            serviceApiKey: 'test-api-key-123',
+          }),
+        },
+      ],
+    });
+
     mockFetch.mockResolvedValue({
       ok: true,
       json: async () => ({

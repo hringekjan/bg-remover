@@ -5,6 +5,7 @@ import { jest } from '@jest/globals';
 process.env.STAGE = 'test';
 process.env.AWS_REGION = 'eu-west-1';
 process.env.JOB_STORE_TABLE_NAME = 'bg-remover-jobs-test';
+process.env.ANALYTICS_BUCKET = 'test-analytics-bucket';
 
 // Mock AWS SDK clients
 jest.mock('@aws-sdk/client-eventbridge', () => ({
@@ -27,7 +28,7 @@ jest.mock('crypto', () => ({
 }));
 
 // Mock fetch for image-optimizer calls
-global.fetch = jest.fn();
+global.fetch = jest.fn() as jest.MockedFunction<typeof fetch>;
 
 // Clear all mocks before each test
 beforeEach(() => {

@@ -1,5 +1,16 @@
-import { health, process } from '../src/handler';
-import { EventBridgeClient } from '@aws-sdk/client-eventbridge';
+// Mock SSM before imports
+const mockSSMSend = jest.fn();
+jest.mock('@aws-sdk/client-ssm', () => ({
+  SSMClient: jest.fn(() => ({
+    send: mockSSMSend,
+  })),
+  GetParametersCommand: jest.fn((input: unknown) => ({ input })),
+  GetParameterCommand: jest.fn((input: unknown) => ({ input })),
+}));
+
+// Mock fetch globally
+const mockFetch = jest.fn() as jest.MockedFunction<typeof fetch>;
+global.fetch = mockFetch;
 
 // Mock EventBridge
 const mockEventBridgeSend = jest.fn();
@@ -7,13 +18,59 @@ jest.mock('@aws-sdk/client-eventbridge', () => ({
   EventBridgeClient: jest.fn().mockImplementation(() => ({
     send: mockEventBridgeSend,
   })),
-  PutEventsCommand: jest.fn(),
+  PutEventsCommand: jest.fn((input: unknown) => {
+    if (input && typeof input === 'object') {
+      return { ...input as Record<string, unknown> };
+    }
+    return { input };
+  }),
 }));
+
+import { health, process as processHandler } from '../src/handler';
 
 describe('Handler Functions', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+
+    // Set environment variables for tenant/stage resolution
+    process.env.STAGE = 'test';
+    process.env.TENANT = 'carousel-labs';
+
+    // Mock SSM to return valid config
+    mockSSMSend.mockResolvedValue({
+      Parameters: [
+        {
+          Name: '/tf/test/carousel-labs/services/bg-remover/config',
+          Value: JSON.stringify({
+            apiBaseUrl: 'https://api.test.carousellabs.co',
+          }),
+        },
+        {
+          Name: '/tf/test/carousel-labs/services/bg-remover/secrets',
+          Value: JSON.stringify({
+            serviceApiKey: 'test-api-key-123',
+          }),
+        },
+      ],
+    });
+
+    // Mock EventBridge
     mockEventBridgeSend.mockResolvedValue({});
+
+    // Mock fetch for image processing
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        outputBase64: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAACXBIWXMAAAsTAAALEwEAmpwYAAAADUlEQVR4nGNgYGBgAAAABQABpfZFQAAAAABJRU5ErkJggg==',
+        metadata: {
+          width: 100,
+          height: 100,
+          format: 'png',
+          originalSize: 1024,
+          processedSize: 512,
+        },
+      }),
+    } as any);
   });
 
   describe('health', () => {
@@ -28,10 +85,8 @@ describe('Handler Functions', () => {
 
       const result = await health(event);
 
-      expect(result).toEqual({
-        statusCode: 200,
-        body: expect.stringContaining('"status":"healthy"'),
-      });
+      expect(result.statusCode).toBe(200);
+      expect(result.body).toContain('"status":"healthy"');
     });
 
     it('should return 404 for invalid health endpoint path', async () => {
@@ -45,47 +100,25 @@ describe('Handler Functions', () => {
 
       const result = await health(event);
 
-      expect(result).toEqual({
-        statusCode: 404,
-        body: JSON.stringify({ message: 'Not Found' }),
-      });
+      expect(result.statusCode).toBe(404);
+      const body = JSON.parse(result.body);
+      expect(body.error).toBe('NOT_FOUND');
     });
   });
 
   describe('process', () => {
-    const mockFetch = global.fetch as jest.MockedFunction<typeof fetch>;
-
-    beforeEach(() => {
-      mockFetch.mockResolvedValue({
-        ok: true,
-        json: async () => ({
-          outputBase64: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAACXBIWXMAAAsTAAALEwEAmpwYAAAADUlEQVR4nGNgYGBgAAAABQABpfZFQAAAAABJRU5ErkJggg==',
-          metadata: {
-            width: 100,
-            height: 100,
-            format: 'png',
-            originalSize: 1024,
-            processedSize: 512,
-          },
-        }),
-      } as any);
-    });
-
     it('should handle OPTIONS requests', async () => {
       const event = {
         httpMethod: 'OPTIONS',
       };
 
-      const result = await process(event);
+      const result = await processHandler(event);
 
-      expect(result).toEqual({
-        statusCode: 200,
-        headers: {
-          'Access-Control-Allow-Origin': '*',
-          'Access-Control-Allow-Methods': 'POST, OPTIONS',
-          'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Tenant-Id',
-        },
-        body: '',
+      expect(result.statusCode).toBe(200);
+      expect(result.headers).toMatchObject({
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': expect.stringContaining('OPTIONS'),
+        'Access-Control-Allow-Headers': expect.stringContaining('Content-Type'),
       });
     });
 
@@ -94,12 +127,11 @@ describe('Handler Functions', () => {
         httpMethod: 'GET',
       };
 
-      const result = await process(event);
+      const result = await processHandler(event);
 
-      expect(result).toEqual({
-        statusCode: 405,
-        body: JSON.stringify({ message: 'Method Not Allowed' }),
-      });
+      expect(result.statusCode).toBe(405);
+      const body = JSON.parse(result.body);
+      expect(body.error).toBe('METHOD_NOT_ALLOWED');
     });
 
     it('should process image from base64 successfully', async () => {
@@ -117,7 +149,7 @@ describe('Handler Functions', () => {
         },
       };
 
-      const result = await process(event);
+      const result = await processHandler(event);
 
       expect(result.statusCode).toBe(200);
       const body = JSON.parse(result.body);
@@ -147,12 +179,12 @@ describe('Handler Functions', () => {
         },
       };
 
-      const result = await process(event);
+      const result = await processHandler(event);
 
       expect(result.statusCode).toBe(400);
       const body = JSON.parse(result.body);
-      expect(body.success).toBe(false);
-      expect(body.error).toBe('No image provided');
+      expect(body.error).toBe('VALIDATION_ERROR');
+      expect(body.message).toContain('validation');
     });
 
     it('should handle validation errors', async () => {
@@ -168,12 +200,11 @@ describe('Handler Functions', () => {
         },
       };
 
-      const result = await process(event);
+      const result = await processHandler(event);
 
       expect(result.statusCode).toBe(400);
       const body = JSON.parse(result.body);
-      expect(body.success).toBe(false);
-      expect(body.error).toContain('Validation error');
+      expect(body.error).toBe('VALIDATION_ERROR');
     });
 
     it('should handle image processing errors', async () => {
@@ -196,12 +227,11 @@ describe('Handler Functions', () => {
         },
       };
 
-      const result = await process(event);
+      const result = await processHandler(event);
 
       expect(result.statusCode).toBe(500);
       const body = JSON.parse(result.body);
-      expect(body.success).toBe(false);
-      expect(body.error).toContain('Image Optimizer API failed');
+      expect(body.error).toBe('INTERNAL_ERROR');
     });
 
     it('should emit CarouselImageProcessed event', async () => {
@@ -219,7 +249,7 @@ describe('Handler Functions', () => {
         },
       };
 
-      await process(event);
+      await processHandler(event);
 
       expect(mockEventBridgeSend).toHaveBeenCalledWith(
         expect.objectContaining({

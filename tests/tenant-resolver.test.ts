@@ -1,18 +1,22 @@
-import { resolveTenantFromRequest, loadTenantConfig } from '../src/lib/tenant/resolver';
+// Container for mock - allows access after hoisting
+const mocks = {
+  ssmSend: jest.fn(),
+};
 
-// Mock SSM client
-const mockSSMSend = jest.fn();
 jest.mock('@aws-sdk/client-ssm', () => ({
-  SSMClient: jest.fn().mockImplementation(() => ({
-    send: mockSSMSend,
+  SSMClient: jest.fn(() => ({
+    send: (...args: unknown[]) => mocks.ssmSend(...args),
   })),
-  GetParameterCommand: jest.fn(),
+  GetParameterCommand: jest.fn((input: unknown) => ({ input })),
 }));
+
+import { resolveTenantFromRequest, loadTenantConfig, clearTenantConfigCache } from '../src/lib/tenant/resolver';
 
 describe('Tenant Resolver', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    mockSSMSend.mockResolvedValue({
+    clearTenantConfigCache(); // Clear cache between tests
+    mocks.ssmSend.mockResolvedValue({
       Parameter: {
         Value: JSON.stringify({
           bedrock: { region: 'us-east-1' },
@@ -35,10 +39,10 @@ describe('Tenant Resolver', () => {
       expect(tenant).toBe('test-tenant');
     });
 
-    it('should resolve tenant from domain', async () => {
+    it('should resolve tenant from host header', async () => {
       const event = {
-        requestContext: {
-          domainName: 'test-tenant.dev.carousellabs.co',
+        headers: {
+          host: 'test-tenant.dev.carousellabs.co',
         },
       };
       const stage = 'dev';
@@ -75,33 +79,43 @@ describe('Tenant Resolver', () => {
 
       const config = await loadTenantConfig(tenant, stage);
 
-      expect(mockSSMSend).toHaveBeenCalledWith(
+      expect(mocks.ssmSend).toHaveBeenCalledWith(
         expect.objectContaining({
           input: {
             Name: `/tf/dev/test-tenant/services/bg-remover/config`,
+            WithDecryption: true,
           },
         })
       );
 
-      expect(config).toEqual({
+      // Config is merged with defaults
+      expect(config).toMatchObject({
+        tenant: 'test-tenant',
+        stage: 'dev',
         bedrock: { region: 'us-east-1' },
         s3: { bucket: 'test-bucket' },
       });
     });
 
-    it('should handle SSM parameter not found', async () => {
-      mockSSMSend.mockRejectedValueOnce(new Error('Parameter not found'));
+    it('should return default config when SSM parameter not found', async () => {
+      mocks.ssmSend.mockRejectedValueOnce(new Error('Parameter not found'));
 
       const tenant = 'test-tenant';
       const stage = 'dev';
 
       const config = await loadTenantConfig(tenant, stage);
 
-      expect(config).toEqual({}); // Should return empty config
+      // Should return default config when SSM fails
+      expect(config).toMatchObject({
+        tenant: 'test-tenant',
+        stage: 'dev',
+        bedrockModelId: 'anthropic.claude-3-sonnet-20240229-v1:0',
+        creditsEnabled: true,
+      });
     });
 
-    it('should handle malformed JSON in SSM', async () => {
-      mockSSMSend.mockResolvedValueOnce({
+    it('should return default config for malformed JSON in SSM', async () => {
+      mocks.ssmSend.mockResolvedValueOnce({
         Parameter: {
           Value: 'invalid-json',
         },
@@ -112,7 +126,12 @@ describe('Tenant Resolver', () => {
 
       const config = await loadTenantConfig(tenant, stage);
 
-      expect(config).toEqual({}); // Should return empty config
+      // Should return default config when JSON parsing fails
+      expect(config).toMatchObject({
+        tenant: 'test-tenant',
+        stage: 'dev',
+        bedrockModelId: 'anthropic.claude-3-sonnet-20240229-v1:0',
+      });
     });
   });
 });

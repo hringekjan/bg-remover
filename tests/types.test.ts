@@ -19,7 +19,8 @@ describe('Types and Validation', () => {
 
       const result = ProcessRequestSchema.safeParse(validRequest);
       expect(result.success).toBe(true);
-      expect(result.data).toEqual(validRequest);
+      // Use toMatchObject since schema adds default values (languages, generatePriceSuggestion, etc.)
+      expect(result.data).toMatchObject(validRequest);
     });
 
     it('should reject invalid output format', () => {
@@ -82,8 +83,8 @@ describe('Types and Validation', () => {
 
       const result = ProcessRequestSchema.safeParse(validRequest);
       expect(result.success).toBe(true);
-      expect(result.data.targetWidth).toBe(100);
-      expect(result.data.targetHeight).toBe(200);
+      expect(result.data?.targetWidth).toBe(100);
+      expect(result.data?.targetHeight).toBe(200);
     });
 
     it('should reject negative dimensions', () => {
@@ -100,33 +101,38 @@ describe('Types and Validation', () => {
 
   describe('createProcessResult', () => {
     it('should create successful result', () => {
+      // createProcessResult(success, jobId, outputUrl, error, processingTimeMs, metadata, ...)
       const result = createProcessResult(
         true,
-        'output-url',
-        { width: 100, height: 100, originalSize: 1024, processedSize: 512 },
+        'job-123',
+        'https://example.com/output.png',
         undefined,
-        150
+        150,
+        { width: 100, height: 100, originalSize: 1024, processedSize: 512 }
       );
 
-      expect(result).toEqual({
+      expect(result).toMatchObject({
         success: true,
-        outputUrl: 'output-url',
+        jobId: 'job-123',
+        outputUrl: 'https://example.com/output.png',
         metadata: { width: 100, height: 100, originalSize: 1024, processedSize: 512 },
         processingTimeMs: 150,
       });
     });
 
     it('should create error result', () => {
+      // createProcessResult(success, jobId, outputUrl, error, processingTimeMs, ...)
       const result = createProcessResult(
         false,
-        undefined,
+        'job-456',
         undefined,
         'Processing failed',
         200
       );
 
-      expect(result).toEqual({
+      expect(result).toMatchObject({
         success: false,
+        jobId: 'job-456',
         error: 'Processing failed',
         processingTimeMs: 200,
       });

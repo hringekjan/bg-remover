@@ -180,3 +180,265 @@ TENANT=carousel-labs ./deploy.sh
 # Deploy to production
 TENANT=carousel-labs ./deploy.sh production
 ```
+
+## Cache Architecture
+
+The service implements a **two-layer caching system** for JWT validation and other frequently accessed data:
+
+```
+┌──────────────────────────────────────────────────────────┐
+│                   Cache Architecture                     │
+├──────────────────────────────────────────────────────────┤
+│                                                          │
+│  ┌─────────────┐                                        │
+│  │   Request   │                                        │
+│  └──────┬──────┘                                        │
+│         │                                                │
+│         v                                                │
+│  ┌─────────────────────────────────────┐                │
+│  │  L1: In-Memory Cache (Map)          │  ← Fastest     │
+│  │  ─ TTL: 5 minutes (default)         │    < 1ms       │
+│  │  ─ Max: 1000 entries (LRU eviction) │                │
+│  │  ─ Hit tracking for eviction score  │                │
+│  └────────────┬────────────────────────┘                │
+│               │ Cache Miss                               │
+│               v                                          │
+│  ┌─────────────────────────────────────┐                │
+│  │  L2: Cache Service (HTTP)           │  ← Distributed │
+│  │  ─ TTL: 1 hour (default)            │    ~10-50ms    │
+│  │  ─ Circuit breaker for reliability  │                │
+│  │  ─ Retry logic with backoff         │                │
+│  │  ─ Per-tenant isolation              │                │
+│  └─────────────────────────────────────┘                │
+│                                                          │
+└──────────────────────────────────────────────────────────┘
+```
+
+### L1: Memory Cache
+- **Storage**: In-process Map (fastest)
+- **TTL**: 5 minutes (configurable via `memoryTtl`)
+- **Eviction**: LRU with weighted scoring (age - hit bonus)
+- **Max Size**: 1000 entries (configurable via `maxMemoryEntries`)
+- **Use Cases**: JWT validation, frequently accessed config
+
+### L2: Cache Service
+- **Storage**: Distributed HTTP cache service
+- **TTL**: 1 hour (configurable via `cacheServiceTtl`)
+- **Resilience**: Circuit breaker, retry logic, timeout handling
+- **Tenant Isolation**: Separate cache namespaces per tenant
+- **Use Cases**: Shared data across Lambda invocations
+
+### Multi-Tenant Isolation
+
+Each tenant gets its own cache manager instance to prevent data mixing:
+
+```typescript
+// Per-tenant cache managers
+const globalCacheManagers: Map<string, CacheManager> = new Map();
+
+// Isolated cache for each tenant
+getCacheManager({ tenantId: 'carousel-labs' });
+getCacheManager({ tenantId: 'hringekjan' });
+```
+
+## Security Considerations
+
+### JWT Token Hashing (HMAC-SHA256)
+
+**Critical Security Feature**: JWT tokens are hashed using HMAC-SHA256 before caching to prevent cache poisoning attacks.
+
+```typescript
+// SECURE: HMAC with secret key
+const tokenHash = createHmac('sha256', CACHE_KEY_SECRET)
+  .update(token)
+  .digest('hex');
+
+// Cache key uses full 64-char hash (not substring)
+const cacheKey = `jwt-validation-${tokenHash}`;
+```
+
+**Why HMAC?**
+- Plain SHA-256 allows attackers to generate hash collisions
+- HMAC requires secret key, making collision attacks infeasible
+- Full 64-char hash provides maximum collision resistance
+
+**Configuration**:
+```bash
+# SSM Parameter (per-tenant SecureString)
+/tf/dev/carousel-labs/services/bg-remover/cache-key-secret
+/tf/dev/hringekjan/services/bg-remover/cache-key-secret
+/tf/prod/carousel-labs/services/bg-remover/cache-key-secret
+/tf/prod/hringekjan/services/bg-remover/cache-key-secret
+```
+
+### Tenant ID Validation
+
+All tenant IDs are validated to prevent header injection attacks:
+
+```typescript
+// Validation rules:
+// - Format: [a-z0-9-]+ (lowercase alphanumeric + hyphens only)
+// - Length: 1-63 characters (DNS-style limit)
+// - No leading/trailing hyphens
+// - No uppercase letters or special characters
+```
+
+### Circuit Breaker Protection
+
+Protects against cascading failures when cache service is unavailable:
+
+```
+States:
+  CLOSED    → Normal operation (all requests allowed)
+  OPEN      → Service unavailable (block all requests)
+  HALF_OPEN → Testing recovery (allow 1 request only)
+
+Thresholds:
+  failureThreshold: 3  (CLOSED → OPEN after 3 failures)
+  successThreshold: 2  (HALF_OPEN → CLOSED after 2 successes)
+  timeout: 30000ms     (OPEN → HALF_OPEN after 30 seconds)
+```
+
+**Race Condition Fix**: Only ONE request allowed in HALF_OPEN state to prevent thundering herd during service recovery.
+
+## Monitoring & Observability
+
+### CloudWatch Metrics
+
+The cache layer emits CloudWatch Embedded Metric Format (EMF) for monitoring:
+
+**Metrics**:
+- `CacheWriteSuccess` - Successful L2 cache writes
+- `CacheWriteFailure` - Failed L2 cache writes (non-retryable errors)
+- `CacheWriteException` - L2 cache write exceptions (network/timeout)
+
+**Dimensions**:
+- `tenant` - Tenant ID (carousel-labs, hringekjan, etc.)
+- `layer` - Cache layer (L1, L2)
+
+**Example Query** (CloudWatch Logs Insights):
+```
+fields @timestamp, tenant, layer, CacheWriteFailure, CacheWriteSuccess
+| filter service = "cache"
+| stats sum(CacheWriteFailure) as failures, sum(CacheWriteSuccess) as successes by tenant, layer
+```
+
+### CloudWatch Alarms
+
+Two alarms monitor cache health:
+
+1. **Cache Write Failure Alarm**
+   - Triggers when > 10 failures in 10 minutes
+   - Indicates persistent L2 cache issues
+
+2. **Cache Write Exception Alarm**
+   - Triggers on any exception (network/timeout)
+   - Indicates immediate cache service connectivity issues
+
+**See [CLOUDWATCH_ALARMS.md](./CLOUDWATCH_ALARMS.md)** for complete alarm configuration, thresholds, response procedures, and testing instructions.
+
+### Health Check
+
+The `/bg-remover/health` endpoint includes cache statistics:
+
+```json
+{
+  "status": "healthy",
+  "checks": [
+    {
+      "name": "cache",
+      "status": "pass",
+      "message": "Memory: 237 entries, Cache Service: available (closed)",
+      "details": {
+        "tenantManagers": 2,
+        "cacheServiceAvailable": true,
+        "circuitBreakerState": "closed"
+      }
+    }
+  ]
+}
+```
+
+## Troubleshooting
+
+### Circuit Breaker States
+
+**CLOSED (Normal)**:
+- All cache requests allowed
+- Failures counted toward threshold
+
+**OPEN (Service Down)**:
+- All cache requests blocked immediately
+- Returns cached error without attempting request
+- Automatically transitions to HALF_OPEN after timeout
+
+**HALF_OPEN (Testing Recovery)**:
+- Only 1 test request allowed (others blocked)
+- Success → CLOSED, Failure → OPEN
+- Prevents thundering herd on recovery
+
+### Common Issues
+
+#### High Cache Miss Rate
+```bash
+# Symptoms: Increased latency, higher Bedrock costs
+# Check: Memory cache size vs. entry count
+curl https://api.dev.carousellabs.co/bg-remover/health | jq '.checks[] | select(.name == "cache")'
+
+# Solution: Increase maxMemoryEntries or memoryTtl
+```
+
+#### Circuit Breaker Stuck OPEN
+```bash
+# Symptoms: "Circuit breaker open" errors in logs
+# Check: Circuit breaker state and last failure time
+# Solution:
+#   1. Verify cache service is healthy
+#   2. Wait for timeout (30 seconds default)
+#   3. Manual reset via Lambda environment variable (FORCE_CACHE_RESET=true)
+```
+
+#### Cache Write Failures
+```bash
+# Symptoms: CacheWriteFailure metrics, degraded performance
+# Check: CloudWatch Logs for cache service errors
+# Query: fields @message | filter @message like /Cache service storage failed/
+
+# Common causes:
+#   - Cache service unavailable
+#   - Network timeout
+#   - Invalid tenant ID
+#   - Key format validation failure
+```
+
+#### Memory Cache Evictions
+```bash
+# Symptoms: Unexpected cache misses for recent data
+# Check: Eviction logs
+# Query: fields @message | filter @message like /Evicted LRU cache entry/
+
+# Solution: Increase maxMemoryEntries (default: 1000)
+```
+
+### Debug Logging
+
+Enable debug logging for cache operations:
+
+```bash
+# Serverless.yml environment variable
+DEBUG: cache:*
+
+# View cache operations in CloudWatch Logs
+fields @timestamp, message, operation, key, tenant, layer
+| filter service = "cache" and level = "debug"
+| sort @timestamp desc
+```
+
+### Cache Key Validation Errors
+
+```bash
+# Error: "Invalid cache key format"
+# Cause: Cache keys must match [a-zA-Z0-9_-]+ (max 256 chars)
+# Example: jwt-validation-abc123def456... (valid)
+#          jwt-validation-abc.123 (invalid - contains dot)
+```

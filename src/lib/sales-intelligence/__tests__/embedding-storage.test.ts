@@ -30,7 +30,11 @@ describe('EmbeddingStorageService', () => {
 
   describe('fetchEmbeddingsBatch', () => {
     it('should fetch embeddings successfully', async () => {
-      const embeddingIds = ['emb1', 'emb2', 'emb3'];
+      const salesRecords = [
+        { embeddingId: 'emb1', embeddingS3Key: 's3://test-bucket/embeddings/emb1.json' },
+        { embeddingId: 'emb2', embeddingS3Key: 's3://test-bucket/embeddings/emb2.json' },
+        { embeddingId: 'emb3', embeddingS3Key: 's3://test-bucket/embeddings/emb3.json' },
+      ];
       const mockEmbedding = new Array(1024).fill(0.5);
 
       // Mock S3 GetObjectCommand
@@ -40,7 +44,7 @@ describe('EmbeddingStorageService', () => {
         } as any,
       });
 
-      const results = await service.fetchEmbeddingsBatch(embeddingIds);
+      const results = await service.fetchEmbeddingsBatch(salesRecords);
 
       expect(results.size).toBe(3);
       expect(results.get('emb1')).toEqual(mockEmbedding);
@@ -55,19 +59,26 @@ describe('EmbeddingStorageService', () => {
     });
 
     it('should handle S3 errors gracefully', async () => {
-      const embeddingIds = ['emb1', 'emb2'];
+      const salesRecords = [
+        { embeddingId: 'emb1', embeddingS3Key: 's3://test-bucket/embeddings/emb1.json' },
+        { embeddingId: 'emb2', embeddingS3Key: 's3://test-bucket/embeddings/emb2.json' },
+      ];
 
       // Mock S3 to fail
       s3Mock.on(GetObjectCommand).rejects(new Error('S3 fetch failed'));
 
-      const results = await service.fetchEmbeddingsBatch(embeddingIds);
+      const results = await service.fetchEmbeddingsBatch(salesRecords);
 
       // Should return empty map when all fail
       expect(results.size).toBe(0);
     });
 
     it('should handle partial failures', async () => {
-      const embeddingIds = ['emb1', 'emb2', 'emb3'];
+      const salesRecords = [
+        { embeddingId: 'emb1', embeddingS3Key: 's3://test-bucket/embeddings/emb1.json' },
+        { embeddingId: 'emb2', embeddingS3Key: 's3://test-bucket/embeddings/emb2.json' },
+        { embeddingId: 'emb3', embeddingS3Key: 's3://test-bucket/embeddings/emb3.json' },
+      ];
       const mockEmbedding = new Array(1024).fill(0.5);
 
       let callCount = 0;
@@ -85,7 +96,7 @@ describe('EmbeddingStorageService', () => {
         });
       });
 
-      const results = await service.fetchEmbeddingsBatch(embeddingIds);
+      const results = await service.fetchEmbeddingsBatch(salesRecords);
 
       // Should return 2 embeddings (emb1 and emb3)
       expect(results.size).toBe(2);
@@ -95,7 +106,10 @@ describe('EmbeddingStorageService', () => {
     });
 
     it('should handle invalid embedding format', async () => {
-      const embeddingIds = ['emb1', 'emb2'];
+      const salesRecords = [
+        { embeddingId: 'emb1', embeddingS3Key: 's3://test-bucket/embeddings/emb1.json' },
+        { embeddingId: 'emb2', embeddingS3Key: 's3://test-bucket/embeddings/emb2.json' },
+      ];
 
       let callCount = 0;
       s3Mock.on(GetObjectCommand).callsFake(async (input) => {
@@ -113,7 +127,7 @@ describe('EmbeddingStorageService', () => {
         };
       });
 
-      const results = await service.fetchEmbeddingsBatch(embeddingIds);
+      const results = await service.fetchEmbeddingsBatch(salesRecords);
 
       // Should only return valid embedding
       expect(results.size).toBe(1);
@@ -121,7 +135,10 @@ describe('EmbeddingStorageService', () => {
     });
 
     it('should handle wrong embedding dimension', async () => {
-      const embeddingIds = ['emb1', 'emb2'];
+      const salesRecords = [
+        { embeddingId: 'emb1', embeddingS3Key: 's3://test-bucket/embeddings/emb1.json' },
+        { embeddingId: 'emb2', embeddingS3Key: 's3://test-bucket/embeddings/emb2.json' },
+      ];
 
       let callCount = 0;
       s3Mock.on(GetObjectCommand).callsFake(async (input) => {
@@ -139,7 +156,7 @@ describe('EmbeddingStorageService', () => {
         };
       });
 
-      const results = await service.fetchEmbeddingsBatch(embeddingIds);
+      const results = await service.fetchEmbeddingsBatch(salesRecords);
 
       // Should only return valid embedding
       expect(results.size).toBe(1);
@@ -147,9 +164,12 @@ describe('EmbeddingStorageService', () => {
     });
 
     it('should batch requests efficiently', async () => {
-      const embeddingIds = Array.from(
+      const salesRecords = Array.from(
         { length: 25 },
-        (_, i) => `emb${i}`
+        (_, i) => ({
+          embeddingId: `emb${i}`,
+          embeddingS3Key: `s3://test-bucket/embeddings/emb${i}.json`,
+        })
       );
       const mockEmbedding = new Array(1024).fill(0.5);
 
@@ -163,7 +183,7 @@ describe('EmbeddingStorageService', () => {
         };
       });
 
-      const results = await service.fetchEmbeddingsBatch(embeddingIds);
+      const results = await service.fetchEmbeddingsBatch(salesRecords);
 
       expect(results.size).toBe(25);
       // 25 embeddings / 10 per batch = 3 batches (rounded up), so 25 S3 calls
@@ -171,7 +191,10 @@ describe('EmbeddingStorageService', () => {
     });
 
     it('should track metrics', async () => {
-      const embeddingIds = ['emb1', 'emb2'];
+      const salesRecords = [
+        { embeddingId: 'emb1', embeddingS3Key: 's3://test-bucket/embeddings/emb1.json' },
+        { embeddingId: 'emb2', embeddingS3Key: 's3://test-bucket/embeddings/emb2.json' },
+      ];
       const mockEmbedding = new Array(1024).fill(0.5);
 
       s3Mock.on(GetObjectCommand).resolves({
@@ -180,32 +203,36 @@ describe('EmbeddingStorageService', () => {
         } as any,
       });
 
-      await service.fetchEmbeddingsBatch(embeddingIds);
+      await service.fetchEmbeddingsBatch(salesRecords);
 
       const metrics = service.getMetrics();
 
       expect(metrics.requested).toBe(2);
       expect(metrics.fetched).toBe(2);
       expect(metrics.failed).toBe(0);
-      expect(metrics.durationMs).toBeGreaterThan(0);
-      expect(metrics.batchCount).toBeGreaterThan(0);
+      expect(metrics.durationMs).toBeGreaterThanOrEqual(0);  // Mocks may be very fast
+      expect(metrics.batchCount).toBeGreaterThanOrEqual(1);
       expect(metrics.bytesTransferred).toBeGreaterThan(0);
     });
 
     it('should handle empty S3 response', async () => {
-      const embeddingIds = ['emb1'];
+      const salesRecords = [
+        { embeddingId: 'emb1', embeddingS3Key: 's3://test-bucket/embeddings/emb1.json' },
+      ];
 
       s3Mock.on(GetObjectCommand).resolves({
         Body: undefined,
       } as any);
 
-      const results = await service.fetchEmbeddingsBatch(embeddingIds);
+      const results = await service.fetchEmbeddingsBatch(salesRecords);
 
       expect(results.size).toBe(0);
     });
 
     it('should reset metrics', async () => {
-      const embeddingIds = ['emb1'];
+      const salesRecords = [
+        { embeddingId: 'emb1', embeddingS3Key: 's3://test-bucket/embeddings/emb1.json' },
+      ];
       const mockEmbedding = new Array(1024).fill(0.5);
 
       s3Mock.on(GetObjectCommand).resolves({
@@ -214,7 +241,7 @@ describe('EmbeddingStorageService', () => {
         } as any,
       });
 
-      await service.fetchEmbeddingsBatch(embeddingIds);
+      await service.fetchEmbeddingsBatch(salesRecords);
 
       service.resetMetrics();
       const metrics = service.getMetrics();
@@ -227,9 +254,12 @@ describe('EmbeddingStorageService', () => {
     });
 
     it('should handle large batch efficiently', async () => {
-      const embeddingIds = Array.from(
+      const salesRecords = Array.from(
         { length: 100 },
-        (_, i) => `emb${i}`
+        (_, i) => ({
+          embeddingId: `emb${i}`,
+          embeddingS3Key: `s3://test-bucket/embeddings/emb${i}.json`,
+        })
       );
       const mockEmbedding = new Array(1024).fill(0.5);
 
@@ -244,7 +274,7 @@ describe('EmbeddingStorageService', () => {
       });
 
       const startTime = Date.now();
-      const results = await service.fetchEmbeddingsBatch(embeddingIds);
+      const results = await service.fetchEmbeddingsBatch(salesRecords);
       const duration = Date.now() - startTime;
 
       expect(results.size).toBe(100);
@@ -258,7 +288,9 @@ describe('EmbeddingStorageService', () => {
 
   describe('error handling', () => {
     it('should retry on transient failures', async () => {
-      const embeddingIds = ['emb1'];
+      const salesRecords = [
+        { embeddingId: 'emb1', embeddingS3Key: 's3://test-bucket/embeddings/emb1.json' },
+      ];
       const mockEmbedding = new Array(1024).fill(0.5);
 
       let attemptCount = 0;
@@ -275,7 +307,7 @@ describe('EmbeddingStorageService', () => {
         };
       });
 
-      const results = await service.fetchEmbeddingsBatch(embeddingIds);
+      const results = await service.fetchEmbeddingsBatch(salesRecords);
 
       // Should succeed after retry
       expect(results.size).toBe(1);
@@ -283,11 +315,13 @@ describe('EmbeddingStorageService', () => {
     });
 
     it('should fail after max retries', async () => {
-      const embeddingIds = ['emb1'];
+      const salesRecords = [
+        { embeddingId: 'emb1', embeddingS3Key: 's3://test-bucket/embeddings/emb1.json' },
+      ];
 
       s3Mock.on(GetObjectCommand).rejects(new Error('Persistent error'));
 
-      const results = await service.fetchEmbeddingsBatch(embeddingIds);
+      const results = await service.fetchEmbeddingsBatch(salesRecords);
 
       // Should fail after exhausting retries
       expect(results.size).toBe(0);
@@ -296,9 +330,12 @@ describe('EmbeddingStorageService', () => {
 
   describe('performance', () => {
     it('should fetch multiple embeddings quickly', async () => {
-      const embeddingIds = Array.from(
+      const salesRecords = Array.from(
         { length: 50 },
-        (_, i) => `emb${i}`
+        (_, i) => ({
+          embeddingId: `emb${i}`,
+          embeddingS3Key: `s3://test-bucket/embeddings/emb${i}.json`,
+        })
       );
       const mockEmbedding = new Array(1024).fill(0.5);
 
@@ -309,7 +346,7 @@ describe('EmbeddingStorageService', () => {
       });
 
       const startTime = Date.now();
-      const results = await service.fetchEmbeddingsBatch(embeddingIds);
+      const results = await service.fetchEmbeddingsBatch(salesRecords);
       const duration = Date.now() - startTime;
 
       expect(results.size).toBe(50);

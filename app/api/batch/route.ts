@@ -14,7 +14,7 @@ import {
   processImageFromBase64,
   createProcessResult,
 } from '@/lib/bedrock/image-processor';
-import { uploadProcessedImage, generateOutputKey } from '@/lib/s3/client';
+import { uploadProcessedImage, generateOutputKey, getOutputBucket } from '@/lib/s3/client';
 import {
   setBatchResult,
   getBatchResult,
@@ -70,8 +70,11 @@ async function processImage(
     const contentType = outputFormat === 'png' ? 'image/png' :
                        outputFormat === 'webp' ? 'image/webp' : 'image/jpeg';
 
+    // Get output bucket from config (priority: env var > SSM > default)
+    const outputBucket = await getOutputBucket(tenant);
+
     const outputUrl = await uploadProcessedImage(
-      config.s3.outputBucket,
+      outputBucket,
       outputKey,
       result.outputBuffer,
       contentType,

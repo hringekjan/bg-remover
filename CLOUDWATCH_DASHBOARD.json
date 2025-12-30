@@ -1,0 +1,434 @@
+{
+  "widgets": [
+    {
+      "type": "metric",
+      "x": 0,
+      "y": 0,
+      "width": 12,
+      "height": 6,
+      "properties": {
+        "metrics": [
+          [
+            "bg-remover/cache",
+            "CacheWriteSuccess",
+            {
+              "stat": "Sum",
+              "label": "Cache Write Success",
+              "color": "#2ca02c"
+            }
+          ],
+          [
+            ".",
+            "CacheWriteFailure",
+            {
+              "stat": "Sum",
+              "label": "Cache Write Failure",
+              "color": "#ff7f0e"
+            }
+          ],
+          [
+            ".",
+            "CacheWriteException",
+            {
+              "stat": "Sum",
+              "label": "Cache Write Exception",
+              "color": "#d62728"
+            }
+          ]
+        ],
+        "period": 300,
+        "stat": "Sum",
+        "region": "eu-west-1",
+        "title": "Cache Health - Write Operations",
+        "yAxis": {
+          "left": {
+            "min": 0
+          }
+        },
+        "legend": {
+          "position": "bottom"
+        }
+      }
+    },
+    {
+      "type": "metric",
+      "x": 12,
+      "y": 0,
+      "width": 12,
+      "height": 6,
+      "properties": {
+        "metrics": [
+          [
+            "AWS/Lambda",
+            "Duration",
+            {
+              "stat": "Average",
+              "label": "Avg Duration"
+            }
+          ],
+          [
+            "...",
+            {
+              "stat": "p50",
+              "label": "p50 Duration"
+            }
+          ],
+          [
+            "...",
+            {
+              "stat": "p95",
+              "label": "p95 Duration"
+            }
+          ],
+          [
+            "...",
+            {
+              "stat": "p99",
+              "label": "p99 Duration"
+            }
+          ],
+          [
+            "...",
+            {
+              "stat": "Maximum",
+              "label": "Max Duration"
+            }
+          ]
+        ],
+        "period": 300,
+        "stat": "Average",
+        "region": "eu-west-1",
+        "title": "Lambda Performance - Duration (All Functions)",
+        "yAxis": {
+          "left": {
+            "min": 0
+          }
+        },
+        "legend": {
+          "position": "bottom"
+        }
+      }
+    },
+    {
+      "type": "metric",
+      "x": 0,
+      "y": 6,
+      "width": 12,
+      "height": 6,
+      "properties": {
+        "metrics": [
+          [
+            "AWS/Lambda",
+            "Errors",
+            {
+              "stat": "Sum",
+              "label": "Errors"
+            }
+          ],
+          [
+            ".",
+            "Invocations",
+            {
+              "stat": "Sum",
+              "label": "Total Invocations"
+            }
+          ]
+        ],
+        "period": 300,
+        "stat": "Sum",
+        "region": "eu-west-1",
+        "title": "Lambda Error Rate",
+        "yAxis": {
+          "left": {
+            "min": 0
+          }
+        },
+        "legend": {
+          "position": "bottom"
+        }
+      }
+    },
+    {
+      "type": "metric",
+      "x": 12,
+      "y": 6,
+      "width": 12,
+      "height": 6,
+      "properties": {
+        "metrics": [
+          [
+            "AWS/DynamoDB",
+            "ConsumedWriteCapacityUnits",
+            {
+              "stat": "Sum",
+              "label": "DynamoDB Write Capacity"
+            }
+          ],
+          [
+            ".",
+            "ConsumedReadCapacityUnits",
+            {
+              "stat": "Sum",
+              "label": "DynamoDB Read Capacity"
+            }
+          ]
+        ],
+        "period": 300,
+        "stat": "Sum",
+        "region": "eu-west-1",
+        "title": "DynamoDB Capacity Usage",
+        "yAxis": {
+          "left": {
+            "min": 0
+          }
+        },
+        "legend": {
+          "position": "bottom"
+        }
+      }
+    },
+    {
+      "type": "metric",
+      "x": 0,
+      "y": 12,
+      "width": 12,
+      "height": 6,
+      "properties": {
+        "metrics": [
+          [
+            "AWS/SQS",
+            "ApproximateNumberOfMessagesVisible",
+            {
+              "stat": "Maximum",
+              "label": "DLQ Depth - Carousel Sync",
+              "color": "#d62728"
+            }
+          ]
+        ],
+        "period": 300,
+        "stat": "Maximum",
+        "region": "eu-west-1",
+        "title": "Dead Letter Queue Health",
+        "yAxis": {
+          "left": {
+            "min": 0,
+            "max": 10
+          }
+        }
+      }
+    },
+    {
+      "type": "metric",
+      "x": 12,
+      "y": 12,
+      "width": 12,
+      "height": 6,
+      "properties": {
+        "metrics": [
+          [
+            "AWS/Lambda",
+            "Duration",
+            {
+              "dimensions": {
+                "FunctionName": "bg-remover-dev-process"
+              },
+              "stat": "Average",
+              "label": "process - Avg"
+            }
+          ],
+          [
+            "...",
+            {
+              "stat": "Maximum"
+            }
+          ],
+          [
+            "AWS/Lambda",
+            "Duration",
+            {
+              "dimensions": {
+                "FunctionName": "bg-remover-dev-groupImages"
+              },
+              "stat": "Average",
+              "label": "groupImages - Avg"
+            }
+          ],
+          [
+            "...",
+            {
+              "stat": "Maximum"
+            }
+          ],
+          [
+            "AWS/Lambda",
+            "Duration",
+            {
+              "dimensions": {
+                "FunctionName": "bg-remover-dev-processWorker"
+              },
+              "stat": "Average",
+              "label": "processWorker - Avg"
+            }
+          ],
+          [
+            "...",
+            {
+              "stat": "Maximum"
+            }
+          ]
+        ],
+        "period": 300,
+        "stat": "Average",
+        "region": "eu-west-1",
+        "title": "Lambda Duration by Function",
+        "yAxis": {
+          "left": {
+            "min": 0
+          }
+        },
+        "legend": {
+          "position": "bottom"
+        }
+      }
+    },
+    {
+      "type": "metric",
+      "x": 0,
+      "y": 18,
+      "width": 12,
+      "height": 6,
+      "properties": {
+        "metrics": [
+          [
+            "AWS/Lambda",
+            "Errors",
+            {
+              "dimensions": {
+                "FunctionName": "bg-remover-dev-process"
+              },
+              "stat": "Sum",
+              "label": "process"
+            }
+          ],
+          [
+            "AWS/Lambda",
+            "Errors",
+            {
+              "dimensions": {
+                "FunctionName": "bg-remover-dev-groupImages"
+              },
+              "stat": "Sum",
+              "label": "groupImages"
+            }
+          ],
+          [
+            "AWS/Lambda",
+            "Errors",
+            {
+              "dimensions": {
+                "FunctionName": "bg-remover-dev-processWorker"
+              },
+              "stat": "Sum",
+              "label": "processWorker"
+            }
+          ],
+          [
+            "AWS/Lambda",
+            "Errors",
+            {
+              "dimensions": {
+                "FunctionName": "bg-remover-dev-createProducts"
+              },
+              "stat": "Sum",
+              "label": "createProducts"
+            }
+          ]
+        ],
+        "period": 300,
+        "stat": "Sum",
+        "region": "eu-west-1",
+        "title": "Lambda Errors by Function",
+        "yAxis": {
+          "left": {
+            "min": 0
+          }
+        }
+      }
+    },
+    {
+      "type": "metric",
+      "x": 12,
+      "y": 18,
+      "width": 12,
+      "height": 6,
+      "properties": {
+        "metrics": [
+          [
+            "AWS/Lambda",
+            "ConcurrentExecutions",
+            {
+              "stat": "Maximum",
+              "label": "Max Concurrent Executions"
+            }
+          ],
+          [
+            ".",
+            "Throttles",
+            {
+              "stat": "Sum",
+              "label": "Throttles"
+            }
+          ]
+        ],
+        "period": 300,
+        "stat": "Sum",
+        "region": "eu-west-1",
+        "title": "Lambda Concurrency & Throttles",
+        "yAxis": {
+          "left": {
+            "min": 0
+          }
+        }
+      }
+    },
+    {
+      "type": "log",
+      "x": 0,
+      "y": 24,
+      "width": 24,
+      "height": 6,
+      "properties": {
+        "query": "fields @timestamp, @message, @duration, @memoryUsed\n| filter @message like /ERROR|Exception|Fail/ or ispresent(@duration) and @duration > 25000\n| sort @timestamp desc\n| limit 50",
+        "region": "eu-west-1",
+        "title": "Recent Errors & Performance Issues (Last 50)",
+        "queryId": "bg-remover-errors-query"
+      }
+    },
+    {
+      "type": "log",
+      "x": 0,
+      "y": 30,
+      "width": 12,
+      "height": 6,
+      "properties": {
+        "query": "fields @timestamp, @message\n| filter @message like /CacheWriteFailure|CacheWriteException/\n| stats count() as failure_count by @message\n| sort failure_count desc",
+        "region": "eu-west-1",
+        "title": "Cache Failures - Top Issues",
+        "queryId": "cache-failures-query"
+      }
+    },
+    {
+      "type": "log",
+      "x": 12,
+      "y": 30,
+      "width": 12,
+      "height": 6,
+      "properties": {
+        "query": "fields @timestamp, @duration, functionName\n| filter ispresent(@duration)\n| stats pct(@duration, 50) as p50, pct(@duration, 95) as p95, pct(@duration, 99) as p99 by functionName",
+        "region": "eu-west-1",
+        "title": "Lambda Duration Percentiles by Function",
+        "queryId": "duration-percentiles-query"
+      }
+    }
+  ]
+}

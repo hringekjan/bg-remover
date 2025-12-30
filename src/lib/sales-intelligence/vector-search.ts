@@ -98,6 +98,7 @@ export class VectorSearchService {
   private salesRepository: SalesRepository;
   private embeddingStorage: EmbeddingStorageService;
   private logger: Logger;
+  private tenantId: string;
   private metrics: VectorSearchMetrics = {
     dynamoDbMs: 0,
     s3FetchMs: 0,
@@ -114,6 +115,8 @@ export class VectorSearchService {
     tableName?: string;
     region?: string;
     logger?: Logger;
+    salesRepository?: SalesRepository;
+    embeddingStorage?: EmbeddingStorageService;
   }) {
     const {
       tenantId,
@@ -122,22 +125,29 @@ export class VectorSearchService {
       tableName,
       region = 'eu-west-1',
       logger,
+      salesRepository,
+      embeddingStorage,
     } = options;
 
+    this.tenantId = tenantId;
     this.logger = logger || new Logger({ serviceName: 'VectorSearch' });
 
-    // Initialize repository and storage
-    this.salesRepository = new SalesRepository({
-      tableName:
-        tableName || `bg-remover-${stage}-sales-intelligence`,
-      region,
-      logger: this.logger,
-    });
+    // Initialize repository and storage (use injected or create new)
+    this.salesRepository =
+      salesRepository ||
+      new SalesRepository({
+        tableName:
+          tableName || `bg-remover-${stage}-sales-intelligence`,
+        region,
+        logger: this.logger,
+      });
 
-    this.embeddingStorage = new EmbeddingStorageService(
-      embeddingsBucket,
-      { region, logger: this.logger }
-    );
+    this.embeddingStorage =
+      embeddingStorage ||
+      new EmbeddingStorageService(embeddingsBucket, {
+        region,
+        logger: this.logger,
+      });
 
     this.logger.info('VectorSearchService initialized', {
       tenant: tenantId,
@@ -202,9 +212,12 @@ export class VectorSearchService {
 
       // Phase 2: Fetch embeddings from S3 in parallel batches
       const phase2Start = Date.now();
-      const embeddingIds = salesMetadata.map((s) => s.embeddingId);
+      const salesWithMetadata = salesMetadata.map((s) => ({
+        embeddingId: s.embeddingId,
+        embeddingS3Key: s.embeddingS3Key,
+      }));
       const embeddings = await this.embeddingStorage.fetchEmbeddingsBatch(
-        embeddingIds
+        salesWithMetadata
       );
       const phase2Ms = Date.now() - phase2Start;
       this.metrics.s3FetchMs = phase2Ms;
@@ -212,7 +225,7 @@ export class VectorSearchService {
       this.logger.info('Phase 2: S3 embedding fetch complete', {
         duration: phase2Ms,
         fetched: embeddings.size,
-        failed: embeddingIds.length - embeddings.size,
+        failed: salesWithMetadata.length - embeddings.size,
       });
 
       // Phase 3: Calculate cosine similarity
@@ -272,6 +285,7 @@ export class VectorSearchService {
    * Query recent sales metadata from DynamoDB
    *
    * Uses GSI-2 to efficiently find sales from the last N days.
+   * Queries all 5 embedding shards in parallel to collect candidates.
    *
    * @param daysBack - Number of days back to search
    * @param category - Optional category filter
@@ -284,22 +298,26 @@ export class VectorSearchService {
     limit: number = 100
   ): Promise<SalesRecord[]> {
     try {
-      // For now, we'll use a generic query approach
-      // In production, this would use GSI-2 with date filtering
-      // GSI2PK = TENANT#{tenantId}#EMBEDDING_ACTIVE
-      // GSI2SK = DATE#{saleDate}
-
       const cutoffDate = new Date(Date.now() - daysBack * 24 * 60 * 60 * 1000);
       const cutoffDateStr = cutoffDate.toISOString().split('T')[0]; // YYYY-MM-DD
 
-      // Note: This is a simplified implementation
-      // In production, you'd use queryCategorySeason or create a specialized query method
-      const results = await this.salesRepository.queryCategorySeason(
-        '', // tenant would come from context
-        category || 'all',
-        undefined,
-        cutoffDateStr
+      // Query GSI-2 across all 5 embedding shards in parallel
+      const shardPromises = Array.from({ length: 5 }, (_, shard) =>
+        this.salesRepository.queryGSI2Shard(
+          this.tenantId,
+          shard,
+          cutoffDateStr,
+          Math.ceil(limit / 5)
+        )
       );
+
+      const shardResults = await Promise.all(shardPromises);
+      let results = shardResults.flat();
+
+      // Apply category filter if specified
+      if (category && category !== 'all') {
+        results = results.filter((r) => r.category === category);
+      }
 
       return results.slice(0, limit);
     } catch (error) {

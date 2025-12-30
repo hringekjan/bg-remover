@@ -93,27 +93,29 @@ export class EmbeddingStorageService {
    * - 100 embeddings = 10 parallel S3 calls (vs 100 sequential)
    * - ~10ms per embedding in batch mode (vs 50-100ms sequential)
    *
-   * @param embeddingIds - Array of embedding IDs to fetch
+   * @param salesRecords - Array of sales records with embeddingId and embeddingS3Key
    * @returns Map of embedding ID to embedding vector (1024-dim)
    */
-  async fetchEmbeddingsBatch(embeddingIds: string[]): Promise<Map<string, number[]>> {
+  async fetchEmbeddingsBatch(
+    salesRecords: Pick<{ embeddingId: string; embeddingS3Key: string }, 'embeddingId' | 'embeddingS3Key'>[]
+  ): Promise<Map<string, number[]>> {
     const startTime = Date.now();
-    this.metrics.requested = embeddingIds.length;
+    this.metrics.requested = salesRecords.length;
     const results = new Map<string, number[]>();
 
-    if (embeddingIds.length === 0) {
+    if (salesRecords.length === 0) {
       return results;
     }
 
     try {
       // Split into batches of 10
-      const batches: string[][] = [];
-      for (let i = 0; i < embeddingIds.length; i += this.batchSize) {
-        batches.push(embeddingIds.slice(i, i + this.batchSize));
+      const batches: typeof salesRecords[] = [];
+      for (let i = 0; i < salesRecords.length; i += this.batchSize) {
+        batches.push(salesRecords.slice(i, i + this.batchSize));
       }
 
       this.logger.info('Starting embedding batch fetch', {
-        total: embeddingIds.length,
+        total: salesRecords.length,
         batches: batches.length,
         batchSize: this.batchSize,
       });
@@ -140,7 +142,7 @@ export class EmbeddingStorageService {
       }
 
       this.metrics.fetched = results.size;
-      this.metrics.failed = embeddingIds.length - results.size;
+      this.metrics.failed = salesRecords.length - results.size;
       this.metrics.durationMs = Date.now() - startTime;
 
       this.logger.info('Embedding batch fetch complete', {
@@ -154,35 +156,38 @@ export class EmbeddingStorageService {
     } catch (error) {
       this.logger.error('Failed to fetch embedding batch', {
         error,
-        requested: embeddingIds.length,
+        requested: salesRecords.length,
       });
       throw error;
     }
   }
 
   /**
-   * Process a single batch of embedding IDs
+   * Process a single batch of sales records
    *
-   * @param embeddingIds - Array of embedding IDs in this batch
+   * @param salesRecords - Array of sales records with embeddingId and embeddingS3Key
    * @returns Map of embedding ID to embedding vector
    */
   private async processBatch(
-    embeddingIds: string[]
+    salesRecords: Pick<{ embeddingId: string; embeddingS3Key: string }, 'embeddingId' | 'embeddingS3Key'>[]
   ): Promise<Map<string, number[]>> {
     const results = new Map<string, number[]>();
 
-    const promises = embeddingIds.map((id) => this.fetchEmbeddingWithRetry(id));
+    const promises = salesRecords.map((record) =>
+      this.fetchEmbeddingWithRetry(record.embeddingId, record.embeddingS3Key)
+    );
     const fetchResults = await Promise.allSettled(promises);
 
     for (let i = 0; i < fetchResults.length; i++) {
-      const embeddingId = embeddingIds[i];
+      const record = salesRecords[i];
       const result = fetchResults[i];
 
       if (result.status === 'fulfilled' && result.value !== null) {
-        results.set(embeddingId, result.value);
+        results.set(record.embeddingId, result.value);
       } else if (result.status === 'rejected') {
         this.logger.warn('Failed to fetch embedding', {
-          embeddingId,
+          embeddingId: record.embeddingId,
+          s3Key: record.embeddingS3Key,
           error: result.reason,
         });
       }
@@ -197,14 +202,24 @@ export class EmbeddingStorageService {
    * Implements exponential backoff: 100ms, 200ms, 400ms
    *
    * @param embeddingId - Embedding ID to fetch
+   * @param s3Key - S3 key to fetch from (e.g., s3://bucket/path/to/embedding.json)
    * @returns Embedding vector or null on failure
    */
   private async fetchEmbeddingWithRetry(
-    embeddingId: string
+    embeddingId: string,
+    s3Key: string
   ): Promise<number[] | null> {
     for (let attempt = 0; attempt < this.retryAttempts; attempt++) {
       try {
-        const key = `embeddings/${embeddingId}.json`;
+        // Parse S3 key: s3://bucket/key/path or just key/path
+        let key = s3Key;
+        if (s3Key.startsWith('s3://')) {
+          // Remove s3://bucket/ prefix if present
+          const match = s3Key.match(/^s3:\/\/[^/]+\/(.+)$/);
+          if (match) {
+            key = match[1];
+          }
+        }
 
         const command = new GetObjectCommand({
           Bucket: this.bucketName,
@@ -214,7 +229,7 @@ export class EmbeddingStorageService {
         const response = await this.s3Client.send(command);
 
         if (!response.Body) {
-          this.logger.warn('Empty response from S3', { embeddingId });
+          this.logger.warn('Empty response from S3', { embeddingId, s3Key });
           return null;
         }
 
@@ -224,6 +239,7 @@ export class EmbeddingStorageService {
         if (!Array.isArray(embedding)) {
           this.logger.warn('Invalid embedding format', {
             embeddingId,
+            s3Key,
             type: typeof embedding,
           });
           return null;
@@ -232,6 +248,7 @@ export class EmbeddingStorageService {
         if (embedding.length !== 1024) {
           this.logger.warn('Unexpected embedding dimension', {
             embeddingId,
+            s3Key,
             dimension: embedding.length,
           });
           return null;
@@ -248,6 +265,7 @@ export class EmbeddingStorageService {
 
         this.logger.warn('Failed to fetch embedding after retries', {
           embeddingId,
+          s3Key,
           attempts: this.retryAttempts,
           error,
         });

@@ -18,7 +18,8 @@ import type {
   SimilarityScore
 } from '../types/product-identity-settings';
 
-interface ImageData {
+// Rename to avoid conflict with browser's native ImageData type
+interface ProductImage {
   id: string;
   url: string;
   features?: ImageFeatures;
@@ -36,7 +37,7 @@ export class ProductIdentityService {
   /**
    * Group images by product identity
    */
-  async groupImages(images: ImageData[]): Promise<GroupingResult> {
+  async groupImages(images: ProductImage[]): Promise<GroupingResult> {
     const startTime = Date.now();
     let cacheHits = 0;
 
@@ -91,7 +92,7 @@ export class ProductIdentityService {
    * Build similarity graph using multi-signal detection
    */
   private async buildSimilarityGraph(
-    images: (ImageData & { features: ImageFeatures })[]
+    images: (ProductImage & { features: ImageFeatures })[]
   ): Promise<Map<string, Map<string, number>>> {
     const similarityMap = new Map<string, Map<string, number>>();
 
@@ -124,8 +125,8 @@ export class ProductIdentityService {
    * Calculate overall similarity using weighted signals
    */
   private async calculateSimilarity(
-    imgA: ImageData & { features: ImageFeatures },
-    imgB: ImageData & { features: ImageFeatures }
+    imgA: ProductImage & { features: ImageFeatures },
+    imgB: ProductImage & { features: ImageFeatures }
   ): Promise<number> {
     const weights = this.settings.signalWeights;
 
@@ -335,7 +336,7 @@ export class ProductIdentityService {
    * Find connected components using DFS
    */
   private findConnectedComponents(
-    images: ImageData[],
+    images: ProductImage[],
     similarityMap: Map<string, Map<string, number>>
   ): ProductGroup[] {
     const visited = new Set<string>();

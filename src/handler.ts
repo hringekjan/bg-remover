@@ -21,7 +21,7 @@ import {
   processImageFromUrl,
   processImageFromBase64,
 } from './lib/bedrock/image-processor';
-import { uploadProcessedImage, generateOutputKey } from './lib/s3/client';
+import { uploadProcessedImage, generateOutputKey, getOutputBucket } from '../lib/s3/client';
 import { EventBridgeClient, PutEventsCommand } from '@aws-sdk/client-eventbridge';
 import { validateJWTFromEvent } from './lib/auth/jwt-validator';
 import { SSMClient, GetParameterCommand, PutParameterCommand } from '@aws-sdk/client-ssm';
@@ -64,6 +64,7 @@ interface HealthResponse {
     name: string;
     status: 'pass' | 'fail';
     message?: string;
+    details?: Record<string, any>;
   }[];
 }
 
@@ -116,6 +117,40 @@ export const health = async (event: any) => {
       name: 'environment',
       status: 'fail',
       message: `Missing: ${missingEnvVars.join(', ')}`,
+    });
+  }
+
+  // Check cache connectivity
+  try {
+    const { getCacheManager, getAllCacheStats } = await import('./lib/cache/cache-manager');
+    const tenantId = global.process.env.TENANT || 'carousel-labs';
+    const cacheServiceUrl = global.process.env.CACHE_SERVICE_URL;
+
+    const cacheManager = getCacheManager({
+      tenantId,
+      cacheServiceUrl,
+      enableCacheService: !!cacheServiceUrl && !!tenantId,
+      enableMemoryCache: true,
+    });
+
+    const stats = cacheManager.getStats();
+    const allStats = getAllCacheStats(); // All tenant cache managers
+
+    checks.push({
+      name: 'cache',
+      status: 'pass',
+      message: `Memory: ${stats.memory.entries} entries, Cache Service: ${stats.cacheService.available ? `available (${stats.cacheService.state})` : 'unavailable'}`,
+      details: {
+        tenantManagers: Object.keys(allStats).length,
+        cacheServiceAvailable: stats.cacheService.available || false,
+        circuitBreakerState: stats.cacheService.state || 'unknown',
+      },
+    });
+  } catch (error) {
+    checks.push({
+      name: 'cache',
+      status: 'fail',
+      message: error instanceof Error ? error.message : 'Cache check failed',
     });
   }
 
@@ -770,9 +805,15 @@ export const settings = async (event: any) => {
   const httpMethod = event.requestContext?.http?.method || 'GET';
   const stage = global.process.env.STAGE || 'dev';
 
-  // Extract tenant from host header (e.g., api.dev.carousellabs.co -> carousel-labs)
-  const host = event.headers?.host || '';
-  const tenant = host.includes('carousellabs') ? 'carousel-labs' : 'hringekjan';
+  // Resolve tenant using proper tenant resolution logic
+  const { resolveTenantFromRequest } = await import('./lib/tenant/resolver');
+  const tenant = await resolveTenantFromRequest(event, stage);
+
+  console.log('Resolved tenant for settings request', {
+    tenant,
+    host: event.headers?.host,
+    requestId,
+  });
 
   // Handle OPTIONS preflight
   if (httpMethod === 'OPTIONS') {
@@ -787,7 +828,18 @@ export const settings = async (event: any) => {
   // Settings endpoint requires authentication (sensitive configuration)
   const requireAuth = stage === 'prod' || global.process.env.REQUIRE_AUTH === 'true';
 
-  const authResult = await validateJWTFromEvent(event, undefined, {
+  // Load tenant-specific Cognito configuration for JWT validation
+  const { loadTenantCognitoConfig } = await import('./lib/tenant/cognito-config');
+  const cognitoConfig = await loadTenantCognitoConfig(tenant, stage);
+
+  console.log('Loaded Cognito config for tenant', {
+    tenant,
+    userPoolId: cognitoConfig.userPoolId,
+    issuer: cognitoConfig.issuer,
+    requestId,
+  });
+
+  const authResult = await validateJWTFromEvent(event, cognitoConfig, {
     required: requireAuth
   });
 
@@ -991,3 +1043,23 @@ export const settings = async (event: any) => {
 
   return createErrorResponse(ErrorCode.METHOD_NOT_ALLOWED, 'Method not allowed', undefined, requestId);
 };
+
+/**
+ * Process Worker - Background image processing
+ *
+ * This is imported from the new async pattern handlers.
+ * It's exported here to maintain compatibility with serverless.yml
+ */
+// Commented out to prevent loading Next.js dependencies at Lambda init
+// Each handler has its own entry file in src/handlers/
+// export { processWorker } from './handlers/process-worker-handler';
+
+/**
+ * Create Products - Multi-image product creation endpoint
+ *
+ * Processes image groups, uploads to S3, and creates products in carousel-api.
+ * Connects the existing BulkUploadWizard UI to product creation.
+ */
+// Commented out to prevent loading Next.js dependencies at Lambda init
+// Each handler has its own entry file in src/handlers/
+// export { createProducts } from './handlers/create-products-handler';

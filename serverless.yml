@@ -374,10 +374,11 @@ functions:
       MEM0_API_URL: ${ssm:/tf/${self:provider.stage}/platform/mem0/api-url, ''}
       MEM0_API_KEY: ${ssm:/tf/${self:provider.stage}/${env:TENANT, 'carousel-labs'}/services/bg-remover/mem0-api-key, ''}
     events:
-      - schedule: cron(0 2 ? * SUN *)  # Every Sunday at 2 AM UTC
-        name: ${self:service}-${self:provider.stage}-weekly-pricing-insights
-        description: Weekly seasonal pattern analysis
-        enabled: true
+      - schedule:
+          rate: cron(0 2 ? * SUN *)
+          name: ${self:service}-${self:provider.stage}-weekly-pricing-insights
+          description: Weekly seasonal pattern analysis
+          enabled: true
     # Add DynamoDB read permissions for sales intelligence table
     iamRoleStatements:
       - Effect: Allow

@@ -68,15 +68,22 @@ export class HealthHandler extends BaseHandler {
       });
     }
 
+    console.log('Environment check complete, checks so far:', checks.length);
+
     // Check cache connectivity
+    console.log('Starting cache check...');
     try {
+      console.log('Getting cache manager stats...');
       const stats = this.context.cacheManager.getStats();
+      console.log('Cache stats retrieved:', JSON.stringify(stats, null, 2));
       checks.push({
         name: 'cache',
         status: 'pass',
-        message: `Memory: ${stats.memory.entries} entries, Redis: ${stats.redis.connected ? 'connected' : 'disconnected'}`
+        message: `Memory: ${stats.memory.entries} entries, Cache Service: ${stats.cacheService.available ? `available (${stats.cacheService.state})` : 'unavailable'}`
       });
+      console.log('Cache check passed');
     } catch (error) {
+      console.error('Cache check error:', error);
       checks.push({
         name: 'cache',
         status: 'fail',

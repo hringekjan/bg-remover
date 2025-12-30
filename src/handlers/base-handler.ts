@@ -10,8 +10,17 @@ export class BaseHandler {
   protected context: HandlerContext;
 
   constructor() {
+    // Initialize cache manager with tenant and cache-service config
+    const tenantId = process.env.TENANT || 'carousel-labs';
+    const cacheServiceUrl = process.env.CACHE_SERVICE_URL;
+
     this.context = {
-      cacheManager: getCacheManager(),
+      cacheManager: getCacheManager({
+        tenantId,
+        cacheServiceUrl,
+        enableCacheService: !!cacheServiceUrl && !!tenantId,
+        enableMemoryCache: true,
+      }),
       stage: process.env.STAGE || 'dev',
       region: process.env.AWS_REGION || 'eu-west-1',
     };
@@ -41,7 +50,7 @@ export class BaseHandler {
     return {
       'Access-Control-Allow-Origin': '*',
       'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Tenant-Id',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Tenant-Id, Cache-Control, Pragma, Expires',
       ...additionalHeaders,
     };
   }

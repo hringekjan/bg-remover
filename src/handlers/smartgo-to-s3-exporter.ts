@@ -647,13 +647,13 @@ async function writeToS3Tables(
     const expirationDate = new Date();
     expirationDate.setDate(expirationDate.getDate() + 7);
 
-    // Write to S3 as Parquet binary
+    // Write to S3 as JSONL (newline-delimited JSON)
     await s3.send(
       new PutObjectCommand({
         Bucket: bucket,
         Key: key,
         Body: buffer,
-        ContentType: 'application/parquet',
+        ContentType: 'application/json',
         ServerSideEncryption: 'AES256',
         Expires: expirationDate, // 7 day expiration for cleanup
         Metadata: {

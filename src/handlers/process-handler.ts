@@ -1,31 +1,36 @@
 import { BaseHandler } from './base-handler';
 import { randomUUID } from 'crypto';
-import { z } from 'zod';
-import {
-  ProcessRequestSchema,
-  JobStatusParamsSchema,
-  type ProcessResult,
-  type ProductDescription,
-  type MultilingualProductDescription,
-  type BilingualProductDescription,
-  createProcessResult
-} from '../lib/types';
-import { languageManager } from '../lib/language-manager';
-import { multilingualDescriptionGenerator } from '../lib/multilingual-description';
-import { validateRequest, validatePathParams, ValidationError } from '../lib/validation';
-import { resolveTenantFromRequest, loadTenantConfig } from '../lib/tenant/resolver';
-import {
-  processImageFromUrl,
-  processImageFromBase64,
-} from '../lib/bedrock/image-processor';
-import { uploadProcessedImage, generateOutputKey } from '../lib/s3/client';
-import { EventBridgeClient, PutEventsCommand } from '@aws-sdk/client-eventbridge';
+import { DynamoDBClient, PutItemCommand } from '@aws-sdk/client-dynamodb';
+import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
+import { marshall } from '@aws-sdk/util-dynamodb';
+import { ProcessRequestSchema } from '../lib/types';
+import { validateRequest } from '../lib/validation';
+import { resolveTenantFromRequest } from '../lib/tenant/resolver';
 import { validateJWTFromEvent } from '../lib/auth/jwt-validator';
-import { validateAndDebitCredits, refundCredits } from '../lib/credits/client';
+import { loadTenantCognitoConfig } from '../lib/tenant/cognito-config';
+import { validateAndDebitCredits } from '../lib/credits/client';
 
+const dynamoDB = new DynamoDBClient({});
+const lambda = new LambdaClient({});
+const tableName = global.process.env.BG_REMOVER_TABLE_NAME!;
+const workerFunctionName = global.process.env.WORKER_FUNCTION_NAME!;
+
+/**
+ * Process Handler - Async Job Coordinator
+ *
+ * This handler accepts image processing requests, validates them,
+ * debits credits, creates a job in DynamoDB, and invokes the worker
+ * Lambda asynchronously. Returns 202 Accepted immediately.
+ *
+ * Key improvements:
+ * - No HTTP API Gateway timeout (30s) constraints
+ * - Immediate response to client (<2s)
+ * - Worker can process for up to 15 minutes
+ * - Client polls /status/{jobId} for results
+ */
 export class ProcessHandler extends BaseHandler {
   async handle(event: any): Promise<any> {
-    console.log('Process function called with event:', JSON.stringify(event, null, 2));
+    console.log('Process function called (async pattern)', JSON.stringify(event, null, 2));
     const httpMethod = event.requestContext?.http?.method || event.httpMethod;
 
     if (httpMethod === 'OPTIONS') {
@@ -38,20 +43,70 @@ export class ProcessHandler extends BaseHandler {
       return this.createErrorResponse('Method Not Allowed', 405);
     }
 
-    // ===== JWT AUTHENTICATION =====
-    // Validate JWT token (optional in dev mode, required in prod)
     const stage = this.context.stage;
-    const requireAuth = stage === 'prod' || process.env.REQUIRE_AUTH === 'true';
+    const jobId = randomUUID();
 
-    const authResult = await validateJWTFromEvent(event, undefined, {
+    // ===== TENANT RESOLUTION (BEFORE AUTH) =====
+    // Resolve tenant from request (header, domain, JWT claims, or default)
+    const tenant = await resolveTenantFromRequest(event, stage);
+
+    // Log request context for debugging
+    console.log('[ProcessHandler] 📋 Request context:', {
+      tenant,
+      stage,
+      requireAuth: stage === 'prod' || global.process.env.REQUIRE_AUTH === 'true',
+      host: event.headers?.host,
+      path: event.requestContext?.http?.path,
+      hasAuthHeader: !!event.headers?.authorization,
+      jobId,
+      timestamp: new Date().toISOString(),
+    });
+
+    // ===== JWT AUTHENTICATION (WITH TENANT-SPECIFIC CONFIG) =====
+    const requireAuth = stage === 'prod' || global.process.env.REQUIRE_AUTH === 'true';
+
+    // Load tenant-specific Cognito configuration for JWT validation
+    let cognitoConfig;
+    try {
+      cognitoConfig = await loadTenantCognitoConfig(tenant, stage);
+
+      console.log('[ProcessHandler] 🔐 Cognito config loaded:', {
+        tenant,
+        userPoolId: cognitoConfig.userPoolId,
+        issuer: cognitoConfig.issuer,
+        jobId,
+      });
+    } catch (error) {
+      console.error('[ProcessHandler] ❌ Failed to load tenant Cognito config:', {
+        tenant,
+        error: error instanceof Error ? error.message : String(error),
+        jobId,
+      });
+      // Re-throw the error - loadTenantCognitoConfig now fails fast in prod
+      throw error;
+    }
+
+    const authResult = await validateJWTFromEvent(event, cognitoConfig, {
       required: requireAuth
+    });
+
+    console.log('[ProcessHandler] Authentication result:', {
+      isValid: authResult.isValid,
+      hasUserId: !!authResult.userId,
+      userId: authResult.userId,
+      error: authResult.error,
+      requireAuth,
+      tenant,
+      jobId,
     });
 
     if (!authResult.isValid && requireAuth) {
       console.warn('Authentication failed', {
         error: authResult.error,
+        tenant,
         stage,
         path: event.requestContext?.http?.path,
+        jobId,
       });
 
       return this.createErrorResponse('Valid JWT token required', 401, {
@@ -64,25 +119,13 @@ export class ProcessHandler extends BaseHandler {
         userId: authResult.userId,
         email: authResult.email,
         groups: authResult.groups,
-      });
-    } else {
-      console.info('Unauthenticated request (dev mode)', {
-        stage,
-        requireAuth,
-        path: event.requestContext?.http?.path,
+        tenant,
+        jobId,
       });
     }
     // ===== END JWT AUTHENTICATION =====
 
-    const processingStartTime = Date.now();
-    const jobId = randomUUID();
-
-    // Resolve tenant from request (header, domain, or default)
-    const tenant = await resolveTenantFromRequest(event, stage);
-
-    // Track credit transaction for potential refund on failure
-    let creditTransactionId: string | undefined;
-    let creditsDebited = false;
+    const userId = authResult.userId || 'anonymous';
 
     try {
       // Parse and validate request body
@@ -90,7 +133,9 @@ export class ProcessHandler extends BaseHandler {
       try {
         body = JSON.parse(event.body || '{}');
       } catch (error) {
-        console.warn('Invalid JSON in request body', { error: error instanceof Error ? error.message : String(error) });
+        console.warn('Invalid JSON in request body', {
+          error: error instanceof Error ? error.message : String(error)
+        });
         return this.createErrorResponse('Request body must be valid JSON', 400);
       }
 
@@ -108,40 +153,20 @@ export class ProcessHandler extends BaseHandler {
       }
 
       const validatedRequest = validation.data!;
+      const { productId } = validatedRequest;
 
-      const {
-        imageUrl,
-        imageBase64,
-        outputFormat,
-        quality,
-        productId,
-        autoTrim,
-        centerSubject,
-        enhanceColors,
-        targetWidth,
-        targetHeight,
-        generateDescription,
-        productName,
-        languages = ['en', 'is'],
-        generatePriceSuggestion = false,
-        generateRatingSuggestion = false,
-      } = validatedRequest;
-
-      console.info('Processing image request', {
+      console.info('Creating async job', {
         jobId,
         tenant,
+        userId,
         productId,
-        hasUrl: !!imageUrl,
-        hasBase64: !!imageBase64,
-        outputFormat,
-        quality,
+        hasUrl: !!validatedRequest.imageUrl,
+        hasBase64: !!validatedRequest.imageBase64,
       });
 
       // ===== CREDITS VALIDATION =====
-      // Validate and debit credits before processing (1 credit per image)
-      // Only require credits for authenticated requests in production
-      const userId = authResult.userId || 'anonymous';
-      const creditsRequired = stage === 'prod' || process.env.REQUIRE_CREDITS === 'true';
+      const creditsRequired = stage === 'prod' || global.process.env.REQUIRE_CREDITS === 'true';
+      let creditTransactionId: string | undefined;
 
       if (creditsRequired && authResult.isValid && authResult.userId) {
         console.info('Validating credits', {
@@ -175,9 +200,7 @@ export class ProcessHandler extends BaseHandler {
           );
         }
 
-        // Track successful debit for potential refund
         creditTransactionId = creditResult.transactionId;
-        creditsDebited = true;
 
         console.info('Credits debited successfully', {
           jobId,
@@ -187,277 +210,70 @@ export class ProcessHandler extends BaseHandler {
           newBalance: creditResult.newBalance,
           transactionId: creditResult.transactionId,
         });
-      } else if (!creditsRequired) {
-        console.info('Credits not required (dev mode)', {
-          jobId,
-          tenant,
-          stage,
-          requireCredits: creditsRequired,
-        });
       }
       // ===== END CREDITS VALIDATION =====
 
-      // Load tenant-specific configuration
-      const config = await loadTenantConfig(tenant, stage);
+      // Create job record in DynamoDB
+      const pk = `TENANT#${tenant}#JOB`;
+      const sk = `JOB#${jobId}`;
+      const now = new Date().toISOString();
+      const ttl = Math.floor(Date.now() / 1000) + (7 * 24 * 60 * 60); // 7 days
 
-      // Process the image
-      let result: {
-        outputBuffer: Buffer;
-        metadata: {
-          width: number;
-          height: number;
-          originalSize: number;
-          processedSize: number;
-        };
-        productDescription?: ProductDescription;
-        multilingualDescription?: MultilingualProductDescription;
-        bilingualDescription?: BilingualProductDescription; // Backwards compatibility
-      };
-
-      const processingOptions = {
-        format: outputFormat,
-        quality,
-        autoTrim,
-        centerSubject,
-        enhanceColors,
-        targetSize: targetWidth && targetHeight ? { width: targetWidth, height: targetHeight } : undefined,
-        generateDescription,
-        productName,
-      };
-
-      if (imageUrl) {
-        result = await processImageFromUrl(imageUrl, processingOptions, tenant);
-      } else if (imageBase64) {
-        result = await processImageFromBase64(imageBase64, 'image/png', processingOptions, tenant);
-      } else {
-        return this.createErrorResponse('No image provided', 400);
-      }
-
-      // For dev: Return base64 data URL instead of uploading to S3
-      // In production, this would upload to S3 and return a presigned URL
-      const contentType = outputFormat === 'png' ? 'image/png' :
-                         outputFormat === 'webp' ? 'image/webp' : 'image/jpeg';
-
-      const base64Image = result.outputBuffer.toString('base64');
-      const outputUrl = `data:${contentType};base64,${base64Image}`;
-
-      const processingTimeMs = Date.now() - processingStartTime;
-
-      console.info('Image processed successfully', {
-        jobId,
-        processingTimeMs,
-        outputSize: base64Image.length,
-        originalSize: result.metadata.originalSize,
-        processedSize: result.metadata.processedSize,
-        tenant,
-        outputFormat,
-      });
-
-      // Emit CarouselImageProcessed event
-      try {
-        const eventBridge = new EventBridgeClient({ region: this.context.region });
-        const eventDetail = {
-          file_hash: jobId,
-          original_filename: imageUrl ? imageUrl.split('/').pop() || 'input.png' : 'input.png',
-          output_filename: 'output.png',
-          output_path: '/processed',
-          output_key: `processed/${jobId}.png`,
-          model_name: 'bedrock-claude-vision',
-          processing_time_ms: processingTimeMs,
-          timestamp: new Date().toISOString(),
-          tenant_id: tenant,
-          metadata: result.metadata
-        };
-        const eventBridgeCommand = {
-          Entries: [
-            {
-              Source: 'carousel.bg-remover',
-              DetailType: 'CarouselImageProcessed',
-              Detail: JSON.stringify(eventDetail),
-            },
-          ],
-        };
-        await eventBridge.send(new PutEventsCommand(eventBridgeCommand));
-        console.info('CarouselImageProcessed event emitted', { jobId, tenant });
-      } catch (error) {
-        console.error('Failed to emit CarouselImageProcessed event', {
+      await dynamoDB.send(new PutItemCommand({
+        TableName: tableName,
+        Item: marshall({
+          pk,
+          sk,
           jobId,
           tenant,
-          error: error instanceof Error ? error.message : String(error),
-        });
-      }
+          userId,
+          status: 'pending',
+          createdAt: now,
+          updatedAt: now,
+          ttl,
+          productId,
+          creditTransactionId,
+        }),
+      }));
 
-      // Emit AI Rating Suggestion event if rating was generated
-      if (generateRatingSuggestion && multilingualDescription?.ratingSuggestion) {
-        try {
-          const ratingEventDetail = {
-            ratingId: `ai-rating-${jobId}`,
-            productId,
-            vendorId: null, // Will be set when product is created
-            buyerId: null, // AI-generated, no buyer
-            rating: multilingualDescription.ratingSuggestion.overallRating,
-            comment: `AI-generated rating suggestion: ${multilingualDescription.ratingSuggestion.breakdown.description}`,
-            conditionAsExpected: null,
-            createdAt: new Date().toISOString(),
-            ratingSource: 'ai_suggested',
-            status: 'pending',
-            aiMetadata: {
-              confidence: multilingualDescription.ratingSuggestion.confidence,
-              breakdown: multilingualDescription.ratingSuggestion.breakdown,
-              factors: multilingualDescription.ratingSuggestion.factors,
-              jobId,
-              productName,
-              tenant_id: tenant,
-            },
-            auditTrail: [{
-              action: 'created',
-              actorId: 'bg-remover-service',
-              actorRole: 'system',
-              timestamp: new Date().toISOString(),
-              newRating: multilingualDescription.ratingSuggestion.overallRating,
-              reason: 'AI-generated rating suggestion from image analysis',
-            }],
-          };
+      console.info('Job created in DynamoDB', { jobId, tenant, userId });
 
-          const ratingEventCommand = {
-            Entries: [
-              {
-                Source: 'carousel.bg-remover',
-                DetailType: 'CarouselAIRatingSuggested',
-                Detail: JSON.stringify(ratingEventDetail),
-              },
-            ],
-          };
-          await eventBridge.send(new PutEventsCommand(ratingEventCommand));
-          console.info('CarouselAIRatingSuggested event emitted', { jobId, tenant, rating: multilingualDescription.ratingSuggestion.overallRating });
-        } catch (error) {
-          console.error('Failed to emit CarouselAIRatingSuggested event', {
-            jobId,
-            tenant,
-            error: error instanceof Error ? error.message : String(error),
-          });
-        }
-      }
+      // Invoke worker Lambda asynchronously
+      const workerPayload = {
+        jobId,
+        tenant,
+        userId,
+        creditTransactionId,
+        requestBody: body,
+        stage,
+      };
 
-      // Generate multilingual descriptions if requested
-      let multilingualDescription: MultilingualProductDescription | undefined;
-      let bilingualDescription: BilingualProductDescription | undefined;
+      await lambda.send(new InvokeCommand({
+        FunctionName: workerFunctionName,
+        InvocationType: 'Event', // Async invocation
+        Payload: Buffer.from(JSON.stringify(workerPayload)),
+      }));
 
-      if (generateDescription) {
-        try {
-          // Extract product features from existing description or generate basic ones
-          const productFeatures = result.productDescription ? {
-            name: productName || 'Product',
-            category: result.productDescription.category || 'general',
-            colors: result.productDescription.colors,
-            condition: result.productDescription.condition || 'good',
-            brand: result.productDescription.priceSuggestion?.factors.brand,
-          } : {
-            name: productName || 'Product',
-            category: 'general',
-            condition: 'good' as const,
-          };
+      console.info('Worker Lambda invoked asynchronously', { jobId, tenant });
 
-          // Generate multilingual descriptions
-          multilingualDescription = await multilingualDescriptionGenerator.generateMultilingualDescriptions(
-            productFeatures,
-            languages,
-            generatePriceSuggestion,
-            generateRatingSuggestion
-          );
-
-          // For backwards compatibility, create bilingual description from multilingual
-          if (multilingualDescription.en && multilingualDescription.is) {
-            bilingualDescription = {
-              en: multilingualDescription.en,
-              is: multilingualDescription.is,
-            };
-          }
-        } catch (error) {
-          console.warn('Failed to generate multilingual descriptions', {
-            jobId,
-            error: error instanceof Error ? error.message : String(error),
-          });
-          // Continue without descriptions - don't fail the entire request
-        }
-      }
-
+      // Return 202 Accepted immediately
       return this.createJsonResponse({
         success: true,
         jobId,
-        outputUrl,
-        processingTimeMs,
-        metadata: result.metadata,
-        productDescription: result.productDescription,
-        multilingualDescription,
-        bilingualDescription,
-      });
+        status: 'pending',
+        message: 'Job accepted and queued for processing',
+        statusUrl: `/bg-remover/status/${jobId}`,
+      }, 202);
+
     } catch (error) {
-      const processingTimeMs = Date.now() - processingStartTime;
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
 
-      console.error('Image processing failed', {
+      console.error('Failed to create job', {
         jobId,
-        error: errorMessage,
-        processingTimeMs,
         tenant,
+        userId,
+        error: errorMessage,
       });
-
-      // ===== CREDITS REFUND ON FAILURE =====
-      // If we debited credits and processing failed, issue a refund
-      if (creditsDebited && creditTransactionId && authResult.userId) {
-        console.info('Initiating credit refund due to processing failure', {
-          jobId,
-          tenant,
-          userId: authResult.userId,
-          originalTransactionId: creditTransactionId,
-        });
-
-        try {
-          const refundResult = await refundCredits(
-            tenant,
-            authResult.userId, // walletId = userId
-            1, // 1 credit per image
-            jobId,
-            creditTransactionId
-          );
-
-          if (refundResult.success) {
-            console.info('Credit refund successful', {
-              jobId,
-              tenant,
-              userId: authResult.userId,
-              newBalance: refundResult.newBalance,
-              refundTransactionId: refundResult.transactionId,
-            });
-          } else {
-            console.error('Credit refund failed', {
-              jobId,
-              tenant,
-              userId: authResult.userId,
-              error: refundResult.error,
-              errorCode: refundResult.errorCode,
-              originalTransactionId: creditTransactionId,
-            });
-            // Note: Don't fail the response - the processing already failed
-            // This should be handled via dead-letter queue or manual reconciliation
-          }
-        } catch (refundError) {
-          console.error('Credit refund exception', {
-            jobId,
-            tenant,
-            userId: authResult.userId,
-            error: refundError instanceof Error ? refundError.message : String(refundError),
-            originalTransactionId: creditTransactionId,
-          });
-        }
-      }
-      // ===== END CREDITS REFUND =====
-
-      // Handle validation errors
-      if (error instanceof Error && error.name === 'ZodError') {
-        return this.createErrorResponse(`Validation error: ${errorMessage}`, 400);
-      }
 
       return this.createErrorResponse(errorMessage, 500);
     }
