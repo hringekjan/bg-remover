@@ -56,6 +56,9 @@ provider:
     # Worker Lambda Function Name (for async job pattern)
     WORKER_FUNCTION_NAME: ${self:service}-${self:provider.stage}-processWorker
 
+    # Temporary S3 Bucket for image storage (solves Lambda 1MB payload limit)
+    TEMP_IMAGES_BUCKET: bg-remover-temp-images-${self:provider.stage}
+
     # Embedding Storage Service Configuration
     # Batch-based S3 GetObject calls for improved performance
     EMBEDDINGS_BUCKET: ${env:EMBEDDINGS_BUCKET, 'bg-remover-embeddings-${self:provider.stage}'}
@@ -91,17 +94,20 @@ provider:
           Action:
             - ssm:PutParameter
           Resource: "arn:aws:ssm:${aws:region}:${aws:accountId}:parameter/tf/${sls:stage}/${env:TENANT, 'carousel-labs'}/services/${self:service}/secrets"
-        # Specific permissions for Bedrock (from original)
+        # Bedrock Nova Lite permissions - RESTRICTED to Nova Lite model only
+        # Security: Prevents access to all other foundation models (security violation, cost risk)
         - Effect: Allow
           Action:
             - bedrock:InvokeModel
-          Resource: "arn:aws:bedrock:${aws:region}::foundation-model/*"
+          Resource:
+            - "arn:aws:bedrock:${aws:region}::foundation-model/us.amazon.nova-lite-v1:0"
         # S3 access for processed image storage
         - Effect: Allow
           Action:
             - s3:GetObject
             - s3:PutObject
             - s3:PutObjectAcl
+            - s3:DeleteObject  # Required for lifecycle policy execution
           Resource:
             - "arn:aws:s3:::bg-remover-*/*"  # Default bucket pattern
             - "arn:aws:s3:::*/${env:TENANT, 'carousel-labs'}/products/*"  # Tenant-specific paths
@@ -146,6 +152,50 @@ provider:
             - lambda:InvokeFunction
           Resource:
             - "arn:aws:lambda:${aws:region}:${aws:accountId}:function:${self:service}-${self:provider.stage}-processWorker"
+
+        # S3 Tables / Glue permissions (Apache Iceberg)
+        - Effect: Allow
+          Action:
+            - glue:CreateDatabase
+            - glue:GetDatabase
+            - glue:UpdateDatabase
+            - glue:CreateTable
+            - glue:GetTable
+            - glue:UpdateTable
+            - glue:DeleteTable
+            - glue:BatchCreatePartition
+            - glue:BatchDeletePartition
+          Resource:
+            - "arn:aws:glue:${aws:region}:${aws:accountId}:catalog"
+            - "arn:aws:glue:${aws:region}:${aws:accountId}:database/pricing_intelligence_*"
+            - "arn:aws:glue:${aws:region}:${aws:accountId}:table/pricing_intelligence_*/sales_history"
+            - "arn:aws:glue:${aws:region}:${aws:accountId}:table/pricing_intelligence_*/*"
+
+        # S3 access for Iceberg table storage and analytics
+        - Effect: Allow
+          Action:
+            - s3:GetObject
+            - s3:PutObject
+            - s3:DeleteObject
+            - s3:ListBucket
+            - s3:GetBucketVersioning
+            - s3:GetObjectVersion
+          Resource:
+            - "arn:aws:s3:::carousel-${sls:stage}-analytics"
+            - "arn:aws:s3:::carousel-${sls:stage}-analytics/*"
+            - "arn:aws:s3:::carousel-${sls:stage}-analytics/pricing-intelligence/*"
+            - "arn:aws:s3:::carousel-${sls:stage}-analytics/athena-results/*"
+
+        # Athena permissions for querying Iceberg tables
+        - Effect: Allow
+          Action:
+            - athena:StartQueryExecution
+            - athena:GetQueryExecution
+            - athena:GetQueryResults
+            - athena:StopQueryExecution
+            - athena:GetWorkGroup
+          Resource:
+            - "arn:aws:athena:${aws:region}:${aws:accountId}:workgroup/primary"
 
 package:
   individually: true
@@ -281,38 +331,62 @@ functions:
           path: /bg-remover/process-groups
           method: OPTIONS
 
-  pricingSuggestion:
-    handler: src/handlers/pricing-handler.handler
-    description: Generate pricing suggestions using visual similarity and embedding cache
-    memorySize: 1024  # Sufficient for 100 embeddings × 4KB = 400KB cache + operations
-    timeout: 30       # Quick response for pricing endpoint
-    ephemeralStorageSize: 512  # 512MB /tmp storage for cache (default)
-    environment:
-      EMBEDDINGS_BUCKET: ${env:EMBEDDINGS_BUCKET, 'embeddings-bucket'}
-      CACHE_MAX_SIZE_BYTES: "419430400"  # 400MB
-      CACHE_TTL_MS: "300000"             # 5 minutes
-      SALES_TABLE_NAME: ${env:SALES_TABLE_NAME, 'sales-records'}
-      STAGE: ${self:provider.stage}
-    events:
-      - httpApi:
-          path: /bg-remover/pricing/suggest
-          method: POST
-      - httpApi:
-          path: /bg-remover/pricing/health
-          method: GET
+  # COMMENTED OUT - API Gateway route limit reached
+  # pricingSuggestion:
+  #   handler: src/handlers/pricing-handler.handler
+  #   description: Generate pricing suggestions using visual similarity and embedding cache
+  #   memorySize: 1024  # Sufficient for 100 embeddings × 4KB = 400KB cache + operations
+  #   timeout: 30       # Quick response for pricing endpoint
+  #   ephemeralStorageSize: 512  # 512MB /tmp storage for cache (default)
+  #   environment:
+  #     EMBEDDINGS_BUCKET: ${env:EMBEDDINGS_BUCKET, 'embeddings-bucket'}
+  #     CACHE_MAX_SIZE_BYTES: "419430400"  # 400MB
+  #     CACHE_TTL_MS: "300000"             # 5 minutes
+  #     SALES_TABLE_NAME: ${env:SALES_TABLE_NAME, 'sales-records'}
+  #     STAGE: ${self:provider.stage}
+  #   events:
+  #     - httpApi:
+  #         path: /bg-remover/pricing/suggest
+  #         method: POST
 
-  pricingHealth:
-    handler: src/handlers/pricing-handler.healthHandler
-    description: Health check for pricing service
-    memorySize: 512
-    timeout: 10
+  # pricingHealth:
+  #   handler: src/handlers/pricing-handler.healthHandler
+  #   description: Health check for pricing service
+  #   memorySize: 512
+  #   timeout: 10
+  #   environment:
+  #     EMBEDDINGS_BUCKET: ${env:EMBEDDINGS_BUCKET, 'embeddings-bucket'}
+  #     STAGE: ${self:provider.stage}
+  #   events:
+  #     - httpApi:
+  #         path: /bg-remover/pricing/health
+  #         method: GET
+
+  pricingInsightAggregator:
+    handler: src/handlers/pricing-insight-aggregator.handler
+    description: Weekly batch job to detect seasonal patterns and store in mem0
+    memorySize: 1024  # Sufficient for batch analysis
+    timeout: 900      # 15 minutes for weekly aggregation
     environment:
-      EMBEDDINGS_BUCKET: ${env:EMBEDDINGS_BUCKET, 'embeddings-bucket'}
+      TENANT_ID: ${env:TENANT, 'carousel-labs'}
       STAGE: ${self:provider.stage}
+      SALES_TABLE_NAME: ${self:service}-${self:provider.stage}-sales-intelligence
+      MEM0_API_URL: ${ssm:/tf/${self:provider.stage}/platform/mem0/api-url, ''}
+      MEM0_API_KEY: ${ssm:/tf/${self:provider.stage}/${env:TENANT, 'carousel-labs'}/services/bg-remover/mem0-api-key, ''}
     events:
-      - httpApi:
-          path: /bg-remover/pricing/health
-          method: GET
+      - schedule: cron(0 2 ? * SUN *)  # Every Sunday at 2 AM UTC
+        name: ${self:service}-${self:provider.stage}-weekly-pricing-insights
+        description: Weekly seasonal pattern analysis
+        enabled: true
+    # Add DynamoDB read permissions for sales intelligence table
+    iamRoleStatements:
+      - Effect: Allow
+        Action:
+          - dynamodb:Query
+          - dynamodb:GetItem
+        Resource:
+          - "arn:aws:dynamodb:${aws:region}:${aws:accountId}:table/${self:service}-${self:provider.stage}-sales-intelligence"
+          - "arn:aws:dynamodb:${aws:region}:${aws:accountId}:table/${self:service}-${self:provider.stage}-sales-intelligence/index/*"
 
   rotateKeys:
     handler: src/handlers/rotate-keys-handler.rotateKeys
@@ -325,6 +399,100 @@ functions:
           enabled: true
     environment:
       TENANT: ${env:TENANT, 'carousel-labs'}
+
+  s3TablesDataValidator:
+    handler: src/handlers/s3-tables-data-validator.handler
+    description: Daily data quality validation for S3 Tables sync consistency
+    memorySize: 1024
+    timeout: 900  # 15 minutes for Athena queries
+    environment:
+      STAGE: ${self:provider.stage}
+      TENANT: ${env:TENANT, 'carousel-labs'}
+      SALES_TABLE_NAME: ${self:service}-${self:provider.stage}-sales-intelligence
+      ALERT_TOPIC_ARN: !Ref DataValidationAlertTopic
+    events:
+      - schedule:
+          rate: cron(0 4 * * ? *)  # Daily at 4 AM UTC
+          description: Daily S3 Tables data validation
+          enabled: true
+    iamRoleStatements:
+      # Athena permissions
+      - Effect: Allow
+        Action:
+          - athena:StartQueryExecution
+          - athena:GetQueryExecution
+          - athena:GetQueryResults
+          - athena:GetWorkGroup
+        Resource: "*"
+      # S3 permissions for Athena results
+      - Effect: Allow
+        Action:
+          - s3:PutObject
+          - s3:GetObject
+        Resource:
+          - "arn:aws:s3:::carousel-${self:provider.stage}-athena-results/*"
+      # DynamoDB query permissions for data validation
+      - Effect: Allow
+        Action:
+          - dynamodb:Query
+          - dynamodb:GetItem
+          - dynamodb:PutItem
+        Resource:
+          - "arn:aws:dynamodb:${aws:region}:${aws:accountId}:table/${self:service}-${self:provider.stage}-sales-intelligence"
+          - "arn:aws:dynamodb:${aws:region}:${aws:accountId}:table/${self:service}-${self:provider.stage}-sales-intelligence/index/*"
+      # SNS publish permissions for alerts
+      - Effect: Allow
+        Action:
+          - sns:Publish
+        Resource:
+          - !Ref DataValidationAlertTopic
+
+  smartgoToS3Exporter:
+    handler: dist/handlers/smartgo-to-s3-exporter.handler
+    description: Daily batch export of SmartGo sales to S3 Tables with Titan embeddings
+    memorySize: 1024
+    timeout: 900  # 15 minutes for batch processing
+    environment:
+      STAGE: ${self:provider.stage}
+      TENANT: ${env:TENANT, 'carousel-labs'}
+      EXPORT_PROGRESS_TABLE_NAME: ${self:service}-${self:provider.stage}-smartgo-export-progress
+    events:
+      - schedule:
+          rate: cron(0 3 * * ? *)  # Daily at 3 AM UTC
+          description: Daily SmartGo sales export to S3 Tables
+          enabled: true
+    iamRoleStatements:
+      # SSM Parameter Store access for SmartGo database configuration
+      - Effect: Allow
+        Action:
+          - ssm:GetParameter
+          - ssm:GetParameters
+        Resource:
+          - "arn:aws:ssm:${aws:region}:${aws:accountId}:parameter/tf/${self:provider.stage}/smartgo/database/*"
+      # Bedrock Titan Embeddings (us-east-1 only)
+      - Effect: Allow
+        Action:
+          - bedrock:InvokeModel
+        Resource:
+          - "arn:aws:bedrock:us-east-1::foundation-model/amazon.titan-embed-image-v1"
+      # S3 access for analytics bucket
+      - Effect: Allow
+        Action:
+          - s3:PutObject
+          - s3:GetObject
+        Resource:
+          - "arn:aws:s3:::carousel-${self:provider.stage}-analytics/pricing-intelligence/smartgo_sales/*"
+          - "arn:aws:s3:::carousel-${self:provider.stage}-analytics/images/smartgo/*"
+      # DynamoDB access for progress tracking
+      - Effect: Allow
+        Action:
+          - dynamodb:PutItem
+          - dynamodb:GetItem
+          - dynamodb:UpdateItem
+          - dynamodb:Query
+        Resource:
+          - "arn:aws:dynamodb:${aws:region}:${aws:accountId}:table/${self:service}-${self:provider.stage}-smartgo-export-progress"
+          - "arn:aws:dynamodb:${aws:region}:${aws:accountId}:table/${self:service}-${self:provider.stage}-smartgo-export-progress/index/*"
 
   classifier:
     handler: classifier_handler.handle
@@ -339,6 +507,48 @@ functions:
               - carousel.bg-remover
             detail-type:
               - CarouselImageProcessed
+
+  carouselToS3TablesSync:
+    handler: dist/handlers/carousel-to-s3-tables-sync.handler
+    description: Real-time sync from Carousel EventBridge events to S3 Tables + DynamoDB
+    memorySize: 512
+    timeout: 60
+    environment:
+      STAGE: ${sls:stage}
+      TENANT: ${env:TENANT, 'carousel-labs'}
+      SALES_TABLE_NAME: ${self:service}-${self:provider.stage}-sales-intelligence
+      IDEMPOTENCY_TABLE_NAME: pricing-idempotency-${sls:stage}
+      ANALYTICS_BUCKET: carousel-${sls:stage}-analytics
+    events:
+      - eventBridge:
+          pattern:
+            source:
+              - carousel.products
+            detail-type:
+              - carousel.product.sold
+          retryPolicy:
+            maximumRetryAttempts: 3
+            maximumEventAge: 3600
+          deadLetterConfig:
+            arn: !GetAtt CarouselSyncDLQ.Arn
+    iamRoleStatements:
+      - Effect: Allow
+        Action:
+          - dynamodb:PutItem
+          - dynamodb:GetItem
+        Resource:
+          - !GetAtt SalesHistoryTable.Arn
+          - !GetAtt IdempotencyTable.Arn
+      - Effect: Allow
+        Action:
+          - s3:PutObject
+        Resource:
+          - "arn:aws:s3:::carousel-${sls:stage}-analytics/pricing-intelligence/*"
+      - Effect: Allow
+        Action:
+          - events:PutEvents
+        Resource:
+          - "arn:aws:events:${aws:region}:${aws:accountId}:event-bus/default"
 
 resources:
   Resources:
@@ -373,6 +583,31 @@ resources:
             Value: ${self:provider.stage}
           - Key: Tenant
             Value: ${env:TENANT, 'carousel-labs'}
+
+    # S3 Bucket for temporary image storage (solves Lambda 1MB payload limit)
+    # Images auto-deleted after 24 hours via lifecycle policy
+    TempImagesBucket:
+      Type: AWS::S3::Bucket
+      Properties:
+        BucketName: bg-remover-temp-images-${self:provider.stage}
+        LifecycleConfiguration:
+          Rules:
+            - Id: DeleteAfter24Hours
+              Status: Enabled
+              ExpirationInDays: 1
+              Prefix: temp/
+        PublicAccessBlockConfiguration:
+          BlockPublicAcls: true
+          BlockPublicPolicy: true
+          IgnorePublicAcls: true
+          RestrictPublicBuckets: true
+        Tags:
+          - Key: Service
+            Value: ${self:service}
+          - Key: Stage
+            Value: ${self:provider.stage}
+          - Key: Purpose
+            Value: temporary-image-storage
 
     # CloudWatch Alarms for Cache Monitoring
     CacheWriteFailureAlarm:
@@ -412,5 +647,172 @@ resources:
             Value: ${env:TENANT, 'carousel-labs'}
           - Name: layer
             Value: L2
+
+    # SNS Topic for Data Validation Alerts
+    # Used by s3TablesDataValidator to send critical issue notifications
+    DataValidationAlertTopic:
+      Type: AWS::SNS::Topic
+      Properties:
+        TopicName: ${self:service}-${self:provider.stage}-data-validation-alerts
+        DisplayName: S3 Tables Data Validation Alerts
+        Tags:
+          - Key: Service
+            Value: ${self:service}
+          - Key: Stage
+            Value: ${self:provider.stage}
+          - Key: Purpose
+            Value: data-quality-monitoring
+
+    # SNS Email Subscription for Data Validation Alerts
+    # Sends alerts to ops email when critical data quality issues are detected
+    DataValidationAlertSubscription:
+      Type: AWS::SNS::Subscription
+      Properties:
+        Protocol: email
+        TopicArn: !Ref DataValidationAlertTopic
+        Endpoint: ${env:ALERT_EMAIL, 'devops@carousellabs.co'}
+
+    # SalesHistoryTable - for pricing intelligence data (Phase 5)
+    # Used by carouselToS3TablesSync for dual-write capability
+    SalesHistoryTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:service}-${self:provider.stage}-sales-intelligence
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: PK
+            AttributeType: S
+          - AttributeName: SK
+            AttributeType: S
+          - AttributeName: GSI2PK
+            AttributeType: S
+          - AttributeName: GSI2SK
+            AttributeType: S
+        KeySchema:
+          - AttributeName: PK
+            KeyType: HASH
+          - AttributeName: SK
+            KeyType: RANGE
+        GlobalSecondaryIndexes:
+          - IndexName: GSI2
+            KeySchema:
+              - AttributeName: GSI2PK
+                KeyType: HASH
+              - AttributeName: GSI2SK
+                KeyType: RANGE
+            Projection:
+              ProjectionType: ALL
+        TimeToLiveSpecification:
+          AttributeName: ttl
+          Enabled: true
+        Tags:
+          - Key: Service
+            Value: ${self:service}
+          - Key: Stage
+            Value: ${self:provider.stage}
+          - Key: Purpose
+            Value: pricing-intelligence
+
+    # Idempotency Table - prevents duplicate event processing
+    # Used by carouselToS3TablesSync for deduplication
+    IdempotencyTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: pricing-idempotency-${sls:stage}
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: pk
+            AttributeType: S
+          - AttributeName: sk
+            AttributeType: S
+        KeySchema:
+          - AttributeName: pk
+            KeyType: HASH
+          - AttributeName: sk
+            KeyType: RANGE
+        TimeToLiveSpecification:
+          AttributeName: ttl
+          Enabled: true
+        Tags:
+          - Key: Service
+            Value: ${self:service}
+          - Key: Stage
+            Value: ${self:provider.stage}
+          - Key: Purpose
+            Value: event-deduplication
+
+    # SmartGo Export Progress Table - tracks daily export progress
+    # Used by smartgoToS3Exporter for observability and monitoring
+    SmartGoExportProgressTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:service}-${self:provider.stage}-smartgo-export-progress
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: PK
+            AttributeType: S
+          - AttributeName: SK
+            AttributeType: S
+        KeySchema:
+          - AttributeName: PK
+            KeyType: HASH
+          - AttributeName: SK
+            KeyType: RANGE
+        TimeToLiveSpecification:
+          AttributeName: ttl
+          Enabled: true
+        Tags:
+          - Key: Service
+            Value: ${self:service}
+          - Key: Stage
+            Value: ${self:provider.stage}
+          - Key: Purpose
+            Value: smartgo-export-tracking
+
+    # Dead Letter Queue for carousel sync failures
+    CarouselSyncDLQ:
+      Type: AWS::SQS::Queue
+      Properties:
+        QueueName: carousel-sync-dlq-${sls:stage}
+        MessageRetentionPeriod: 1209600  # 14 days
+        Tags:
+          - Key: Service
+            Value: ${self:service}
+          - Key: Stage
+            Value: ${self:provider.stage}
+          - Key: Purpose
+            Value: event-dlq
+
+    # S3 Bucket for analytics data lake
+    AnalyticsDataLakeBucket:
+      Type: AWS::S3::Bucket
+      Properties:
+        BucketName: carousel-${sls:stage}-analytics
+        VersioningConfiguration:
+          Status: Enabled
+        PublicAccessBlockConfiguration:
+          BlockPublicAcls: true
+          BlockPublicPolicy: true
+          IgnorePublicAcls: true
+          RestrictPublicBuckets: true
+        LifecycleConfiguration:
+          Rules:
+            - Id: TransitionToIA
+              Status: Enabled
+              Transitions:
+                - TransitionInDays: 90
+                  StorageClass: STANDARD_IA
+                - TransitionInDays: 180
+                  StorageClass: GLACIER
+              NoncurrentVersionTransitions:
+                - TransitionInDays: 30
+                  StorageClass: STANDARD_IA
+        Tags:
+          - Key: Service
+            Value: ${self:service}
+          - Key: Stage
+            Value: ${self:provider.stage}
+          - Key: Purpose
+            Value: analytics-data-lake
 
   extensions: {} # From base.yml
