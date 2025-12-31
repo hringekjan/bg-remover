@@ -400,6 +400,9 @@ export const ProcessSuccessResponseSchema = z.object({
  */
 export const GroupImagesRequestSchema = z.object({
   images: z.array(z.object({
+    imageId: z.string()
+      .regex(/^img_[a-f0-9-]+$/, 'Invalid image ID format')
+      .optional(), // Optional - backend generates if not provided
     imageBase64: z.string()
       .refine((val) => val.length <= MAX_BASE64_SIZE, 'Base64 image too large (max 10MB)')
       .refine(isValidBase64, 'Invalid base64 format'),

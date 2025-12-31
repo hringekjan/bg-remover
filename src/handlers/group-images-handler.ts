@@ -113,11 +113,14 @@ export class GroupImagesHandler extends BaseHandler {
 
       for (let i = 0; i < images.length; i++) {
         const image = images[i];
-        const imageId = `img_${randomUUID()}`;
+        // CRITICAL FIX: Use imageId from frontend if provided, otherwise generate new one
+        // This ensures imageDataMap matching works correctly in frontend
+        const imageId = image.imageId || `img_${randomUUID()}`;
 
         console.log(`[GroupImages] Generating thumbnail ${i + 1}/${images.length}`, {
           imageId,
           filename: image.filename,
+          frontendProvided: !!image.imageId,
         });
 
         try {
@@ -187,7 +190,8 @@ export class GroupImagesHandler extends BaseHandler {
 
         // Create single-image groups for each uploaded image
         const fallbackGroups = images.map((image, i) => {
-          const imageId = `img_${randomUUID()}`;
+          // CRITICAL FIX: Use imageId from frontend if provided
+          const imageId = image.imageId || `img_${randomUUID()}`;
           return {
             groupId: `pg_${randomUUID()}`,
             imageIds: [imageId],
