@@ -36,8 +36,17 @@ export class StatusHandler extends BaseHandler {
     const jobId = event.pathParameters?.jobId;
 
     // ===== TENANT RESOLUTION (BEFORE AUTH) =====
-    const tenant = await resolveTenantFromRequest(event, stage);
-    console.info('Resolved tenant for status request', { tenant, jobId });
+    let tenant: string;
+    try {
+      tenant = await resolveTenantFromRequest(event, stage);
+      console.info('Resolved tenant for status request', { tenant, jobId });
+    } catch (error) {
+      console.error('Tenant resolution failed, using default', {
+        error: error instanceof Error ? error.message : String(error),
+        jobId,
+      });
+      tenant = process.env.TENANT || 'carousel-labs';
+    }
 
     // ===== JWT AUTHENTICATION (WITH TENANT-SPECIFIC CONFIG) =====
     const requireAuth = stage === 'prod' || process.env.REQUIRE_AUTH === 'true';
@@ -171,9 +180,46 @@ export class StatusHandler extends BaseHandler {
         tenant,
         jobId,
         error: errorMessage,
+        errorName: error instanceof Error ? error.name : 'Unknown',
+        tableName,
       });
 
-      return this.createErrorResponse(errorMessage, 500);
+      // Classify DynamoDB errors for appropriate HTTP status codes
+      if (error instanceof Error) {
+        // Throttling errors - temporary issue, client should retry
+        if (error.name === 'ProvisionedThroughputExceededException' ||
+            error.name === 'RequestLimitExceeded') {
+          return this.createErrorResponse(
+            'Service temporarily unavailable. Please retry in a few seconds.',
+            503
+          );
+        }
+
+        // Permission errors - configuration issue
+        if (error.name === 'AccessDeniedException') {
+          console.error('CRITICAL: DynamoDB permission denied', { tenant, jobId });
+          return this.createErrorResponse(
+            'Unable to retrieve job status. Please contact support.',
+            500
+          );
+        }
+
+        // Table not found - deployment issue
+        if (error.name === 'ResourceNotFoundException') {
+          console.error('CRITICAL: DynamoDB table not found', { tableName, tenant });
+          return this.createErrorResponse(
+            'Service configuration error. Please contact support.',
+            500
+          );
+        }
+      }
+
+      // Generic error - sanitize message in production
+      const userMessage = this.context.stage === 'prod'
+        ? 'Failed to retrieve job status. Please try again later.'
+        : errorMessage;
+
+      return this.createErrorResponse(userMessage, 500);
     }
   }
 
