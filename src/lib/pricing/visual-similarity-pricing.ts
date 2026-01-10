@@ -19,11 +19,13 @@
  * 5. Return top N similar products by cosine similarity score
  */
 
+// Import from main backend-kit module (type definitions in src/@types/index.d.ts)
 import { EmbeddingCache } from '@carousellabs/backend-kit';
 import { DynamoDBClient, QueryCommand, BatchGetItemCommand } from '@aws-sdk/client-dynamodb';
-import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client } from '@aws-sdk/client-s3';
 import { marshall, unmarshall } from '@aws-sdk/util-dynamodb';
 import { VisionAnalysisService, type VisualQualityAssessment } from './vision-analysis';
+import { EmbeddingStorageService } from '../embedding-storage-service';
 import type { PricingSuggestion, ProductContext, ProductFeatures, ProductCondition } from './types';
 import { isValidProductCondition } from './types';
 
@@ -65,6 +67,7 @@ export class VisualSimilarityPricingEngine {
   private embeddingCache: InstanceType<typeof EmbeddingCache>;
   private dynamoDBClient: DynamoDBClient;
   private s3Client: S3Client;
+  private embeddingStorage: EmbeddingStorageService;
   private visionAnalysis: VisionAnalysisService;
   private salesTableName: string;
   private embeddingsBucket: string;
@@ -98,6 +101,13 @@ export class VisualSimilarityPricingEngine {
     const region = options.region || process.env.AWS_REGION || 'eu-west-1';
     this.dynamoDBClient = new DynamoDBClient({ region });
     this.s3Client = new S3Client({ region });
+
+    // Initialize embedding storage service with batching
+    this.embeddingStorage = new EmbeddingStorageService(region, this.embeddingsBucket, {
+      batchSize: 10,
+      maxConcurrentBatches: 5,
+      retryAttempts: 3,
+    });
 
     // Initialize vision analysis service
     this.visionAnalysis = new VisionAnalysisService({
@@ -266,10 +276,10 @@ export class VisualSimilarityPricingEngine {
       }
     }
 
-    // Phase 2: Fetch misses from S3
+    // Phase 2: Fetch misses from S3 using batched storage service
     if (cacheMisses.length > 0) {
       try {
-        const s3Embeddings = await this.fetchEmbeddingsFromS3(cacheMisses);
+        const s3Embeddings = await this.embeddingStorage.fetchEmbeddingsBatch(cacheMisses);
 
         // Phase 3: Store in L1 cache for future hits
         for (const [id, embedding] of s3Embeddings.entries()) {
@@ -284,64 +294,6 @@ export class VisualSimilarityPricingEngine {
     return results;
   }
 
-  /**
-   * Fetch embeddings from S3
-   *
-   * Expected S3 path structure:
-   * s3://embeddings-bucket/embeddings/{tenantId}/{embeddingId}.json
-   */
-  private async fetchEmbeddingsFromS3(embeddingIds: string[]): Promise<Map<string, number[]>> {
-    const results = new Map<string, number[]>();
-
-    // Batch fetch from S3 (parallel, with concurrency control)
-    const concurrency = 10;
-    for (let i = 0; i < embeddingIds.length; i += concurrency) {
-      const batch = embeddingIds.slice(i, i + concurrency);
-      const promises = batch.map((id) => this.fetchSingleEmbedding(id));
-
-      const batchResults = await Promise.allSettled(promises);
-
-      for (let j = 0; j < batchResults.length; j++) {
-        const result = batchResults[j];
-        const id = batch[j];
-
-        if (result.status === 'fulfilled' && result.value) {
-          results.set(id, result.value);
-        } else {
-          const reason = result.status === 'rejected' ? result.reason : 'Unknown error';
-          console.warn('[VisualSimilarityPricing] Failed to fetch embedding:', id, reason);
-        }
-      }
-    }
-
-    return results;
-  }
-
-  /**
-   * Fetch a single embedding from S3
-   */
-  private async fetchSingleEmbedding(embeddingId: string): Promise<number[] | null> {
-    try {
-      const key = `embeddings/${this.tenantId}/${embeddingId}.json`;
-      const command = new GetObjectCommand({
-        Bucket: this.embeddingsBucket,
-        Key: key,
-      });
-
-      const response = await this.s3Client.send(command);
-      const body = await response.Body?.transformToString();
-
-      if (!body) {
-        return null;
-      }
-
-      const data = JSON.parse(body);
-      return data.embedding || data;
-    } catch (error) {
-      console.error('[VisualSimilarityPricing] S3 fetch error:', embeddingId, error);
-      return null;
-    }
-  }
 
   /**
    * Calculate cosine similarity between two embeddings
@@ -409,6 +361,14 @@ export class VisualSimilarityPricingEngine {
       evictions: stats.evictions,
       sizePercent: stats.sizePercent,
     };
+  }
+
+  /**
+   * Get vision analysis service instance for embeddings
+   * Provides access to Titan Embeddings generation
+   */
+  getVisionAnalysisService(): VisionAnalysisService {
+    return this.visionAnalysis;
   }
 
   /**
