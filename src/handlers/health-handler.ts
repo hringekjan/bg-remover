@@ -1,5 +1,6 @@
 import { BaseHandler } from './base-handler';
 import { loadConfig } from '../lib/config/loader';
+import { bgRemoverTelemetry } from '../lib/telemetry/bg-remover-telemetry';
 
 interface HealthResponse {
   status: 'healthy' | 'degraded' | 'unhealthy';
@@ -88,6 +89,25 @@ export class HealthHandler extends BaseHandler {
         name: 'cache',
         status: 'fail',
         message: error instanceof Error ? error.message : 'Cache check failed',
+      });
+    }
+
+    // Check telemetry health
+    console.log('Starting telemetry health check...');
+    try {
+      const telemetryHealth = await bgRemoverTelemetry.healthCheck();
+      checks.push({
+        name: 'telemetry',
+        status: telemetryHealth.status === 'healthy' ? 'pass' : 'warn',
+        message: `Status: ${telemetryHealth.status}, Success rate: ${telemetryHealth.metrics.successRate.toFixed(1)}%, Tasks: ${telemetryHealth.metrics.totalTasks}`,
+      });
+      console.log('Telemetry check passed');
+    } catch (error) {
+      console.error('Telemetry check error:', error);
+      checks.push({
+        name: 'telemetry',
+        status: 'fail',
+        message: error instanceof Error ? error.message : 'Telemetry check failed',
       });
     }
 

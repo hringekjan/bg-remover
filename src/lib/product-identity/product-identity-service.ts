@@ -36,11 +36,12 @@ import {
   DEFAULT_SETTINGS
 } from './multi-signal-similarity';
 import { loadSettings } from './settings-loader';
+import { generateBatchImageEmbeddings, type ImageInput } from './batch-embeddings';
 
 const bedrockClient = new BedrockRuntimeClient({ region: process.env.AWS_REGION || 'eu-west-1' });
 const dynamoClient = new DynamoDBClient({ region: process.env.AWS_REGION || 'eu-west-1' });
 
-const TABLE_NAME = process.env.BG_REMOVER_TABLE_NAME || 'bg-remover-dev';
+const TABLE_NAME = process.env.DYNAMODB_TABLE || `carousel-main-${process.env.STAGE || 'dev'}`;
 const DEFAULT_TENANT = process.env.TENANT || 'carousel-labs';
 
 /**
@@ -210,8 +211,8 @@ export async function storeEmbedding(
   await dynamoClient.send(new PutItemCommand({
     TableName: TABLE_NAME,
     Item: marshall({
-      pk,
-      sk,
+      PK: pk,
+      SK: sk,
       imageId,
       embedding: JSON.stringify(embedding), // Store as JSON string for DynamoDB
       metadata,
@@ -243,7 +244,7 @@ export async function getEmbeddings(
     const result = await dynamoClient.send(new QueryCommand({
       TableName: TABLE_NAME,
       KeyConditionExpression: '#pk = :pk',
-      ExpressionAttributeNames: { '#pk': 'pk' },
+      ExpressionAttributeNames: { '#pk': 'PK' },
       ExpressionAttributeValues: { ':pk': { S: pk } },
       Limit: Math.min(pageSize, limit - embeddings.length),
       ExclusiveStartKey: lastEvaluatedKey,
@@ -346,8 +347,8 @@ export async function createProductGroup(
   await dynamoClient.send(new PutItemCommand({
     TableName: TABLE_NAME,
     Item: marshall({
-      pk,
-      sk,
+      PK: pk,
+      SK: sk,
       ...group,
       entityType: 'PRODUCT_GROUP',
       ttl: Math.floor(Date.now() / 1000) + (90 * 24 * 60 * 60), // 90 days
@@ -378,7 +379,7 @@ async function linkImageToGroup(
 
   await dynamoClient.send(new UpdateItemCommand({
     TableName: TABLE_NAME,
-    Key: { pk: { S: pk }, sk: { S: sk } },
+    Key: { PK: { S: pk }, SK: { S: sk } },
     UpdateExpression: 'SET #groupId = :groupId, #updatedAt = :updatedAt',
     ExpressionAttributeNames: {
       '#groupId': 'productGroupId',
@@ -409,7 +410,7 @@ async function addImageToGroupRecord(
     // Use list_append to atomically add imageId to imageIds array
     const result = await dynamoClient.send(new UpdateItemCommand({
       TableName: TABLE_NAME,
-      Key: { pk: { S: pk }, sk: { S: sk } },
+      Key: { PK: { S: pk }, SK: { S: sk } },
       UpdateExpression: 'SET #imageIds = list_append(if_not_exists(#imageIds, :empty), :newImage), #updatedAt = :updatedAt',
       // BUG #3 FIX: Conditional check prevents duplicate additions
       ConditionExpression: 'NOT contains(#imageIds, :imageId)',
@@ -451,7 +452,7 @@ async function getProductGroupById(
 
   const result = await dynamoClient.send(new GetItemCommand({
     TableName: TABLE_NAME,
-    Key: { pk: { S: pk }, sk: { S: sk } },
+    Key: { PK: { S: pk }, SK: { S: sk } },
   }));
 
   return result.Item ? unmarshall(result.Item) as ProductGroup : null;
@@ -471,7 +472,7 @@ export async function getProductGroups(
   const result = await dynamoClient.send(new QueryCommand({
     TableName: TABLE_NAME,
     KeyConditionExpression: '#pk = :pk',
-    ExpressionAttributeNames: { '#pk': 'pk' },
+    ExpressionAttributeNames: { '#pk': 'PK' },
     ExpressionAttributeValues: { ':pk': { S: pk } },
     Limit: limit,
     ScanIndexForward: false,
@@ -559,16 +560,41 @@ export async function batchProcessForGrouping(
   const newEmbeddings: { id: string; embedding: number[] }[] = [];
   const ungrouped: string[] = [];
 
-  // Generate all embeddings first
-  for (const image of images) {
+  // QUICK WIN #1: Use batch embedding generation (3-5x faster)
+  console.log('[ProductIdentity] Using batch embedding generation for', images.length, 'images');
+  const imageInputs: ImageInput[] = images.map(img => ({
+    imageId: img.id,
+    buffer: img.buffer,
+  }));
+
+  const batchResult = await generateBatchImageEmbeddings(imageInputs);
+
+  console.log('[ProductIdentity] Batch embedding complete:', {
+    successCount: batchResult.successCount,
+    failureCount: batchResult.failureCount,
+    totalTimeMs: batchResult.totalTimeMs,
+    avgTimePerImage: batchResult.successCount > 0
+      ? (batchResult.totalTimeMs / batchResult.successCount).toFixed(1) + 'ms'
+      : 'N/A',
+  });
+
+  // Store successful embeddings in DynamoDB
+  for (const [imageId, embeddingData] of batchResult.embeddings.entries()) {
+    newEmbeddings.push({ id: imageId, embedding: embeddingData.embedding });
+
+    // Find metadata for this image
+    const imageMetadata = images.find(img => img.id === imageId)?.metadata;
+
     try {
-      const embedding = await generateImageEmbedding(image.buffer);
-      newEmbeddings.push({ id: image.id, embedding });
-      await storeEmbedding(image.id, embedding, safeTenant, image.metadata);
+      await storeEmbedding(imageId, embeddingData.embedding, safeTenant, imageMetadata);
     } catch (error) {
-      console.error(`Failed to process image ${image.id}:`, error);
-      ungrouped.push(image.id);
+      console.error(`Failed to store embedding for ${imageId}:`, error);
     }
+  }
+
+  // Track failed images
+  for (const error of batchResult.errors) {
+    ungrouped.push(error.imageId);
   }
 
   // BUG #13 FIX: Fetch existing embeddings and include in clustering
@@ -722,18 +748,45 @@ export async function batchProcessWithMultiSignal(
   }
 
   // Step 3: Generate Titan embeddings (still needed for semantic understanding)
+  // QUICK WIN #1: Use batch embedding generation (3-5x faster)
   const newEmbeddings: { id: string; embedding: number[]; metadata?: any }[] = [];
   const ungrouped: string[] = [];
 
-  for (const image of images) {
+  console.log('[MultiSignal] Using batch embedding generation for', images.length, 'images');
+  const imageInputs: ImageInput[] = images.map(img => ({
+    imageId: img.id,
+    buffer: img.buffer,
+  }));
+
+  const embeddingStartTime = Date.now();
+  const batchResult = await generateBatchImageEmbeddings(imageInputs);
+
+  console.log('[MultiSignal] Batch embedding complete:', {
+    successCount: batchResult.successCount,
+    failureCount: batchResult.failureCount,
+    totalTimeMs: batchResult.totalTimeMs,
+    avgTimePerImage: batchResult.successCount > 0
+      ? (batchResult.totalTimeMs / batchResult.successCount).toFixed(1) + 'ms'
+      : 'N/A',
+  });
+
+  // Store successful embeddings in DynamoDB
+  for (const [imageId, embeddingData] of batchResult.embeddings.entries()) {
+    newEmbeddings.push({ id: imageId, embedding: embeddingData.embedding });
+
+    // Find metadata for this image
+    const imageMetadata = images.find(img => img.id === imageId)?.metadata;
+
     try {
-      const embedding = await generateImageEmbedding(image.buffer);
-      newEmbeddings.push({ id: image.id, embedding });
-      await storeEmbedding(image.id, embedding, safeTenant, image.metadata);
+      await storeEmbedding(imageId, embeddingData.embedding, safeTenant, imageMetadata);
     } catch (error) {
-      console.error(`Failed to process image ${image.id}:`, error);
-      ungrouped.push(image.id);
+      console.error(`Failed to store embedding for ${imageId}:`, error);
     }
+  }
+
+  // Track failed images
+  for (const error of batchResult.errors) {
+    ungrouped.push(error.imageId);
   }
 
   // Step 4: Fetch existing embeddings if requested

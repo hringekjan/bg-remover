@@ -16,13 +16,15 @@ import {
   processImageFromUrl,
   processImageFromBase64,
 } from '../lib/bedrock/image-processor';
+import { uploadProcessedImage, generateOutputKey, getOutputBucket } from '../../lib/s3/client';
 import { EventBridgeClient, PutEventsCommand } from '@aws-sdk/client-eventbridge';
 import { refundCredits } from '../lib/credits/client';
 import { multilingualDescriptionGenerator } from '../lib/multilingual-description';
+import { bgRemoverTelemetry, calculateBgRemoverCost } from '../lib/telemetry/bg-remover-telemetry';
 
 const dynamoDB = new DynamoDBClient({});
 const s3Client = new S3Client({});
-const tableName = process.env.BG_REMOVER_TABLE_NAME!;
+const tableName = process.env.DYNAMODB_TABLE || `carousel-main-${process.env.STAGE || 'dev'}`;
 
 interface JobPayload {
   jobId: string;
@@ -405,6 +407,7 @@ export class ProcessWorkerHandler extends BaseHandler {
 
     const processingStartTime = Date.now();
 
+    const maxConcurrent = Math.min(images.length, 5); // Limit concurrency to prevent Lambda memory issues
     try {
       // Update job status to processing
       await this.updateJobStatus(tenant, jobId, 'processing', {
@@ -416,73 +419,184 @@ export class ProcessWorkerHandler extends BaseHandler {
 
       // Load tenant config
       const config = await loadTenantConfig(tenant, stage);
+      const outputBucket = await getOutputBucket(tenant, stage);
 
-      // Process each image in the group
-      const processedImages = [];
-      const imageResults = [];
+      // Process each image in the group concurrently for better scalability
+      console.log(`[Worker] Processing ${images.length} images concurrently (max ${maxConcurrent} at once)`, {
+        jobId,
+        groupId,
+      });
 
-      for (let i = 0; i < images.length; i++) {
-        const image = images[i];
-        console.log(`[Worker] Processing image ${i + 1}/${images.length}`, {
-          jobId,
-          groupId,
-          filename: image.filename,
-          isPrimary: image.isPrimary,
-        });
+      // Load current job state for resumable operations
+      const currentJobState = await this.loadJobState(tenant, jobId);
+      const imageStates = currentJobState?.images || images.map((img, index) => ({
+        s3Key: img.s3Key || `temp/${tenant}/${jobId}/${index}_${img.filename}`,
+        index,
+        status: 'pending' as const,
+        filename: img.filename,
+        attempts: 0,
+        lastAttemptAt: null,
+        error: null,
+      }));
 
-        const imageProcessingOptions = {
-          format: processingOptions.outputFormat || 'png',
-          quality: processingOptions.quality,
-          autoTrim: processingOptions.autoTrim,
-          centerSubject: processingOptions.centerSubject,
-          enhanceColors: processingOptions.enhanceColors,
-          generateDescription: processingOptions.generateDescription && image.isPrimary, // Only generate for primary image
-          productName: productName || `Product ${groupId}`,
-        };
+      // Initialize progress tracking
+      let completedCount = imageStates.filter(img => img.status === 'completed').length;
+      let failedCount = imageStates.filter(img => img.status === 'failed').length;
 
-        // Download from S3 if S3 keys provided, otherwise use legacy base64
-        let imageBase64 = image.imageBase64;
-        if (image.s3Bucket && image.s3Key) {
-          console.log('[Worker] Using S3 image source', {
+      const imagePromises = images.map(async (image, index) => {
+        // Skip already completed images
+        if (imageStates[index]?.status === 'completed') {
+          console.log(`[Worker] Skipping already completed image ${index + 1}/${images.length}`, {
             jobId,
-            s3Bucket: image.s3Bucket,
-            s3Key: image.s3Key,
+            groupId,
             filename: image.filename,
           });
-          imageBase64 = await this.downloadImageFromS3(image.s3Bucket, image.s3Key, jobId);
-        } else if (!imageBase64) {
-          throw new Error(`Image data missing: neither imageBase64 nor S3 location provided for ${image.filename}`);
+          return imageStates[index]; // Return cached result
         }
 
-        const result = await processImageFromBase64(
-          imageBase64,
-          'image/png',
-          imageProcessingOptions,
-          tenant,
-          stage
-        );
-
-        // Store processed image
-        const contentType = (processingOptions.outputFormat || 'png') === 'png' ? 'image/png' :
-                           (processingOptions.outputFormat || 'png') === 'webp' ? 'image/webp' : 'image/jpeg';
-        const base64Image = result.outputBuffer.toString('base64');
-        const outputUrl = `data:${contentType};base64,${base64Image}`;
-
-        processedImages.push({
-          filename: image.filename,
-          outputUrl,
-          isPrimary: image.isPrimary,
-          metadata: result.metadata,
-        });
-
-        // Store description from primary image
-        if (image.isPrimary && result.productDescription) {
-          imageResults.push({
-            productDescription: result.productDescription,
-            metadata: result.metadata,
+        // Skip images that have failed too many times (max 3 attempts)
+        if (imageStates[index]?.attempts >= 3 && imageStates[index]?.status === 'failed') {
+          console.log(`[Worker] Skipping image ${index + 1}/${images.length} - max retries exceeded`, {
+            jobId,
+            groupId,
+            filename: image.filename,
+            attempts: imageStates[index].attempts,
           });
+          failedCount++;
+          return null;
         }
+
+        try {
+          // Update image status to processing
+          this.updateImageStatusInMemory(imageStates, index, 'processing');
+
+          console.log(`[Worker] Starting processing for image ${index + 1}/${images.length}`, {
+            jobId,
+            groupId,
+            filename: image.filename,
+            isPrimary: image.isPrimary,
+            attempt: (imageStates[index]?.attempts || 0) + 1,
+          });
+
+          const imageProcessingOptions = {
+            format: processingOptions.outputFormat || 'png',
+            quality: processingOptions.quality,
+            autoTrim: processingOptions.autoTrim,
+            centerSubject: processingOptions.centerSubject,
+            enhanceColors: processingOptions.enhanceColors,
+            generateDescription: processingOptions.generateDescription && image.isPrimary, // Only generate for primary image
+            productName: productName || `Product ${groupId}`,
+          };
+
+          // Download from S3 if S3 keys provided, otherwise use legacy base64
+          let imageBase64 = image.imageBase64;
+          if (image.s3Bucket && image.s3Key) {
+            console.log('[Worker] Using S3 image source', {
+              jobId,
+              s3Bucket: image.s3Bucket,
+              s3Key: image.s3Key,
+              filename: image.filename,
+            });
+            imageBase64 = await this.downloadImageFromS3(image.s3Bucket, image.s3Key, jobId);
+          } else if (!imageBase64) {
+            throw new Error(`Image data missing: neither imageBase64 nor S3 location provided for ${image.filename}`);
+          }
+
+          const result = await processImageFromBase64(
+            imageBase64,
+            'image/png',
+            imageProcessingOptions,
+            tenant,
+            stage
+          );
+
+          // Store processed image
+          const contentType = (processingOptions.outputFormat || 'png') === 'png' ? 'image/png' :
+                             (processingOptions.outputFormat || 'png') === 'webp' ? 'image/webp' : 'image/jpeg';
+          const outputKey = generateOutputKey(tenant, jobId, processingOptions.outputFormat || 'png');
+          const outputUrl = await uploadProcessedImage(
+            outputBucket,
+            outputKey,
+            result.outputBuffer,
+            contentType,
+            {
+              tenant,
+              jobId,
+              groupId,
+              filename: image.filename,
+              source: image.s3Key || 'base64',
+            }
+          );
+
+          // Update image status to completed
+          this.updateImageStatusInMemory(imageStates, index, 'completed', {
+            outputUrl,
+            outputKey,
+            metadata: result.metadata,
+            productDescription: image.isPrimary ? result.productDescription : undefined,
+          });
+
+          console.log(`[Worker] Completed processing for image ${index + 1}/${images.length}`, {
+            jobId,
+            groupId,
+            filename: image.filename,
+            processingTimeMs: Date.now() - processingStartTime,
+          });
+
+          completedCount++;
+          return {
+            filename: image.filename,
+            outputUrl,
+            outputKey,
+            isPrimary: image.isPrimary,
+            metadata: result.metadata,
+            productDescription: image.isPrimary ? result.productDescription : undefined,
+          };
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : String(error);
+
+          // Update image status to failed
+          this.updateImageStatusInMemory(imageStates, index, 'failed', {
+            error: errorMessage,
+          });
+
+          console.error(`[Worker] Failed processing for image ${index + 1}/${images.length}`, {
+            jobId,
+            groupId,
+            filename: image.filename,
+            error: errorMessage,
+            attempt: imageStates[index]?.attempts || 1,
+          });
+
+          failedCount++;
+          return null; // Return null for failed images
+        }
+      });
+
+      // Process images concurrently with controlled concurrency
+      const concurrencyLimit = Math.min(maxConcurrent, imagePromises.length);
+      const processedResults = [];
+
+      for (let i = 0; i < imagePromises.length; i += concurrencyLimit) {
+        const batch = imagePromises.slice(i, i + concurrencyLimit);
+        const batchResults = await Promise.all(batch);
+        processedResults.push(...batchResults);
       }
+
+      // Separate processed images and descriptions
+      const processedImages = processedResults.map(result => ({
+        filename: result.filename,
+        outputUrl: result.outputUrl,
+        isPrimary: result.isPrimary,
+        metadata: result.metadata,
+      }));
+
+      const imageResults = processedResults
+        .filter(result => result.isPrimary && result.productDescription)
+        .map(result => ({
+          productDescription: result.productDescription!,
+          metadata: result.metadata,
+        }));
 
       console.log('[Worker] All images processed', {
         jobId,
@@ -582,7 +696,16 @@ export class ProcessWorkerHandler extends BaseHandler {
       // This would involve calling the carousel-api service to create the product
       // For now, we'll just update the job status with the processed images
 
-      // Update job status to completed
+      // Calculate final progress
+      const finalProgress = {
+        total: images.length,
+        completed: completedCount,
+        failed: failedCount,
+        processing: 0,
+        pending: images.length - completedCount - failedCount,
+      };
+
+      // Update job status to completed with resumable state
       await this.updateJobStatus(tenant, jobId, 'completed', {
         groupId,
         processedImages: enhancedImages,
@@ -593,6 +716,30 @@ export class ProcessWorkerHandler extends BaseHandler {
         pipeline,
         processingTimeMs,
         completedAt: new Date().toISOString(),
+        // Resumable state
+        images: imageStates,
+        progress: finalProgress,
+        resumable: true,
+      });
+
+      // Record batch telemetry with concurrency metrics
+      const totalCost = calculateBgRemoverCost({
+        imageSize: processedImages.reduce((sum, img) => sum + (img.metadata?.processedSize || 0), 0) / processedImages.length,
+        processingTime: processingTimeMs,
+        qualityLevel: processingOptions.quality || 'medium',
+        imageCount: processedImages.length,
+      });
+
+      await bgRemoverTelemetry.recordBatchJob({
+        batchId: jobId,
+        imagesProcessed: processedImages.length,
+        successCount: processedImages.length,
+        failureCount: 0,
+        totalCost,
+        durationMs: processingTimeMs,
+        pipeline,
+        concurrencyUsed: maxConcurrent,
+        processingMode: 'concurrent',
       });
 
       console.info('[Worker] Group processing completed', {
@@ -616,12 +763,39 @@ export class ProcessWorkerHandler extends BaseHandler {
         tenant,
       });
 
-      // Update job status to failed
+      // Record failed batch telemetry
+      await bgRemoverTelemetry.recordBatchJob({
+        batchId: jobId,
+        imagesProcessed: images.length,
+        successCount: 0,
+        failureCount: images.length,
+        totalCost: 0,
+        durationMs: processingTimeMs,
+        pipeline,
+        concurrencyUsed: maxConcurrent,
+        processingMode: 'concurrent',
+      });
+
+      // Calculate final progress for failed job
+      const finalProgress = {
+        total: images.length,
+        completed: completedCount,
+        failed: failedCount,
+        processing: 0,
+        pending: images.length - completedCount - failedCount,
+      };
+
+      // Update job status to failed with resumable state
       await this.updateJobStatus(tenant, jobId, 'failed', {
         groupId,
         error: errorMessage,
         processingTimeMs,
         completedAt: new Date().toISOString(),
+        // Resumable state - can be resumed later
+        images: imageStates,
+        progress: finalProgress,
+        resumable: true,
+        canResume: failedCount < images.length, // Can resume if not all failed
       });
 
       return { success: false, error: errorMessage };
@@ -715,18 +889,29 @@ export class ProcessWorkerHandler extends BaseHandler {
         throw new Error('No image provided');
       }
 
-      // Convert to base64 for storage/response
       const contentType = outputFormat === 'png' ? 'image/png' :
                          outputFormat === 'webp' ? 'image/webp' : 'image/jpeg';
-      const base64Image = result.outputBuffer.toString('base64');
-      const outputUrl = `data:${contentType};base64,${base64Image}`;
+      const outputBucket = await getOutputBucket(tenant, stage);
+      const outputKey = generateOutputKey(tenant, productId || jobId, outputFormat || 'png');
+      const outputUrl = await uploadProcessedImage(
+        outputBucket,
+        outputKey,
+        result.outputBuffer,
+        contentType,
+        {
+          tenant,
+          jobId,
+          productId: productId || 'unknown',
+          source: imageUrl || 'base64',
+        }
+      );
 
       const processingTimeMs = Date.now() - processingStartTime;
 
       console.info('Image processed successfully', {
         jobId,
         processingTimeMs,
-        outputSize: base64Image.length,
+        outputSize: result.outputBuffer.length,
         originalSize: result.metadata.originalSize,
         processedSize: result.metadata.processedSize,
         tenant,
@@ -865,12 +1050,34 @@ export class ProcessWorkerHandler extends BaseHandler {
       // Update job status to completed
       await this.updateJobStatus(tenant, jobId, 'completed', {
         outputUrl,
+        outputKey,
         processingTimeMs,
         metadata: result.metadata,
         productDescription: result.productDescription,
         multilingualDescription,
         bilingualDescription,
         completedAt: new Date().toISOString(),
+      });
+
+      // Record telemetry
+      const cost = calculateBgRemoverCost({
+        imageSize: result.metadata.processedSize,
+        processingTime: processingTimeMs,
+        qualityLevel: quality || 'medium',
+        imageCount: 1,
+      });
+
+      await bgRemoverTelemetry.recordImageProcessing({
+        taskId: jobId,
+        success: true,
+        responseTimeMs: processingTimeMs,
+        costUsd: cost,
+        metadata: {
+          imageSize: result.metadata.processedSize,
+          processingMode: 'single',
+          qualityLevel: quality || 'medium',
+          outputFormat: outputFormat || 'png',
+        },
       });
 
       console.info('Job completed successfully', { jobId, tenant, processingTimeMs });
@@ -885,6 +1092,19 @@ export class ProcessWorkerHandler extends BaseHandler {
         error: errorMessage,
         processingTimeMs,
         tenant,
+      });
+
+      // Record telemetry for failure
+      await bgRemoverTelemetry.recordImageProcessing({
+        taskId: jobId,
+        success: false,
+        responseTimeMs: processingTimeMs,
+        costUsd: 0,
+        error: {
+          message: errorMessage,
+          code: 'IMAGE_PROCESSING_FAILED',
+          stack: error instanceof Error ? error.stack : undefined,
+        },
       });
 
       // Update job status to failed
@@ -955,6 +1175,59 @@ export class ProcessWorkerHandler extends BaseHandler {
   }
 
   /**
+   * Load current job state from DynamoDB for resumable operations
+   */
+  private async loadJobState(tenant: string, jobId: string): Promise<any | null> {
+    try {
+      const { DynamoDBDocumentClient, GetCommand } = await import('@aws-sdk/lib-dynamodb');
+      const docClient = DynamoDBDocumentClient.from(dynamoDB);
+
+      const response = await docClient.send(new GetCommand({
+        TableName: tableName,
+        Key: {
+          PK: `TENANT#${tenant}#BG_REMOVER_JOB#${jobId}`,
+          SK: 'METADATA',
+        },
+      }));
+
+      return response.Item || null;
+    } catch (error) {
+      console.warn('Failed to load job state, starting fresh', {
+        tenant,
+        jobId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return null;
+    }
+  }
+
+  /**
+   * Update individual image status in memory (will be persisted when job completes)
+   * For resumable operations, we track state in memory during processing
+   */
+  private updateImageStatusInMemory(
+    images: any[],
+    imageIndex: number,
+    status: 'pending' | 'processing' | 'completed' | 'failed',
+    result?: Record<string, any>
+  ): void {
+    if (images[imageIndex]) {
+      images[imageIndex].status = status;
+      images[imageIndex].updatedAt = new Date().toISOString();
+      images[imageIndex].lastAttemptAt = new Date().toISOString();
+      images[imageIndex].attempts = (images[imageIndex].attempts || 0) + 1;
+
+      if (result) {
+        Object.assign(images[imageIndex], result);
+      }
+
+      if (status === 'failed' && result?.error) {
+        images[imageIndex].error = result.error;
+      }
+    }
+  }
+
+  /**
    * Update job status in DynamoDB
    */
   private async updateJobStatus(
@@ -963,10 +1236,13 @@ export class ProcessWorkerHandler extends BaseHandler {
     status: 'pending' | 'processing' | 'completed' | 'failed' | 'cancelled',
     additionalFields: Record<string, any> = {}
   ): Promise<void> {
-    const pk = `TENANT#${tenant}#JOB`;
-    const sk = `JOB#${jobId}`;
+    const pk = `TENANT#${tenant}#BG_REMOVER_JOB#${jobId}`;
+    const sk = 'METADATA';
 
-    const updateExpression = ['status = :status', 'updatedAt = :updatedAt'];
+    const updateExpression = ['#status = :status', 'updatedAt = :updatedAt'];
+    const expressionAttributeNames: Record<string, string> = {
+      '#status': 'status',
+    };
     const expressionAttributeValues: Record<string, any> = {
       ':status': { S: status },
       ':updatedAt': { S: new Date().toISOString() },
@@ -974,16 +1250,20 @@ export class ProcessWorkerHandler extends BaseHandler {
 
     // Add additional fields dynamically
     Object.entries(additionalFields).forEach(([key, value], index) => {
-      const placeholder = `:val${index}`;
-      updateExpression.push(`${key} = ${placeholder}`);
-      expressionAttributeValues[placeholder] = marshall(value);
+      const namePlaceholder = `#field${index}`;
+      const valuePlaceholder = `:val${index}`;
+      const marshalled = marshall({ value });
+      updateExpression.push(`${namePlaceholder} = ${valuePlaceholder}`);
+      expressionAttributeNames[namePlaceholder] = key;
+      expressionAttributeValues[valuePlaceholder] = marshalled.value;
     });
 
     try {
       await dynamoDB.send(new UpdateItemCommand({
         TableName: tableName,
-        Key: marshall({ pk, sk }),
+        Key: marshall({ PK: pk, SK: sk }),
         UpdateExpression: `SET ${updateExpression.join(', ')}`,
+        ExpressionAttributeNames: expressionAttributeNames,
         ExpressionAttributeValues: expressionAttributeValues,
       }));
 

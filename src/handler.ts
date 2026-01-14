@@ -17,6 +17,7 @@ import { languageManager } from './lib/language-manager';
 import { multilingualDescriptionGenerator } from './lib/multilingual-description';
 import { validateRequest, validatePathParams, ValidationError } from './lib/validation';
 import { resolveTenantFromRequest, loadTenantConfig } from './lib/tenant/resolver';
+import { loadTenantCognitoConfig } from './lib/tenant/cognito-config';
 import {
   processImageFromUrl,
   processImageFromBase64,
@@ -31,6 +32,9 @@ import {
   setJobStatus,
   updateJobStatus,
   deleteJob,
+  createJob,
+  markJobCompleted,
+  markJobFailed,
   type JobStatus,
 } from './lib/job-store';
 import {
@@ -54,29 +58,193 @@ import {
   clearLogContext,
 } from './lib/logger';
 
+interface DependencyHealth {
+  status: 'healthy' | 'degraded' | 'unhealthy';
+  latency?: number;
+  message?: string;
+}
+
 interface HealthResponse {
   status: 'healthy' | 'degraded' | 'unhealthy';
-  service: string;
-  version: string;
   timestamp: string;
-  uptime: number;
-  checks: {
-    name: string;
-    status: 'pass' | 'fail';
-    message?: string;
-    details?: Record<string, any>;
-  }[];
+  dependencies: {
+    [key: string]: DependencyHealth;
+  };
+}
+
+const DATA_URI_PREFIX = 'data:';
+
+function sanitizeOutputUrl(value?: string): string | undefined {
+  if (!value) return value;
+  if (value.startsWith(DATA_URI_PREFIX)) return undefined;
+  return value;
+}
+
+function sanitizeJobResult(result?: JobStatus['result']) {
+  if (!result) return undefined;
+  const sanitizedUrl = sanitizeOutputUrl(result.outputUrl);
+  return {
+    success: result.success,
+    ...(sanitizedUrl ? { outputUrl: sanitizedUrl } : {}),
+    ...(result.error ? { error: result.error } : {}),
+    ...(typeof result.processingTimeMs === 'number' ? { processingTimeMs: result.processingTimeMs } : {}),
+    ...(result.metadata ? { metadata: result.metadata } : {}),
+    ...(result.productDescription ? { productDescription: result.productDescription } : {}),
+    ...(result.multilingualDescription ? { multilingualDescription: result.multilingualDescription } : {}),
+    ...(result.bilingualDescription ? { bilingualDescription: result.bilingualDescription } : {}),
+  };
 }
 
 const startTime = Date.now();
+
+/**
+ * Check DynamoDB health by attempting a simple operation
+ */
+async function checkDynamoDB(): Promise<DependencyHealth> {
+  const startCheck = Date.now();
+  try {
+    const { DynamoDBClient, DescribeTableCommand } = await import('@aws-sdk/client-dynamodb');
+    const client = new DynamoDBClient({ region: global.process.env.AWS_REGION || 'eu-west-1' });
+    const tableName =
+      global.process.env.DYNAMODB_TABLE ||
+      `carousel-main-${global.process.env.STAGE || 'dev'}`;
+
+    await client.send(new DescribeTableCommand({ TableName: tableName }));
+
+    return {
+      status: 'healthy',
+      latency: Date.now() - startCheck,
+    };
+  } catch (error) {
+    return {
+      status: 'unhealthy',
+      latency: Date.now() - startCheck,
+      message: error instanceof Error ? error.message : 'DynamoDB check failed',
+    };
+  }
+}
+
+/**
+ * Check S3 health by listing buckets
+ */
+async function checkS3(): Promise<DependencyHealth> {
+  const startCheck = Date.now();
+  try {
+    const { S3Client, ListBucketsCommand } = await import('@aws-sdk/client-s3');
+    const client = new S3Client({ region: global.process.env.AWS_REGION || 'eu-west-1' });
+
+    await client.send(new ListBucketsCommand({}));
+
+    return {
+      status: 'healthy',
+      latency: Date.now() - startCheck,
+    };
+  } catch (error) {
+    return {
+      status: 'unhealthy',
+      latency: Date.now() - startCheck,
+      message: error instanceof Error ? error.message : 'S3 check failed',
+    };
+  }
+}
+
+/**
+ * Check Cognito JWKS health
+ */
+async function checkCognito(): Promise<DependencyHealth> {
+  const startCheck = Date.now();
+  try {
+    const tenantId = global.process.env.TENANT || 'carousel-labs';
+    const stage = global.process.env.STAGE || 'dev';
+    const { loadTenantCognitoConfig } = await import('./lib/tenant/cognito-config');
+
+    const config = await loadTenantCognitoConfig(tenantId, stage);
+    const jwksUrl = `${config.issuer}/.well-known/jwks.json`;
+
+    const response = await fetch(jwksUrl, {
+      method: 'GET',
+      signal: AbortSignal.timeout(5000) // 5 second timeout
+    });
+
+    if (!response.ok) {
+      return {
+        status: 'degraded',
+        latency: Date.now() - startCheck,
+        message: `JWKS endpoint returned ${response.status}`,
+      };
+    }
+
+    return {
+      status: 'healthy',
+      latency: Date.now() - startCheck,
+    };
+  } catch (error) {
+    // Circuit breaker open or JWKS unreachable = degraded (not critical for health)
+    return {
+      status: 'degraded',
+      latency: Date.now() - startCheck,
+      message: error instanceof Error ? error.message : 'Cognito JWKS check failed',
+    };
+  }
+}
+
+/**
+ * Check cache service health
+ */
+async function checkCacheService(): Promise<DependencyHealth> {
+  const startCheck = Date.now();
+  try {
+    const { getCacheManager } = await import('./lib/cache/cache-manager');
+    const tenantId = global.process.env.TENANT || 'carousel-labs';
+    const cacheServiceUrl = global.process.env.CACHE_SERVICE_URL;
+
+    if (!cacheServiceUrl) {
+      return {
+        status: 'healthy',
+        latency: Date.now() - startCheck,
+        message: 'Cache service not configured (optional)',
+      };
+    }
+
+    const cacheManager = getCacheManager({
+      tenantId,
+      cacheServiceUrl,
+      enableCacheService: true,
+      enableMemoryCache: true,
+    });
+
+    const stats = cacheManager.getStats();
+
+    // If circuit breaker is open, service is degraded (not critical)
+    if (stats.cacheService.state === 'open') {
+      return {
+        status: 'degraded',
+        latency: Date.now() - startCheck,
+        message: 'Cache service circuit breaker open',
+      };
+    }
+
+    return {
+      status: 'healthy',
+      latency: Date.now() - startCheck,
+      message: `Circuit breaker: ${stats.cacheService.state}`,
+    };
+  } catch (error) {
+    return {
+      status: 'degraded',
+      latency: Date.now() - startCheck,
+      message: error instanceof Error ? error.message : 'Cache service check failed',
+    };
+  }
+}
 
 export const health = async (event: any) => {
    console.log('Health check requested', {
      path: event.requestContext?.http?.path,
      method: event.requestContext?.http?.method,
    });
+
    // Check if the request path matches /bg-remover/health
-   // Accept both /{stage}/bg-remover/health and /bg-remover/health patterns
    const path = event.requestContext?.http?.path || '';
    const stage = global.process.env.STAGE || 'dev';
    const validPaths = [
@@ -84,7 +252,6 @@ export const health = async (event: any) => {
      `/${stage}/bg-remover/health`,
    ];
 
-   // Check if path matches any valid pattern (exact match or ends with pattern)
    const isValidPath = validPaths.some(p => path === p || path.endsWith('/bg-remover/health'));
 
    if (!isValidPath) {
@@ -92,90 +259,54 @@ export const health = async (event: any) => {
      return createErrorResponse(ErrorCode.NOT_FOUND, 'Endpoint not found');
    }
 
-  const checks: HealthResponse['checks'] = [];
+  // Run all health checks in parallel
+  const [dynamodb, s3, cognito, cacheService] = await Promise.all([
+    checkDynamoDB(),
+    checkS3(),
+    checkCognito(),
+    checkCacheService(),
+  ]);
 
-  // Check config loading
-  try {
-    await loadConfig();
-    checks.push({ name: 'config', status: 'pass' });
-  } catch (error) {
-    checks.push({
-      name: 'config',
-      status: 'fail',
-      message: error instanceof Error ? error.message : 'Config load failed',
-    });
-  }
+  const dependencies = {
+    dynamodb,
+    s3,
+    cognito,
+    cacheService,
+  };
 
-  // Check environment variables
-  const requiredEnvVars = ['AWS_REGION'];
-  const missingEnvVars = requiredEnvVars.filter((v) => !global.process.env[v]);
+  // Determine overall status based on dependency health
+  const hasUnhealthy = Object.values(dependencies).some(d => d.status === 'unhealthy');
+  const hasDegraded = Object.values(dependencies).some(d => d.status === 'degraded');
 
-  if (missingEnvVars.length === 0) {
-    checks.push({ name: 'environment', status: 'pass' });
-  } else {
-    checks.push({
-      name: 'environment',
-      status: 'fail',
-      message: `Missing: ${missingEnvVars.join(', ')}`,
-    });
-  }
+  let statusCode = 200;
+  let overallStatus: 'healthy' | 'degraded' | 'unhealthy' = 'healthy';
 
-  // Check cache connectivity
-  try {
-    const { getCacheManager, getAllCacheStats } = await import('./lib/cache/cache-manager');
-    const tenantId = global.process.env.TENANT || 'carousel-labs';
-    const cacheServiceUrl = global.process.env.CACHE_SERVICE_URL;
-
-    const cacheManager = getCacheManager({
-      tenantId,
-      cacheServiceUrl,
-      enableCacheService: !!cacheServiceUrl && !!tenantId,
-      enableMemoryCache: true,
-    });
-
-    const stats = cacheManager.getStats();
-    const allStats = getAllCacheStats(); // All tenant cache managers
-
-    checks.push({
-      name: 'cache',
-      status: 'pass',
-      message: `Memory: ${stats.memory.entries} entries, Cache Service: ${stats.cacheService.available ? `available (${stats.cacheService.state})` : 'unavailable'}`,
-      details: {
-        tenantManagers: Object.keys(allStats).length,
-        cacheServiceAvailable: stats.cacheService.available || false,
-        circuitBreakerState: stats.cacheService.state || 'unknown',
-      },
-    });
-  } catch (error) {
-    checks.push({
-      name: 'cache',
-      status: 'fail',
-      message: error instanceof Error ? error.message : 'Cache check failed',
-    });
-  }
-
-  // Determine overall status
-  const failedChecks = checks.filter((c) => c.status === 'fail');
-  let status: HealthResponse['status'] = 'healthy';
-
-  if (failedChecks.length > 0) {
-    status = failedChecks.length === checks.length ? 'unhealthy' : 'degraded';
+  if (hasUnhealthy) {
+    // Critical dependencies (DynamoDB, S3) down = 503 Service Unavailable
+    statusCode = 503;
+    overallStatus = 'unhealthy';
+  } else if (hasDegraded) {
+    // Non-critical dependencies degraded = 207 Multi-Status
+    statusCode = 207;
+    overallStatus = 'degraded';
   }
 
   const response: HealthResponse = {
-    status,
-    service: 'bg-remover',
-    version: global.process.env.npm_package_version || '1.0.0',
+    status: overallStatus,
     timestamp: new Date().toISOString(),
-    uptime: Date.now() - startTime,
-    checks,
+    dependencies,
   };
 
-  const httpStatus = status === 'healthy' ? 200 : status === 'degraded' ? 200 : 503;
+  // Apply tenant-aware CORS for health endpoint
+  const tenant = await resolveTenantFromRequest(event, stage);
+  const { createTenantCorsHeaders } = await import('./lib/cors');
 
   return {
-    statusCode: httpStatus,
-    headers: DEFAULT_HEADERS,
+    statusCode,
+    headers: {
+      ...createTenantCorsHeaders(event, tenant),
+      'Content-Type': 'application/json',
+    },
     body: JSON.stringify(response),
   };
 };
@@ -183,6 +314,7 @@ export const health = async (event: any) => {
 export const process = async (event: any) => {
   const requestId = extractRequestId(event);
   const httpMethod = event.requestContext?.http?.method || event.httpMethod;
+  const stage = global.process.env.STAGE || 'dev';
 
   log.debug('Process function called', {
     requestId,
@@ -191,10 +323,14 @@ export const process = async (event: any) => {
     hasBody: !!event.body,
   });
 
+  // ===== CORS PREFLIGHT =====
   if (httpMethod === 'OPTIONS') {
+    const tenant = await resolveTenantFromRequest(event, stage);
+    const { createTenantCorsHeaders } = await import('./lib/cors');
+
     return {
       statusCode: 200,
-      headers: DEFAULT_HEADERS,
+      headers: createTenantCorsHeaders(event, tenant),
       body: '',
     };
   }
@@ -204,9 +340,8 @@ export const process = async (event: any) => {
   }
 
   // ===== JWT AUTHENTICATION =====
-  // Validate JWT token (optional in dev mode, required in prod)
-  const stage = global.process.env.STAGE || 'dev';
-  const requireAuth = stage === 'prod' || global.process.env.REQUIRE_AUTH === 'true';
+  // Always validate JWT token (API Gateway authorizer provides primary auth, this is defense in depth)
+  const requireAuth = true;
 
   const authResult = await validateJWTFromEvent(event, undefined, {
     required: requireAuth
@@ -393,6 +528,10 @@ export const process = async (event: any) => {
     // Load tenant-specific configuration
     const config = await loadTenantConfig(tenant, stage);
 
+    // Create job record for status tracking
+    await createJob(jobId, tenant, authResult?.userId);
+    log.info('Job record created', { jobId, tenant, userId: authResult?.userId, requestId });
+
     // Process the image
     let result: {
       outputBuffer: Buffer;
@@ -431,19 +570,29 @@ export const process = async (event: any) => {
       );
     }
 
-    // For dev: Return base64 data URL instead of uploading to S3
-    // In production, this would upload to S3 and return a presigned URL
+    // Upload to S3 and return URL (solves 413 Content Too Large)
     const contentType = outputFormat === 'png' ? 'image/png' :
                        outputFormat === 'webp' ? 'image/webp' : 'image/jpeg';
-
-    const base64Image = result.outputBuffer.toString('base64');
-    const outputUrl = `data:${contentType};base64,${base64Image}`;
+    const outputBucket = await getOutputBucket(tenant, stage);
+    const outputKey = generateOutputKey(tenant, productId || jobId, outputFormat || 'png');
+    const outputUrl = await uploadProcessedImage(
+      outputBucket,
+      outputKey,
+      result.outputBuffer,
+      contentType,
+      {
+        tenant,
+        jobId,
+        productId: productId || 'unknown',
+        source: imageUrl || 'base64',
+      }
+    );
 
     const processingTimeMs = Date.now() - processingStartTime;
 
     logTiming('image-processing', processingTimeMs, {
       jobId,
-      outputSize: base64Image.length,
+      outputSize: result.outputBuffer.length,
       originalSize: result.metadata.originalSize,
       processedSize: result.metadata.processedSize,
       tenant,
@@ -532,7 +681,20 @@ export const process = async (event: any) => {
 
     logResponse(200, processingTimeMs, { jobId, tenant, requestId });
 
-    return createSuccessResponse({
+    // Mark job as completed with result
+    await markJobCompleted(jobId, {
+      outputUrl,
+      metadata: result.metadata,
+      processingTimeMs,
+      productDescription: result.productDescription,
+      multilingualDescription,
+      bilingualDescription,
+    }, tenant);
+    log.info('Job marked as completed', { jobId, tenant, requestId });
+
+    // Apply tenant-aware CORS headers
+    const { createTenantCorsHeaders } = await import('./lib/cors');
+    const response = createSuccessResponse({
       success: true,
       jobId,
       outputUrl,
@@ -543,6 +705,14 @@ export const process = async (event: any) => {
       bilingualDescription,
       requestId,
     });
+
+    // Override with tenant-aware CORS headers
+    response.headers = {
+      ...createTenantCorsHeaders(event, tenant),
+      'Content-Type': 'application/json',
+    };
+
+    return response;
   } catch (error) {
     const processingTimeMs = Date.now() - processingStartTime;
 
@@ -607,6 +777,11 @@ export const process = async (event: any) => {
     }
     // ===== END CREDITS REFUND =====
 
+    // Mark job as failed
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    await markJobFailed(jobId, errorMessage, processingTimeMs, tenant);
+    log.info('Job marked as failed', { jobId, tenant, error: errorMessage, requestId });
+
     // Use standardized error handling
     clearLogContext();
     return handleError(error, 'process-image', requestId);
@@ -620,23 +795,39 @@ export const process = async (event: any) => {
 
 export const status = async (event: any) => {
   const requestId = extractRequestId(event);
+  const httpMethod = event.requestContext?.http.method || event.httpMethod;
+  const stage = global.process.env.STAGE || 'dev';
+
+  // ===== CORS PREFLIGHT =====
+  // Handle OPTIONS first, before any validation or authentication
+  if (httpMethod === 'OPTIONS') {
+    const tenant = await resolveTenantFromRequest(event, stage);
+    const { createTenantCorsHeaders } = await import('./lib/cors');
+
+    return {
+      statusCode: 200,
+      headers: createTenantCorsHeaders(event, tenant),
+      body: '',
+    };
+  }
 
    // Check if the request path matches /bg-remover/status/{jobId}
    const path = event.requestContext?.http?.path || '';
-   const pathWithoutStage = path.replace(/^\/[^\/]+/, ''); // Remove stage prefix
-   if (!event.pathParameters?.jobId || !pathWithoutStage?.startsWith('/bg-remover/status/')) {
+   if (!event.pathParameters?.jobId || !path?.includes('/status/')) {
      return createErrorResponse(ErrorCode.NOT_FOUND, 'Endpoint not found', undefined, requestId);
    }
 
   const jobId = event.pathParameters.jobId;
-  const httpMethod = event.requestContext?.http?.method || event.httpMethod;
 
   // ===== JWT AUTHENTICATION =====
-  // Status endpoint requires authentication (read-only, but still sensitive)
-  const stage = global.process.env.STAGE || 'dev';
-  const requireAuth = stage === 'prod' || global.process.env.REQUIRE_AUTH === 'true';
+  // Always validate JWT token (API Gateway authorizer provides primary auth, this is defense in depth)
+  const requireAuth = true;
 
-  const authResult = await validateJWTFromEvent(event, undefined, {
+  // CRITICAL: Resolve tenant and load Cognito config before JWT validation
+  const tenant = await resolveTenantFromRequest(event, stage);
+  const cognitoConfig = await loadTenantCognitoConfig(tenant, stage);
+
+  const authResult = await validateJWTFromEvent(event, cognitoConfig, {
     required: requireAuth
   });
 
@@ -662,14 +853,6 @@ export const status = async (event: any) => {
   }
   // ===== END JWT AUTHENTICATION =====
 
-  if (httpMethod === 'OPTIONS') {
-    return {
-      statusCode: 200,
-      headers: DEFAULT_HEADERS,
-      body: '',
-    };
-  }
-
   if (httpMethod === 'GET') {
     try {
       const pathValidation = validatePathParams(event.pathParameters, ['jobId'], 'status-get');
@@ -692,7 +875,7 @@ export const status = async (event: any) => {
         );
       }
 
-      const job = await getJobStatus(jobId);
+      const job = await getJobStatus(jobId, tenant);
 
       if (!job) {
         return createErrorResponse(
@@ -703,15 +886,24 @@ export const status = async (event: any) => {
         );
       }
 
-      return createSuccessResponse({
+      const { createTenantCorsHeaders } = await import('./lib/cors');
+      const response = createSuccessResponse({
         jobId: job.jobId,
         status: job.status,
         progress: job.progress,
-        result: job.result,
+        result: sanitizeJobResult(job.result),
         createdAt: job.createdAt,
         updatedAt: job.updatedAt,
         expiresAt: new Date(new Date(job.createdAt).getTime() + 24 * 60 * 60 * 1000).toISOString(),
       });
+
+      // Override with tenant-aware CORS headers
+      response.headers = {
+        ...createTenantCorsHeaders(event, tenant),
+        'Content-Type': 'application/json',
+      };
+
+      return response;
     } catch (error) {
       console.error('Error fetching job status', {
         jobId,
@@ -745,7 +937,7 @@ export const status = async (event: any) => {
         );
       }
 
-      const job = await getJobStatus(jobId);
+      const job = await getJobStatus(jobId, tenant);
 
       if (!job) {
         return createErrorResponse(ErrorCode.NOT_FOUND, 'Job not found', { jobId }, requestId);
@@ -767,13 +959,23 @@ export const status = async (event: any) => {
           success: false,
           error: 'Job cancelled by user',
         },
-      });
+      }, tenant);
 
-      return createSuccessResponse({
+      // tenant was already resolved earlier at line 793
+      const { createTenantCorsHeaders } = await import('./lib/cors');
+      const response = createSuccessResponse({
         jobId,
         status: 'cancelled',
         message: 'Job has been cancelled',
       });
+
+      // Override with tenant-aware CORS headers
+      response.headers = {
+        ...createTenantCorsHeaders(event, tenant),
+        'Content-Type': 'application/json',
+      };
+
+      return response;
     } catch (error) {
       console.error('Error cancelling job', {
         jobId,
@@ -815,18 +1017,20 @@ export const settings = async (event: any) => {
     requestId,
   });
 
-  // Handle OPTIONS preflight
+  // ===== CORS PREFLIGHT =====
   if (httpMethod === 'OPTIONS') {
+    const { createTenantCorsHeaders } = await import('./lib/cors');
+
     return {
       statusCode: 200,
-      headers: DEFAULT_HEADERS,
+      headers: createTenantCorsHeaders(event, tenant),
       body: '',
     };
   }
 
   // ===== JWT AUTHENTICATION =====
-  // Settings endpoint requires authentication (sensitive configuration)
-  const requireAuth = stage === 'prod' || global.process.env.REQUIRE_AUTH === 'true';
+  // Always validate JWT token (API Gateway authorizer provides primary auth, this is defense in depth)
+  const requireAuth = true;
 
   // Load tenant-specific Cognito configuration for JWT validation
   const { loadTenantCognitoConfig } = await import('./lib/tenant/cognito-config');
@@ -911,18 +1115,36 @@ export const settings = async (event: any) => {
         WithDecryption: false,
       });
 
-      const response = await ssmClient.send(command);
-      const settings = response.Parameter?.Value
-        ? JSON.parse(response.Parameter.Value)
+      const ssmResponse = await ssmClient.send(command);
+      const settings = ssmResponse.Parameter?.Value
+        ? JSON.parse(ssmResponse.Parameter.Value)
         : defaultSettings;
 
       console.log('Retrieved settings from SSM', { ssmPath, settings, requestId });
 
-      return createSuccessResponse({ settings });
+      const { createTenantCorsHeaders } = await import('./lib/cors');
+      const response = createSuccessResponse({ settings });
+
+      // Override with tenant-aware CORS headers
+      response.headers = {
+        ...createTenantCorsHeaders(event, tenant),
+        'Content-Type': 'application/json',
+      };
+
+      return response;
     } catch (error: any) {
       if (error.name === 'ParameterNotFound') {
         console.log('Settings parameter not found, returning defaults', { ssmPath, requestId });
-        return createSuccessResponse({ settings: defaultSettings });
+        const { createTenantCorsHeaders } = await import('./lib/cors');
+        const response = createSuccessResponse({ settings: defaultSettings });
+
+        // Override with tenant-aware CORS headers
+        response.headers = {
+          ...createTenantCorsHeaders(event, tenant),
+          'Content-Type': 'application/json',
+        };
+
+        return response;
       }
 
       console.error('Error retrieving settings from SSM', {
@@ -1025,11 +1247,20 @@ export const settings = async (event: any) => {
 
       console.log('Saved settings to SSM', { ssmPath, settings, requestId });
 
-      return createSuccessResponse({
+      const { createTenantCorsHeaders } = await import('./lib/cors');
+      const response = createSuccessResponse({
         success: true,
         settings,
         message: 'Settings saved successfully',
       });
+
+      // Override with tenant-aware CORS headers
+      response.headers = {
+        ...createTenantCorsHeaders(event, tenant),
+        'Content-Type': 'application/json',
+      };
+
+      return response;
     } catch (error: any) {
       console.error('Error saving settings to SSM', {
         error: error.message,

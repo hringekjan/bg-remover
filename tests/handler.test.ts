@@ -1,3 +1,20 @@
+// Mock DynamoDB health check
+jest.mock('@aws-sdk/client-dynamodb', () => ({
+  DynamoDBClient: jest.fn(() => ({
+    send: jest.fn().mockResolvedValue({}),
+  })),
+  DescribeTableCommand: jest.fn(),
+}));
+
+// Mock S3 health check
+jest.mock('@aws-sdk/client-s3', () => ({
+  S3Client: jest.fn(() => ({
+    send: jest.fn().mockResolvedValue({}),
+  })),
+  ListBucketsCommand: jest.fn(),
+  GetObjectCommand: jest.fn(),
+}));
+
 // Mock SSM before imports
 const mockSSMSend = jest.fn();
 jest.mock('@aws-sdk/client-ssm', () => ({
@@ -26,7 +43,80 @@ jest.mock('@aws-sdk/client-eventbridge', () => ({
   }),
 }));
 
+// Mock JWT validation to bypass auth in tests
+jest.mock('../src/lib/auth/jwt-validator', () => ({
+  validateJWTFromEvent: jest.fn().mockResolvedValue({
+    isValid: true,
+    payload: {
+      sub: 'test-user-123',
+      email: 'test@carousellabs.co',
+      'cognito:groups': ['admin'],
+    },
+    userId: 'test-user-123',
+    email: 'test@carousellabs.co',
+    groups: ['admin'],
+  }),
+  extractTokenFromHeader: jest.fn((header: string | undefined) =>
+    header?.replace('Bearer ', '') || null
+  ),
+}));
+
+// Mock Cognito for health checks (used by health endpoint)
+jest.mock('../src/lib/tenant/cognito-config', () => ({
+  loadTenantCognitoConfig: jest.fn().mockResolvedValue({
+    userPoolId: 'test-pool',
+    region: 'eu-west-1',
+    issuer: 'https://cognito-idp.eu-west-1.amazonaws.com/test-pool',
+  }),
+}));
+
+// Mock cache service for health checks
+jest.mock('../src/lib/cache/cache-service-client', () => ({
+  CacheServiceClient: jest.fn().mockImplementation(() => ({
+    get: jest.fn().mockResolvedValue(null),
+    set: jest.fn().mockResolvedValue(true),
+    health: jest.fn().mockResolvedValue({ status: 'healthy' }),
+  })),
+}));
+
+// Mock cache manager to avoid background timers
+jest.mock('../src/lib/cache/cache-manager', () => ({
+  getCacheManager: jest.fn().mockReturnValue({
+    getStats: jest.fn().mockReturnValue({
+      cacheService: { state: 'closed' }
+    }),
+    get: jest.fn(),
+    set: jest.fn(),
+  })
+}));
+
+// Mock UUID
+jest.mock('crypto', () => ({
+  ...jest.requireActual('crypto'),
+  randomUUID: jest.fn().mockReturnValue('test-uuid-123'),
+}));
+
+// Mock job-store
+jest.mock('../src/lib/job-store', () => ({
+  getJobStatus: jest.fn(),
+  setJobStatus: jest.fn(),
+  updateJobStatus: jest.fn(),
+  deleteJob: jest.fn(),
+  createJob: jest.fn(),
+  markJobCompleted: jest.fn(),
+  markJobFailed: jest.fn(),
+}));
+
+// Mock S3 client lib
+jest.mock('../lib/s3/client', () => ({
+  uploadProcessedImage: jest.fn().mockResolvedValue('https://bg-remover-test.s3.eu-west-1.amazonaws.com/test-uuid-123.png'),
+  generateOutputKey: jest.fn().mockReturnValue('test-uuid-123.png'),
+  getOutputBucket: jest.fn().mockResolvedValue('bg-remover-test'),
+}));
+
 import { health, process as processHandler } from '../src/handler';
+import * as jobStore from '../src/lib/job-store';
+import * as s3Client from '../lib/s3/client';
 
 describe('Handler Functions', () => {
   beforeEach(() => {
@@ -35,6 +125,9 @@ describe('Handler Functions', () => {
     // Set environment variables for tenant/stage resolution
     process.env.STAGE = 'test';
     process.env.TENANT = 'carousel-labs';
+    process.env.AWS_REGION = 'eu-west-1';
+    process.env.DYNAMODB_TABLE = 'bg-remover-test';
+    process.env.CACHE_SERVICE_ENABLED = 'false';  // Disable cache service for tests
 
     // Mock SSM to return valid config
     mockSSMSend.mockResolvedValue({
@@ -57,9 +150,10 @@ describe('Handler Functions', () => {
     // Mock EventBridge
     mockEventBridgeSend.mockResolvedValue({});
 
-    // Mock fetch for image processing
+    // Mock fetch for Cognito health check and image processing
     mockFetch.mockResolvedValue({
       ok: true,
+      status: 200,
       json: async () => ({
         outputBase64: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAACXBIWXMAAAsTAAALEwEAmpwYAAAADUlEQVR4nGNgYGBgAAAABQABpfZFQAAAAABJRU5ErkJggg==',
         metadata: {
@@ -110,13 +204,16 @@ describe('Handler Functions', () => {
     it('should handle OPTIONS requests', async () => {
       const event = {
         httpMethod: 'OPTIONS',
+        headers: {
+          origin: 'https://carousel.dev.carousellabs.co',
+        },
       };
 
       const result = await processHandler(event);
 
       expect(result.statusCode).toBe(200);
       expect(result.headers).toMatchObject({
-        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Origin': 'https://carousel.dev.carousellabs.co',
         'Access-Control-Allow-Methods': expect.stringContaining('OPTIONS'),
         'Access-Control-Allow-Headers': expect.stringContaining('Content-Type'),
       });
@@ -155,7 +252,7 @@ describe('Handler Functions', () => {
       const body = JSON.parse(result.body);
       expect(body.success).toBe(true);
       expect(body.jobId).toBe('test-uuid-123');
-      expect(body.outputUrl).toContain('data:image/png;base64,');
+      expect(body.outputUrl).toContain('s3.eu-west-1.amazonaws.com');
       expect(body.processingTimeMs).toBeGreaterThan(0);
       expect(body.metadata).toEqual({
         width: 100,

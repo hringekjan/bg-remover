@@ -1,0 +1,1817 @@
+PASS src/lib/product-identity/__tests__/batch-embeddings.test.ts
+  ● Console
+
+    console.log
+      [BatchEmbedding] Starting batch processing: {
+        totalImages: 3,
+        batchSize: 25,
+        model: 'amazon.titan-embed-image-v1',
+        maxConcurrency: 4
+      }
+
+      at generateBatchImageEmbeddings (src/lib/product-identity/batch-embeddings.ts:200:11)
+
+    console.log
+      [BatchEmbedding] Created 1 batches
+
+      at generateBatchImageEmbeddings (src/lib/product-identity/batch-embeddings.ts:211:11)
+
+    console.log
+      [BatchEmbedding] Batch 1/1 complete: 3 images in 0ms
+
+      at src/lib/product-identity/batch-embeddings.ts:232:15
+          at async Promise.allSettled (index 0)
+
+    console.log
+      [BatchEmbedding] Batch processing complete: {
+        totalImages: 3,
+        successCount: 3,
+        failureCount: 0,
+        totalTimeMs: 8,
+        avgTimePerImage: '2.7',
+        batchCount: 1
+      }
+
+      at generateBatchImageEmbeddings (src/lib/product-identity/batch-embeddings.ts:260:11)
+
+    console.log
+      [BatchEmbedding] Starting batch processing: {
+        totalImages: 30,
+        batchSize: 25,
+        model: 'amazon.titan-embed-image-v1',
+        maxConcurrency: 4
+      }
+
+      at generateBatchImageEmbeddings (src/lib/product-identity/batch-embeddings.ts:200:11)
+
+    console.log
+      [BatchEmbedding] Created 2 batches
+
+      at generateBatchImageEmbeddings (src/lib/product-identity/batch-embeddings.ts:211:11)
+
+    console.log
+      [BatchEmbedding] Batch 1/2 complete: 25 images in 1ms
+
+      at src/lib/product-identity/batch-embeddings.ts:232:15
+          at async Promise.allSettled (index 0)
+
+    console.log
+      [BatchEmbedding] Batch 2/2 complete: 5 images in 1ms
+
+      at src/lib/product-identity/batch-embeddings.ts:232:15
+          at async Promise.allSettled (index 1)
+
+    console.log
+      [BatchEmbedding] Batch processing complete: {
+        totalImages: 30,
+        successCount: 30,
+        failureCount: 0,
+        totalTimeMs: 1,
+        avgTimePerImage: '0.0',
+        batchCount: 2
+      }
+
+      at generateBatchImageEmbeddings (src/lib/product-identity/batch-embeddings.ts:260:11)
+
+    console.log
+      [BatchEmbedding] Starting batch processing: {
+        totalImages: 15,
+        batchSize: 5,
+        model: 'amazon.titan-embed-image-v1',
+        maxConcurrency: 4
+      }
+
+      at generateBatchImageEmbeddings (src/lib/product-identity/batch-embeddings.ts:200:11)
+
+    console.log
+      [BatchEmbedding] Created 3 batches
+
+      at generateBatchImageEmbeddings (src/lib/product-identity/batch-embeddings.ts:211:11)
+
+    console.log
+      [BatchEmbedding] Batch 1/3 complete: 5 images in 0ms
+
+      at src/lib/product-identity/batch-embeddings.ts:232:15
+          at async Promise.allSettled (index 0)
+
+    console.log
+      [BatchEmbedding] Batch 2/3 complete: 5 images in 0ms
+
+      at src/lib/product-identity/batch-embeddings.ts:232:15
+          at async Promise.allSettled (index 1)
+
+    console.log
+      [BatchEmbedding] Batch 3/3 complete: 5 images in 0ms
+
+      at src/lib/product-identity/batch-embeddings.ts:232:15
+          at async Promise.allSettled (index 2)
+
+    console.log
+      [BatchEmbedding] Batch processing complete: {
+        totalImages: 15,
+        successCount: 15,
+        failureCount: 0,
+        totalTimeMs: 0,
+        avgTimePerImage: '0.0',
+        batchCount: 3
+      }
+
+      at generateBatchImageEmbeddings (src/lib/product-identity/batch-embeddings.ts:260:11)
+
+    console.log
+      [BatchEmbedding] Starting batch processing: {
+        totalImages: 2,
+        batchSize: 25,
+        model: 'amazon.titan-embed-image-v1',
+        maxConcurrency: 4
+      }
+
+      at generateBatchImageEmbeddings (src/lib/product-identity/batch-embeddings.ts:200:11)
+
+    console.log
+      [BatchEmbedding] Created 1 batches
+
+      at generateBatchImageEmbeddings (src/lib/product-identity/batch-embeddings.ts:211:11)
+
+    console.error
+      [BatchEmbedding] Bedrock batch request failed: {
+        batchSize: 2,
+        imageIds: [ 'img1', 'img2' ],
+        error: 'Bedrock service unavailable'
+      }
+
+      140 |     return responseBody.embeddings;
+      141 |   } catch (error) {
+    > 142 |     console.error('[BatchEmbedding] Bedrock batch request failed:', {
+          |             ^
+      143 |       batchSize: batch.length,
+      144 |       imageIds: batch.map(img => img.imageId),
+      145 |       error: error instanceof Error ? error.message : String(error),
+
+      at invokeTitanBatchEmbedding (src/lib/product-identity/batch-embeddings.ts:142:13)
+      at src/lib/product-identity/batch-embeddings.ts:218:31
+          at async Promise.allSettled (index 0)
+      at generateBatchImageEmbeddings (src/lib/product-identity/batch-embeddings.ts:252:21)
+      at Object.<anonymous> (src/lib/product-identity/__tests__/batch-embeddings.test.ts:164:22)
+
+    console.error
+      [BatchEmbedding] Batch 1 failed: Bedrock service unavailable
+
+      233 |     } catch (error) {
+      234 |       const errorMessage = error instanceof Error ? error.message : String(error);
+    > 235 |       console.error(`[BatchEmbedding] Batch ${batchIndex + 1} failed:`, errorMessage);
+          |               ^
+      236 |
+      237 |       // Record error for each image in failed batch
+      238 |       batch.forEach(img => {
+
+      at src/lib/product-identity/batch-embeddings.ts:235:15
+          at async Promise.allSettled (index 0)
+      at generateBatchImageEmbeddings (src/lib/product-identity/batch-embeddings.ts:252:21)
+      at Object.<anonymous> (src/lib/product-identity/__tests__/batch-embeddings.test.ts:164:22)
+
+    console.log
+      [BatchEmbedding] Batch processing complete: {
+        totalImages: 2,
+        successCount: 0,
+        failureCount: 2,
+        totalTimeMs: 0,
+        avgTimePerImage: 'N/A',
+        batchCount: 1
+      }
+
+      at generateBatchImageEmbeddings (src/lib/product-identity/batch-embeddings.ts:260:11)
+
+    console.log
+      [BatchEmbedding] Starting batch processing: {
+        totalImages: 30,
+        batchSize: 25,
+        model: 'amazon.titan-embed-image-v1',
+        maxConcurrency: 4
+      }
+
+      at generateBatchImageEmbeddings (src/lib/product-identity/batch-embeddings.ts:200:11)
+
+    console.log
+      [BatchEmbedding] Created 2 batches
+
+      at generateBatchImageEmbeddings (src/lib/product-identity/batch-embeddings.ts:211:11)
+
+    console.error
+      [BatchEmbedding] Bedrock batch request failed: {
+        batchSize: 25,
+        imageIds: [
+          'img0',  'img1',  'img2',
+          'img3',  'img4',  'img5',
+          'img6',  'img7',  'img8',
+          'img9',  'img10', 'img11',
+          'img12', 'img13', 'img14',
+          'img15', 'img16', 'img17',
+          'img18', 'img19', 'img20',
+          'img21', 'img22', 'img23',
+          'img24'
+        ],
+        error: 'Batch 1 failed'
+      }
+
+      140 |     return responseBody.embeddings;
+      141 |   } catch (error) {
+    > 142 |     console.error('[BatchEmbedding] Bedrock batch request failed:', {
+          |             ^
+      143 |       batchSize: batch.length,
+      144 |       imageIds: batch.map(img => img.imageId),
+      145 |       error: error instanceof Error ? error.message : String(error),
+
+      at invokeTitanBatchEmbedding (src/lib/product-identity/batch-embeddings.ts:142:13)
+      at src/lib/product-identity/batch-embeddings.ts:218:31
+          at async Promise.allSettled (index 0)
+      at generateBatchImageEmbeddings (src/lib/product-identity/batch-embeddings.ts:252:21)
+      at Object.<anonymous> (src/lib/product-identity/__tests__/batch-embeddings.test.ts:193:22)
+
+    console.error
+      [BatchEmbedding] Batch 1 failed: Batch 1 failed
+
+      233 |     } catch (error) {
+      234 |       const errorMessage = error instanceof Error ? error.message : String(error);
+    > 235 |       console.error(`[BatchEmbedding] Batch ${batchIndex + 1} failed:`, errorMessage);
+          |               ^
+      236 |
+      237 |       // Record error for each image in failed batch
+      238 |       batch.forEach(img => {
+
+      at src/lib/product-identity/batch-embeddings.ts:235:15
+          at async Promise.allSettled (index 0)
+      at generateBatchImageEmbeddings (src/lib/product-identity/batch-embeddings.ts:252:21)
+      at Object.<anonymous> (src/lib/product-identity/__tests__/batch-embeddings.test.ts:193:22)
+
+    console.log
+      [BatchEmbedding] Batch 2/2 complete: 5 images in 1ms
+
+      at src/lib/product-identity/batch-embeddings.ts:232:15
+          at async Promise.allSettled (index 1)
+
+    console.log
+      [BatchEmbedding] Batch processing complete: {
+        totalImages: 30,
+        successCount: 5,
+        failureCount: 25,
+        totalTimeMs: 5,
+        avgTimePerImage: '1.0',
+        batchCount: 2
+      }
+
+      at generateBatchImageEmbeddings (src/lib/product-identity/batch-embeddings.ts:260:11)
+
+    console.log
+      [BatchEmbedding] Starting batch processing: {
+        totalImages: 1,
+        batchSize: 25,
+        model: 'amazon.titan-embed-image-v1',
+        maxConcurrency: 4
+      }
+
+      at generateBatchImageEmbeddings (src/lib/product-identity/batch-embeddings.ts:200:11)
+
+    console.log
+      [BatchEmbedding] Created 1 batches
+
+      at generateBatchImageEmbeddings (src/lib/product-identity/batch-embeddings.ts:211:11)
+
+    console.error
+      [BatchEmbedding] Bedrock batch request failed: {
+        batchSize: 1,
+        imageIds: [ 'img1' ],
+        error: 'Invalid Bedrock batch response: missing or invalid embeddings field. Response: {"invalid":"response"}'
+      }
+
+      140 |     return responseBody.embeddings;
+      141 |   } catch (error) {
+    > 142 |     console.error('[BatchEmbedding] Bedrock batch request failed:', {
+          |             ^
+      143 |       batchSize: batch.length,
+      144 |       imageIds: batch.map(img => img.imageId),
+      145 |       error: error instanceof Error ? error.message : String(error),
+
+      at invokeTitanBatchEmbedding (src/lib/product-identity/batch-embeddings.ts:142:13)
+      at src/lib/product-identity/batch-embeddings.ts:218:31
+          at async Promise.allSettled (index 0)
+      at generateBatchImageEmbeddings (src/lib/product-identity/batch-embeddings.ts:252:21)
+      at Object.<anonymous> (src/lib/product-identity/__tests__/batch-embeddings.test.ts:208:22)
+
+    console.error
+      [BatchEmbedding] Batch 1 failed: Invalid Bedrock batch response: missing or invalid embeddings field. Response: {"invalid":"response"}
+
+      233 |     } catch (error) {
+      234 |       const errorMessage = error instanceof Error ? error.message : String(error);
+    > 235 |       console.error(`[BatchEmbedding] Batch ${batchIndex + 1} failed:`, errorMessage);
+          |               ^
+      236 |
+      237 |       // Record error for each image in failed batch
+      238 |       batch.forEach(img => {
+
+      at src/lib/product-identity/batch-embeddings.ts:235:15
+          at async Promise.allSettled (index 0)
+      at generateBatchImageEmbeddings (src/lib/product-identity/batch-embeddings.ts:252:21)
+      at Object.<anonymous> (src/lib/product-identity/__tests__/batch-embeddings.test.ts:208:22)
+
+    console.log
+      [BatchEmbedding] Batch processing complete: {
+        totalImages: 1,
+        successCount: 0,
+        failureCount: 1,
+        totalTimeMs: 1,
+        avgTimePerImage: 'N/A',
+        batchCount: 1
+      }
+
+      at generateBatchImageEmbeddings (src/lib/product-identity/batch-embeddings.ts:260:11)
+
+    console.log
+      [BatchEmbedding] Starting batch processing: {
+        totalImages: 2,
+        batchSize: 25,
+        model: 'amazon.titan-embed-image-v1',
+        maxConcurrency: 4
+      }
+
+      at generateBatchImageEmbeddings (src/lib/product-identity/batch-embeddings.ts:200:11)
+
+    console.log
+      [BatchEmbedding] Created 1 batches
+
+      at generateBatchImageEmbeddings (src/lib/product-identity/batch-embeddings.ts:211:11)
+
+    console.error
+      [BatchEmbedding] Bedrock batch request failed: {
+        batchSize: 2,
+        imageIds: [ 'img1', 'img2' ],
+        error: 'Bedrock returned 1 embeddings for 2 images'
+      }
+
+      140 |     return responseBody.embeddings;
+      141 |   } catch (error) {
+    > 142 |     console.error('[BatchEmbedding] Bedrock batch request failed:', {
+          |             ^
+      143 |       batchSize: batch.length,
+      144 |       imageIds: batch.map(img => img.imageId),
+      145 |       error: error instanceof Error ? error.message : String(error),
+
+      at invokeTitanBatchEmbedding (src/lib/product-identity/batch-embeddings.ts:142:13)
+      at src/lib/product-identity/batch-embeddings.ts:218:31
+          at async Promise.allSettled (index 0)
+      at generateBatchImageEmbeddings (src/lib/product-identity/batch-embeddings.ts:252:21)
+      at Object.<anonymous> (src/lib/product-identity/__tests__/batch-embeddings.test.ts:229:22)
+
+    console.error
+      [BatchEmbedding] Batch 1 failed: Bedrock returned 1 embeddings for 2 images
+
+      233 |     } catch (error) {
+      234 |       const errorMessage = error instanceof Error ? error.message : String(error);
+    > 235 |       console.error(`[BatchEmbedding] Batch ${batchIndex + 1} failed:`, errorMessage);
+          |               ^
+      236 |
+      237 |       // Record error for each image in failed batch
+      238 |       batch.forEach(img => {
+
+      at src/lib/product-identity/batch-embeddings.ts:235:15
+          at async Promise.allSettled (index 0)
+      at generateBatchImageEmbeddings (src/lib/product-identity/batch-embeddings.ts:252:21)
+      at Object.<anonymous> (src/lib/product-identity/__tests__/batch-embeddings.test.ts:229:22)
+
+    console.log
+      [BatchEmbedding] Batch processing complete: {
+        totalImages: 2,
+        successCount: 0,
+        failureCount: 2,
+        totalTimeMs: 0,
+        avgTimePerImage: 'N/A',
+        batchCount: 1
+      }
+
+      at generateBatchImageEmbeddings (src/lib/product-identity/batch-embeddings.ts:260:11)
+
+    console.log
+      [BatchEmbedding] Starting batch processing: {
+        totalImages: 1,
+        batchSize: 25,
+        model: 'amazon.titan-embed-image-v1',
+        maxConcurrency: 4
+      }
+
+      at generateBatchImageEmbeddings (src/lib/product-identity/batch-embeddings.ts:200:11)
+
+    console.log
+      [BatchEmbedding] Created 1 batches
+
+      at generateBatchImageEmbeddings (src/lib/product-identity/batch-embeddings.ts:211:11)
+
+    console.error
+      [BatchEmbedding] Batch 1 failed: Image buffer is empty for image img1
+
+      233 |     } catch (error) {
+      234 |       const errorMessage = error instanceof Error ? error.message : String(error);
+    > 235 |       console.error(`[BatchEmbedding] Batch ${batchIndex + 1} failed:`, errorMessage);
+          |               ^
+      236 |
+      237 |       // Record error for each image in failed batch
+      238 |       batch.forEach(img => {
+
+      at src/lib/product-identity/batch-embeddings.ts:235:15
+          at async Promise.allSettled (index 0)
+      at generateBatchImageEmbeddings (src/lib/product-identity/batch-embeddings.ts:252:21)
+      at Object.<anonymous> (src/lib/product-identity/__tests__/batch-embeddings.test.ts:240:22)
+
+    console.log
+      [BatchEmbedding] Batch processing complete: {
+        totalImages: 1,
+        successCount: 0,
+        failureCount: 1,
+        totalTimeMs: 0,
+        avgTimePerImage: 'N/A',
+        batchCount: 1
+      }
+
+      at generateBatchImageEmbeddings (src/lib/product-identity/batch-embeddings.ts:260:11)
+
+    console.log
+      [BatchEmbedding] Starting batch processing: {
+        totalImages: 1,
+        batchSize: 25,
+        model: 'amazon.titan-embed-image-v1',
+        maxConcurrency: 4
+      }
+
+      at generateBatchImageEmbeddings (src/lib/product-identity/batch-embeddings.ts:200:11)
+
+    console.log
+      [BatchEmbedding] Created 1 batches
+
+      at generateBatchImageEmbeddings (src/lib/product-identity/batch-embeddings.ts:211:11)
+
+    console.error
+      [BatchEmbedding] Batch 1 failed: Image img1 too large: 21.0MB (max 20MB)
+
+      233 |     } catch (error) {
+      234 |       const errorMessage = error instanceof Error ? error.message : String(error);
+    > 235 |       console.error(`[BatchEmbedding] Batch ${batchIndex + 1} failed:`, errorMessage);
+          |               ^
+      236 |
+      237 |       // Record error for each image in failed batch
+      238 |       batch.forEach(img => {
+
+      at src/lib/product-identity/batch-embeddings.ts:235:15
+          at async Promise.allSettled (index 0)
+      at generateBatchImageEmbeddings (src/lib/product-identity/batch-embeddings.ts:252:21)
+      at Object.<anonymous> (src/lib/product-identity/__tests__/batch-embeddings.test.ts:250:22)
+
+    console.log
+      [BatchEmbedding] Batch processing complete: {
+        totalImages: 1,
+        successCount: 0,
+        failureCount: 1,
+        totalTimeMs: 0,
+        avgTimePerImage: 'N/A',
+        batchCount: 1
+      }
+
+      at generateBatchImageEmbeddings (src/lib/product-identity/batch-embeddings.ts:260:11)
+
+    console.log
+      [BatchEmbedding] Starting batch processing: {
+        totalImages: 1,
+        batchSize: 25,
+        model: 'amazon.titan-embed-image-v1',
+        maxConcurrency: 4
+      }
+
+      at generateBatchImageEmbeddings (src/lib/product-identity/batch-embeddings.ts:200:11)
+
+    console.log
+      [BatchEmbedding] Created 1 batches
+
+      at generateBatchImageEmbeddings (src/lib/product-identity/batch-embeddings.ts:211:11)
+
+    console.log
+      [BatchEmbedding] Batch 1/1 complete: 1 images in 0ms
+
+      at src/lib/product-identity/batch-embeddings.ts:232:15
+          at async Promise.allSettled (index 0)
+
+    console.log
+      [BatchEmbedding] Batch processing complete: {
+        totalImages: 1,
+        successCount: 1,
+        failureCount: 0,
+        totalTimeMs: 1,
+        avgTimePerImage: '1.0',
+        batchCount: 1
+      }
+
+      at generateBatchImageEmbeddings (src/lib/product-identity/batch-embeddings.ts:260:11)
+
+    console.log
+      [BatchEmbedding] Starting batch processing: {
+        totalImages: 100,
+        batchSize: 25,
+        model: 'amazon.titan-embed-image-v1',
+        maxConcurrency: 2
+      }
+
+      at generateBatchImageEmbeddings (src/lib/product-identity/batch-embeddings.ts:200:11)
+
+    console.log
+      [BatchEmbedding] Created 4 batches
+
+      at generateBatchImageEmbeddings (src/lib/product-identity/batch-embeddings.ts:211:11)
+
+    console.log
+      [BatchEmbedding] Batch 1/4 complete: 25 images in 2ms
+
+      at src/lib/product-identity/batch-embeddings.ts:232:15
+          at async Promise.allSettled (index 0)
+
+    console.log
+      [BatchEmbedding] Batch 2/4 complete: 25 images in 2ms
+
+      at src/lib/product-identity/batch-embeddings.ts:232:15
+          at async Promise.allSettled (index 1)
+
+    console.log
+      [BatchEmbedding] Batch 3/4 complete: 25 images in 2ms
+
+      at src/lib/product-identity/batch-embeddings.ts:232:15
+
+    console.log
+      [BatchEmbedding] Batch 4/4 complete: 25 images in 2ms
+
+      at src/lib/product-identity/batch-embeddings.ts:232:15
+
+    console.log
+      [BatchEmbedding] Batch processing complete: {
+        totalImages: 100,
+        successCount: 100,
+        failureCount: 0,
+        totalTimeMs: 2,
+        avgTimePerImage: '0.0',
+        batchCount: 4
+      }
+
+      at generateBatchImageEmbeddings (src/lib/product-identity/batch-embeddings.ts:260:11)
+
+    console.log
+      [BatchEmbedding] Starting batch processing: {
+        totalImages: 1,
+        batchSize: 1,
+        model: 'amazon.titan-embed-image-v1',
+        maxConcurrency: 4
+      }
+
+      at generateBatchImageEmbeddings (src/lib/product-identity/batch-embeddings.ts:200:11)
+
+    console.log
+      [BatchEmbedding] Created 1 batches
+
+      at generateBatchImageEmbeddings (src/lib/product-identity/batch-embeddings.ts:211:11)
+
+    console.log
+      [BatchEmbedding] Batch 1/1 complete: 1 images in 0ms
+
+      at src/lib/product-identity/batch-embeddings.ts:232:15
+          at async Promise.allSettled (index 0)
+
+    console.log
+      [BatchEmbedding] Batch processing complete: {
+        totalImages: 1,
+        successCount: 1,
+        failureCount: 0,
+        totalTimeMs: 1,
+        avgTimePerImage: '1.0',
+        batchCount: 1
+      }
+
+      at generateBatchImageEmbeddings (src/lib/product-identity/batch-embeddings.ts:260:11)
+
+    console.log
+      [BatchEmbedding] Starting batch processing: {
+        totalImages: 1,
+        batchSize: 1,
+        model: 'amazon.titan-embed-image-v1',
+        maxConcurrency: 4
+      }
+
+      at generateBatchImageEmbeddings (src/lib/product-identity/batch-embeddings.ts:200:11)
+
+    console.log
+      [BatchEmbedding] Created 1 batches
+
+      at generateBatchImageEmbeddings (src/lib/product-identity/batch-embeddings.ts:211:11)
+
+    console.error
+      [BatchEmbedding] Bedrock batch request failed: { batchSize: 1, imageIds: [ 'img1' ], error: 'Bedrock error' }
+
+      140 |     return responseBody.embeddings;
+      141 |   } catch (error) {
+    > 142 |     console.error('[BatchEmbedding] Bedrock batch request failed:', {
+          |             ^
+      143 |       batchSize: batch.length,
+      144 |       imageIds: batch.map(img => img.imageId),
+      145 |       error: error instanceof Error ? error.message : String(error),
+
+      at invokeTitanBatchEmbedding (src/lib/product-identity/batch-embeddings.ts:142:13)
+      at src/lib/product-identity/batch-embeddings.ts:218:31
+          at async Promise.allSettled (index 0)
+      at generateBatchImageEmbeddings (src/lib/product-identity/batch-embeddings.ts:252:21)
+      at generateSingleImageEmbedding (src/lib/product-identity/batch-embeddings.ts:289:18)
+      at Object.<anonymous> (src/lib/product-identity/__tests__/batch-embeddings.test.ts:332:7)
+
+    console.error
+      [BatchEmbedding] Batch 1 failed: Bedrock error
+
+      233 |     } catch (error) {
+      234 |       const errorMessage = error instanceof Error ? error.message : String(error);
+    > 235 |       console.error(`[BatchEmbedding] Batch ${batchIndex + 1} failed:`, errorMessage);
+          |               ^
+      236 |
+      237 |       // Record error for each image in failed batch
+      238 |       batch.forEach(img => {
+
+      at src/lib/product-identity/batch-embeddings.ts:235:15
+          at async Promise.allSettled (index 0)
+      at generateBatchImageEmbeddings (src/lib/product-identity/batch-embeddings.ts:252:21)
+      at generateSingleImageEmbedding (src/lib/product-identity/batch-embeddings.ts:289:18)
+      at Object.<anonymous> (src/lib/product-identity/__tests__/batch-embeddings.test.ts:332:7)
+
+    console.log
+      [BatchEmbedding] Batch processing complete: {
+        totalImages: 1,
+        successCount: 0,
+        failureCount: 1,
+        totalTimeMs: 0,
+        avgTimePerImage: 'N/A',
+        batchCount: 1
+      }
+
+      at generateBatchImageEmbeddings (src/lib/product-identity/batch-embeddings.ts:260:11)
+
+    console.log
+      [BatchEmbedding] Starting batch processing: {
+        totalImages: 2,
+        batchSize: 25,
+        model: 'amazon.titan-embed-image-v1',
+        maxConcurrency: 4
+      }
+
+      at generateBatchImageEmbeddings (src/lib/product-identity/batch-embeddings.ts:200:11)
+
+    console.log
+      [BatchEmbedding] Created 1 batches
+
+      at generateBatchImageEmbeddings (src/lib/product-identity/batch-embeddings.ts:211:11)
+
+    console.log
+      [BatchEmbedding] Batch 1/1 complete: 2 images in 0ms
+
+      at src/lib/product-identity/batch-embeddings.ts:232:15
+          at async Promise.allSettled (index 0)
+
+    console.log
+      [BatchEmbedding] Batch processing complete: {
+        totalImages: 2,
+        successCount: 2,
+        failureCount: 0,
+        totalTimeMs: 0,
+        avgTimePerImage: '0.0',
+        batchCount: 1
+      }
+
+      at generateBatchImageEmbeddings (src/lib/product-identity/batch-embeddings.ts:260:11)
+
+    console.log
+      [BatchEmbedding] Starting batch processing: {
+        totalImages: 1,
+        batchSize: 25,
+        model: 'amazon.titan-embed-image-v1',
+        maxConcurrency: 4
+      }
+
+      at generateBatchImageEmbeddings (src/lib/product-identity/batch-embeddings.ts:200:11)
+
+    console.log
+      [BatchEmbedding] Created 1 batches
+
+      at generateBatchImageEmbeddings (src/lib/product-identity/batch-embeddings.ts:211:11)
+
+    console.log
+      [BatchEmbedding] Batch 1/1 complete: 1 images in 0ms
+
+      at src/lib/product-identity/batch-embeddings.ts:232:15
+          at async Promise.allSettled (index 0)
+
+    console.log
+      [BatchEmbedding] Batch processing complete: {
+        totalImages: 1,
+        successCount: 1,
+        failureCount: 0,
+        totalTimeMs: 1,
+        avgTimePerImage: '1.0',
+        batchCount: 1
+      }
+
+      at generateBatchImageEmbeddings (src/lib/product-identity/batch-embeddings.ts:260:11)
+
+    console.log
+      [BatchEmbedding] Starting batch processing: {
+        totalImages: 1,
+        batchSize: 25,
+        model: 'custom-model-id',
+        maxConcurrency: 4
+      }
+
+      at generateBatchImageEmbeddings (src/lib/product-identity/batch-embeddings.ts:200:11)
+
+    console.log
+      [BatchEmbedding] Created 1 batches
+
+      at generateBatchImageEmbeddings (src/lib/product-identity/batch-embeddings.ts:211:11)
+
+    console.log
+      [BatchEmbedding] Batch 1/1 complete: 1 images in 0ms
+
+      at src/lib/product-identity/batch-embeddings.ts:232:15
+          at async Promise.allSettled (index 0)
+
+    console.log
+      [BatchEmbedding] Batch processing complete: {
+        totalImages: 1,
+        successCount: 1,
+        failureCount: 0,
+        totalTimeMs: 0,
+        avgTimePerImage: '0.0',
+        batchCount: 1
+      }
+
+      at generateBatchImageEmbeddings (src/lib/product-identity/batch-embeddings.ts:260:11)
+
+PASS src/lib/product-identity/__tests__/parallel-clustering.test.ts
+  ● Console
+
+    console.log
+      [ParallelProcessing] Processing 5 items with concurrency 2
+
+      at processParallel (src/lib/product-identity/parallel-clustering.ts:78:11)
+
+    console.log
+      [ParallelProcessing] Item 1/5 completed in 11ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 0)
+
+    console.log
+      [ParallelProcessing] Item 2/5 completed in 11ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 1)
+
+    console.log
+      [ParallelProcessing] Item 3/5 completed in 11ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 2)
+
+    console.log
+      [ParallelProcessing] Item 4/5 completed in 11ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 3)
+
+    console.log
+      [ParallelProcessing] Item 5/5 completed in 10ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 4)
+
+    console.log
+      [ParallelProcessing] Complete: {
+        total: 5,
+        success: 5,
+        failures: 0,
+        totalTime: 42,
+        avgTimePerItem: '8.4ms'
+      }
+
+      at processParallel (src/lib/product-identity/parallel-clustering.ts:125:11)
+
+    console.log
+      [ParallelProcessing] Processing 10 items with concurrency 3
+
+      at processParallel (src/lib/product-identity/parallel-clustering.ts:78:11)
+
+    console.log
+      [ParallelProcessing] Item 1/10 completed in 50ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 0)
+
+    console.log
+      [ParallelProcessing] Item 2/10 completed in 50ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 1)
+
+    console.log
+      [ParallelProcessing] Item 3/10 completed in 50ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 2)
+
+    console.log
+      [ParallelProcessing] Item 4/10 completed in 52ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 3)
+
+    console.log
+      [ParallelProcessing] Item 5/10 completed in 51ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 4)
+
+    console.log
+      [ParallelProcessing] Item 6/10 completed in 51ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 5)
+
+    console.log
+      [ParallelProcessing] Item 7/10 completed in 52ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 6)
+
+    console.log
+      [ParallelProcessing] Item 8/10 completed in 52ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 7)
+
+    console.log
+      [ParallelProcessing] Item 9/10 completed in 52ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 8)
+
+    console.log
+      [ParallelProcessing] Item 10/10 completed in 52ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 9)
+
+    console.log
+      [ParallelProcessing] Complete: {
+        total: 10,
+        success: 10,
+        failures: 0,
+        totalTime: 215,
+        avgTimePerItem: '21.5ms'
+      }
+
+      at processParallel (src/lib/product-identity/parallel-clustering.ts:125:11)
+
+    console.log
+      [ParallelProcessing] Processing 5 items with concurrency 4
+
+      at processParallel (src/lib/product-identity/parallel-clustering.ts:78:11)
+
+    console.log
+      [ParallelProcessing] Item 1/5 completed in 1ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 0)
+
+    console.log
+      [ParallelProcessing] Item 2/5 completed in 1ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 1)
+
+    console.error
+      [ParallelProcessing] Item 3 failed: Item 3 failed
+
+       99 |     } catch (error) {
+      100 |       const errorMessage = error instanceof Error ? error.message : String(error);
+    > 101 |       console.error(`[ParallelProcessing] Item ${index + 1} failed:`, errorMessage);
+          |               ^
+      102 |
+      103 |       return {
+      104 |         success: false as const,
+
+      at src/lib/product-identity/parallel-clustering.ts:101:15
+      at ConcurrencyLimiter.run (src/lib/product-identity/parallel-clustering.ts:51:14)
+          at async Promise.all (index 2)
+      at processParallel (src/lib/product-identity/parallel-clustering.ts:111:23)
+      at Object.<anonymous> (src/lib/product-identity/__tests__/parallel-clustering.test.ts:66:22)
+
+    console.log
+      [ParallelProcessing] Item 4/5 completed in 0ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 3)
+
+    console.log
+      [ParallelProcessing] Item 5/5 completed in 0ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 4)
+
+    console.log
+      [ParallelProcessing] Complete: {
+        total: 5,
+        success: 4,
+        failures: 1,
+        totalTime: 12,
+        avgTimePerItem: '2.4ms'
+      }
+
+      at processParallel (src/lib/product-identity/parallel-clustering.ts:125:11)
+
+    console.log
+      [ParallelProcessing] Processing 3 items with concurrency 4
+
+      at processParallel (src/lib/product-identity/parallel-clustering.ts:78:11)
+
+    console.log
+      [ParallelProcessing] Item 1/3 completed in 0ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 0)
+
+    console.log
+      [ParallelProcessing] Item 3/3 completed in 0ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 2)
+
+    console.error
+      [ParallelProcessing] Item 2 failed: Operation timeout
+
+       99 |     } catch (error) {
+      100 |       const errorMessage = error instanceof Error ? error.message : String(error);
+    > 101 |       console.error(`[ParallelProcessing] Item ${index + 1} failed:`, errorMessage);
+          |               ^
+      102 |
+      103 |       return {
+      104 |         success: false as const,
+
+      at src/lib/product-identity/parallel-clustering.ts:101:15
+      at ConcurrencyLimiter.run (src/lib/product-identity/parallel-clustering.ts:51:14)
+          at async Promise.all (index 1)
+      at processParallel (src/lib/product-identity/parallel-clustering.ts:111:23)
+      at Object.<anonymous> (src/lib/product-identity/__tests__/parallel-clustering.test.ts:83:22)
+
+    console.log
+      [ParallelProcessing] Complete: {
+        total: 3,
+        success: 2,
+        failures: 1,
+        totalTime: 102,
+        avgTimePerItem: '34.0ms'
+      }
+
+      at processParallel (src/lib/product-identity/parallel-clustering.ts:125:11)
+
+    console.log
+      [ParallelProcessing] Processing 3 items with concurrency 4
+
+      at processParallel (src/lib/product-identity/parallel-clustering.ts:78:11)
+
+    console.log
+      [ParallelProcessing] Item 1/3 completed in 12ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 0)
+
+    console.log
+      [ParallelProcessing] Item 2/3 completed in 12ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 1)
+
+    console.log
+      [ParallelProcessing] Item 3/3 completed in 11ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 2)
+
+    console.log
+      [ParallelProcessing] Complete: {
+        total: 3,
+        success: 3,
+        failures: 0,
+        totalTime: 12,
+        avgTimePerItem: '4.0ms'
+      }
+
+      at processParallel (src/lib/product-identity/parallel-clustering.ts:125:11)
+
+    console.log
+      [ParallelProcessing] Processing 3 items with concurrency 2
+
+      at processParallel (src/lib/product-identity/parallel-clustering.ts:78:11)
+
+    console.log
+      [ParallelProcessing] Item 1/3 completed in 12ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 0)
+
+    console.log
+      [ParallelProcessing] Item 2/3 completed in 11ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 1)
+
+    console.log
+      [ParallelProcessing] Item 3/3 completed in 11ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 2)
+
+    console.log
+      [ParallelProcessing] Complete: {
+        total: 3,
+        success: 3,
+        failures: 0,
+        totalTime: 23,
+        avgTimePerItem: '7.7ms'
+      }
+
+      at processParallel (src/lib/product-identity/parallel-clustering.ts:125:11)
+
+    console.log
+      [ParallelProcessing] Processing 3 items with concurrency 4
+
+      at processParallel (src/lib/product-identity/parallel-clustering.ts:78:11)
+
+    console.log
+      [ParallelProcessing] Item 1/3 completed in 0ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 0)
+
+    console.error
+      [ParallelProcessing] Item 2 failed: Extraction failed
+
+       99 |     } catch (error) {
+      100 |       const errorMessage = error instanceof Error ? error.message : String(error);
+    > 101 |       console.error(`[ParallelProcessing] Item ${index + 1} failed:`, errorMessage);
+          |               ^
+      102 |
+      103 |       return {
+      104 |         success: false as const,
+
+      at src/lib/product-identity/parallel-clustering.ts:101:15
+      at ConcurrencyLimiter.run (src/lib/product-identity/parallel-clustering.ts:51:14)
+          at async Promise.all (index 1)
+      at processParallel (src/lib/product-identity/parallel-clustering.ts:111:23)
+      at extractFeaturesParallel (src/lib/product-identity/parallel-clustering.ts:149:18)
+      at Object.<anonymous> (src/lib/product-identity/__tests__/parallel-clustering.test.ts:143:23)
+
+    console.log
+      [ParallelProcessing] Item 3/3 completed in 0ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 2)
+
+    console.log
+      [ParallelProcessing] Complete: {
+        total: 3,
+        success: 2,
+        failures: 1,
+        totalTime: 0,
+        avgTimePerItem: '0.0ms'
+      }
+
+      at processParallel (src/lib/product-identity/parallel-clustering.ts:125:11)
+
+    console.warn
+      [ParallelFeatureExtraction] 1 images failed feature extraction
+
+      157 |
+      158 |   if (result.failures.length > 0) {
+    > 159 |     console.warn(`[ParallelFeatureExtraction] ${result.failures.length} images failed feature extraction`);
+          |             ^
+      160 |   }
+      161 |
+      162 |   return result.success;
+
+      at extractFeaturesParallel (src/lib/product-identity/parallel-clustering.ts:159:13)
+      at Object.<anonymous> (src/lib/product-identity/__tests__/parallel-clustering.test.ts:143:23)
+
+    console.log
+      [ParallelProcessing] Processing 3 items with concurrency 4
+
+      at processParallel (src/lib/product-identity/parallel-clustering.ts:78:11)
+
+    console.log
+      [ParallelProcessing] Item 1/3 completed in 11ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 0)
+
+    console.log
+      [ParallelProcessing] Item 2/3 completed in 11ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 1)
+
+    console.log
+      [ParallelProcessing] Item 3/3 completed in 11ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 2)
+
+    console.log
+      [ParallelProcessing] Complete: {
+        total: 3,
+        success: 3,
+        failures: 0,
+        totalTime: 11,
+        avgTimePerItem: '3.7ms'
+      }
+
+      at processParallel (src/lib/product-identity/parallel-clustering.ts:125:11)
+
+    console.log
+      [ParallelClustering] Clustering 4 images with threshold 0.9
+
+      at clusterImagesParallel (src/lib/product-identity/parallel-clustering.ts:200:11)
+
+    console.log
+      [ParallelClustering] Computing 6 similarity comparisons in parallel
+
+      at clusterImagesParallel (src/lib/product-identity/parallel-clustering.ts:210:11)
+
+    console.log
+      [ParallelClustering] Created 2 clusters from 4 images
+
+      at clusterImagesParallel (src/lib/product-identity/parallel-clustering.ts:253:11)
+
+    console.log
+      [ParallelClustering] Clustering 3 images with threshold 0.9
+
+      at clusterImagesParallel (src/lib/product-identity/parallel-clustering.ts:200:11)
+
+    console.log
+      [ParallelClustering] Computing 3 similarity comparisons in parallel
+
+      at clusterImagesParallel (src/lib/product-identity/parallel-clustering.ts:210:11)
+
+    console.log
+      [ParallelClustering] Created 3 clusters from 3 images
+
+      at clusterImagesParallel (src/lib/product-identity/parallel-clustering.ts:253:11)
+
+    console.log
+      [ParallelClustering] Clustering 1 images with threshold 0.9
+
+      at clusterImagesParallel (src/lib/product-identity/parallel-clustering.ts:200:11)
+
+    console.log
+      [ParallelClustering] Computing 0 similarity comparisons in parallel
+
+      at clusterImagesParallel (src/lib/product-identity/parallel-clustering.ts:210:11)
+
+    console.log
+      [ParallelClustering] Created 1 clusters from 1 images
+
+      at clusterImagesParallel (src/lib/product-identity/parallel-clustering.ts:253:11)
+
+    console.log
+      [ParallelClustering] Clustering 0 images with threshold 0.9
+
+      at clusterImagesParallel (src/lib/product-identity/parallel-clustering.ts:200:11)
+
+    console.log
+      [ParallelClustering] Computing 0 similarity comparisons in parallel
+
+      at clusterImagesParallel (src/lib/product-identity/parallel-clustering.ts:210:11)
+
+    console.log
+      [ParallelClustering] Created 0 clusters from 0 images
+
+      at clusterImagesParallel (src/lib/product-identity/parallel-clustering.ts:253:11)
+
+    console.log
+      [ParallelClustering] Clustering 3 images with threshold 0.9
+
+      at clusterImagesParallel (src/lib/product-identity/parallel-clustering.ts:200:11)
+
+    console.log
+      [ParallelClustering] Computing 3 similarity comparisons in parallel
+
+      at clusterImagesParallel (src/lib/product-identity/parallel-clustering.ts:210:11)
+
+    console.log
+      [ParallelClustering] Created 2 clusters from 3 images
+
+      at clusterImagesParallel (src/lib/product-identity/parallel-clustering.ts:253:11)
+
+    console.log
+      [ParallelClustering] Clustering 3 images with threshold 0.5
+
+      at clusterImagesParallel (src/lib/product-identity/parallel-clustering.ts:200:11)
+
+    console.log
+      [ParallelClustering] Computing 3 similarity comparisons in parallel
+
+      at clusterImagesParallel (src/lib/product-identity/parallel-clustering.ts:210:11)
+
+    console.log
+      [ParallelClustering] Created 1 clusters from 3 images
+
+      at clusterImagesParallel (src/lib/product-identity/parallel-clustering.ts:253:11)
+
+    console.log
+      [ParallelProcessing] Processing 20 items with concurrency 1
+
+      at processParallel (src/lib/product-identity/parallel-clustering.ts:78:11)
+
+    console.log
+      [ParallelProcessing] Item 1/20 completed in 51ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 0)
+
+    console.log
+      [ParallelProcessing] Item 2/20 completed in 51ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 1)
+
+    console.log
+      [ParallelProcessing] Item 3/20 completed in 52ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 2)
+
+    console.log
+      [ParallelProcessing] Item 4/20 completed in 52ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 3)
+
+    console.log
+      [ParallelProcessing] Item 5/20 completed in 51ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 4)
+
+    console.log
+      [ParallelProcessing] Item 6/20 completed in 51ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 5)
+
+    console.log
+      [ParallelProcessing] Item 7/20 completed in 51ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 6)
+
+    console.log
+      [ParallelProcessing] Item 8/20 completed in 50ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 7)
+
+    console.log
+      [ParallelProcessing] Item 9/20 completed in 50ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 8)
+
+    console.log
+      [ParallelProcessing] Item 10/20 completed in 51ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 9)
+
+    console.log
+      [ParallelProcessing] Item 11/20 completed in 51ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 10)
+
+    console.log
+      [ParallelProcessing] Item 12/20 completed in 51ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 11)
+
+    console.log
+      [ParallelProcessing] Item 13/20 completed in 51ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 12)
+
+    console.log
+      [ParallelProcessing] Item 14/20 completed in 51ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 13)
+
+    console.log
+      [ParallelProcessing] Item 15/20 completed in 51ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 14)
+
+    console.log
+      [ParallelProcessing] Item 16/20 completed in 51ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 15)
+
+    console.log
+      [ParallelProcessing] Item 17/20 completed in 50ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 16)
+
+    console.log
+      [ParallelProcessing] Item 18/20 completed in 51ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 17)
+
+    console.log
+      [ParallelProcessing] Item 19/20 completed in 51ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 18)
+
+    console.log
+      [ParallelProcessing] Item 20/20 completed in 51ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 19)
+
+    console.log
+      [ParallelProcessing] Complete: {
+        total: 20,
+        success: 20,
+        failures: 0,
+        totalTime: 1079,
+        avgTimePerItem: '54.0ms'
+      }
+
+      at processParallel (src/lib/product-identity/parallel-clustering.ts:125:11)
+
+    console.log
+      [ParallelProcessing] Processing 20 items with concurrency 4
+
+      at processParallel (src/lib/product-identity/parallel-clustering.ts:78:11)
+
+    console.log
+      [ParallelProcessing] Item 1/20 completed in 50ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 0)
+
+    console.log
+      [ParallelProcessing] Item 2/20 completed in 50ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 1)
+
+    console.log
+      [ParallelProcessing] Item 3/20 completed in 50ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 2)
+
+    console.log
+      [ParallelProcessing] Item 4/20 completed in 50ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 3)
+
+    console.log
+      [ParallelProcessing] Item 5/20 completed in 50ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 4)
+
+    console.log
+      [ParallelProcessing] Item 6/20 completed in 50ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 5)
+
+    console.log
+      [ParallelProcessing] Item 7/20 completed in 50ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 6)
+
+    console.log
+      [ParallelProcessing] Item 8/20 completed in 50ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 7)
+
+    console.log
+      [ParallelProcessing] Item 9/20 completed in 50ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 8)
+
+    console.log
+      [ParallelProcessing] Item 10/20 completed in 50ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 9)
+
+    console.log
+      [ParallelProcessing] Item 11/20 completed in 50ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 10)
+
+    console.log
+      [ParallelProcessing] Item 12/20 completed in 50ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 11)
+
+    console.log
+      [ParallelProcessing] Item 13/20 completed in 51ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 12)
+
+    console.log
+      [ParallelProcessing] Item 14/20 completed in 51ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 13)
+
+    console.log
+      [ParallelProcessing] Item 15/20 completed in 51ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 14)
+
+    console.log
+      [ParallelProcessing] Item 16/20 completed in 51ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 15)
+
+    console.log
+      [ParallelProcessing] Item 17/20 completed in 51ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 16)
+
+    console.log
+      [ParallelProcessing] Item 18/20 completed in 51ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 17)
+
+    console.log
+      [ParallelProcessing] Item 19/20 completed in 51ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 18)
+
+    console.log
+      [ParallelProcessing] Item 20/20 completed in 51ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 19)
+
+    console.log
+      [ParallelProcessing] Complete: {
+        total: 20,
+        success: 20,
+        failures: 0,
+        totalTime: 268,
+        avgTimePerItem: '13.4ms'
+      }
+
+      at processParallel (src/lib/product-identity/parallel-clustering.ts:125:11)
+
+    console.log
+      [ParallelProcessing] Processing 5 items with concurrency 4
+
+      at processParallel (src/lib/product-identity/parallel-clustering.ts:78:11)
+
+    console.log
+      [ParallelProcessing] Item 1/5 completed in 21ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 0)
+
+    console.log
+      [ParallelProcessing] Item 2/5 completed in 21ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 1)
+
+    console.log
+      [ParallelProcessing] Item 3/5 completed in 21ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 2)
+
+    console.log
+      [ParallelProcessing] Item 4/5 completed in 21ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 3)
+
+    console.log
+      [ParallelProcessing] Item 5/5 completed in 21ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 4)
+
+    console.log
+      [ParallelProcessing] Complete: {
+        total: 5,
+        success: 5,
+        failures: 0,
+        totalTime: 42,
+        avgTimePerItem: '8.4ms'
+      }
+
+      at processParallel (src/lib/product-identity/parallel-clustering.ts:125:11)
+
+PASS src/lib/product-identity/__tests__/image-analysis-cache.test.ts
+  ● Console
+
+    console.log
+      [Cache] All entries cleared
+
+      at ImageAnalysisCache.clear (src/lib/product-identity/image-analysis-cache.ts:314:13)
+
+    console.log
+      [Cache] All entries cleared
+
+      at ImageAnalysisCache.clear (src/lib/product-identity/image-analysis-cache.ts:314:13)
+
+    console.log
+      [Cache] All entries cleared
+
+      at ImageAnalysisCache.clear (src/lib/product-identity/image-analysis-cache.ts:314:13)
+
+    console.log
+      [Cache] All entries cleared
+
+      at ImageAnalysisCache.clear (src/lib/product-identity/image-analysis-cache.ts:314:13)
+
+    console.log
+      [Cache] All entries cleared
+
+      at ImageAnalysisCache.clear (src/lib/product-identity/image-analysis-cache.ts:314:13)
+
+    console.log
+      [Cache] All entries cleared
+
+      at ImageAnalysisCache.clear (src/lib/product-identity/image-analysis-cache.ts:314:13)
+
+    console.log
+      [Cache] All entries cleared
+
+      at ImageAnalysisCache.clear (src/lib/product-identity/image-analysis-cache.ts:314:13)
+
+    console.log
+      [Cache] All entries cleared
+
+      at ImageAnalysisCache.clear (src/lib/product-identity/image-analysis-cache.ts:314:13)
+
+    console.log
+      [Cache] All entries cleared
+
+      at ImageAnalysisCache.clear (src/lib/product-identity/image-analysis-cache.ts:314:13)
+
+    console.log
+      [Cache] All entries cleared
+
+      at ImageAnalysisCache.clear (src/lib/product-identity/image-analysis-cache.ts:314:13)
+
+    console.log
+      [Cache] Cleaned 5 expired entries
+
+      at ImageAnalysisCache.cleanExpired (src/lib/product-identity/image-analysis-cache.ts:112:15)
+
+    console.log
+      [Cache] All entries cleared
+
+      at ImageAnalysisCache.clear (src/lib/product-identity/image-analysis-cache.ts:314:13)
+
+    console.log
+      [Cache] All entries cleared
+
+      at ImageAnalysisCache.clear (src/lib/product-identity/image-analysis-cache.ts:314:13)
+
+    console.log
+      [Cache] Evicted 2 LRU entries, size now 0.01MB
+
+      at ImageAnalysisCache.evictIfNeeded (src/lib/product-identity/image-analysis-cache.ts:148:15)
+
+    console.log
+      [Cache] Evicted 2 LRU entries, size now 0.01MB
+
+      at ImageAnalysisCache.evictIfNeeded (src/lib/product-identity/image-analysis-cache.ts:148:15)
+
+    console.log
+      [Cache] Evicted 2 LRU entries, size now 0.01MB
+
+      at ImageAnalysisCache.evictIfNeeded (src/lib/product-identity/image-analysis-cache.ts:148:15)
+
+    console.log
+      [Cache] Evicted 2 LRU entries, size now 0.01MB
+
+      at ImageAnalysisCache.evictIfNeeded (src/lib/product-identity/image-analysis-cache.ts:148:15)
+
+    console.log
+      [Cache] Evicted 3 LRU entries, size now 0.01MB
+
+      at ImageAnalysisCache.evictIfNeeded (src/lib/product-identity/image-analysis-cache.ts:148:15)
+
+    console.log
+      [Cache] Evicted 2 LRU entries, size now 0.01MB
+
+      at ImageAnalysisCache.evictIfNeeded (src/lib/product-identity/image-analysis-cache.ts:148:15)
+
+    console.log
+      [Cache] Evicted 2 LRU entries, size now 0.01MB
+
+      at ImageAnalysisCache.evictIfNeeded (src/lib/product-identity/image-analysis-cache.ts:148:15)
+
+    console.log
+      [Cache] Evicted 2 LRU entries, size now 0.01MB
+
+      at ImageAnalysisCache.evictIfNeeded (src/lib/product-identity/image-analysis-cache.ts:148:15)
+
+    console.log
+      [Cache] All entries cleared
+
+      at ImageAnalysisCache.clear (src/lib/product-identity/image-analysis-cache.ts:314:13)
+
+    console.log
+      [Cache] Evicted 2 LRU entries, size now 0.01MB
+
+      at ImageAnalysisCache.evictIfNeeded (src/lib/product-identity/image-analysis-cache.ts:148:15)
+
+    console.log
+      [Cache] Evicted 2 LRU entries, size now 0.01MB
+
+      at ImageAnalysisCache.evictIfNeeded (src/lib/product-identity/image-analysis-cache.ts:148:15)
+
+    console.log
+      [Cache] Evicted 2 LRU entries, size now 0.01MB
+
+      at ImageAnalysisCache.evictIfNeeded (src/lib/product-identity/image-analysis-cache.ts:148:15)
+
+    console.log
+      [Cache] Evicted 3 LRU entries, size now 0.01MB
+
+      at ImageAnalysisCache.evictIfNeeded (src/lib/product-identity/image-analysis-cache.ts:148:15)
+
+    console.log
+      [Cache] Evicted 2 LRU entries, size now 0.01MB
+
+      at ImageAnalysisCache.evictIfNeeded (src/lib/product-identity/image-analysis-cache.ts:148:15)
+
+    console.log
+      [Cache] Evicted 1 LRU entries, size now 0.01MB
+
+      at ImageAnalysisCache.evictIfNeeded (src/lib/product-identity/image-analysis-cache.ts:148:15)
+
+    console.log
+      [Cache] Evicted 1 LRU entries, size now 0.01MB
+
+      at ImageAnalysisCache.evictIfNeeded (src/lib/product-identity/image-analysis-cache.ts:148:15)
+
+    console.log
+      [Cache] Evicted 1 LRU entries, size now 0.01MB
+
+      at ImageAnalysisCache.evictIfNeeded (src/lib/product-identity/image-analysis-cache.ts:148:15)
+
+    console.log
+      [Cache] Evicted 1 LRU entries, size now 0.01MB
+
+      at ImageAnalysisCache.evictIfNeeded (src/lib/product-identity/image-analysis-cache.ts:148:15)
+
+    console.log
+      [Cache] Evicted 1 LRU entries, size now 0.01MB
+
+      at ImageAnalysisCache.evictIfNeeded (src/lib/product-identity/image-analysis-cache.ts:148:15)
+
+    console.log
+      [Cache] Evicted 1 LRU entries, size now 0.01MB
+
+      at ImageAnalysisCache.evictIfNeeded (src/lib/product-identity/image-analysis-cache.ts:148:15)
+
+    console.log
+      [Cache] Evicted 1 LRU entries, size now 0.01MB
+
+      at ImageAnalysisCache.evictIfNeeded (src/lib/product-identity/image-analysis-cache.ts:148:15)
+
+    console.log
+      [Cache] All entries cleared
+
+      at ImageAnalysisCache.clear (src/lib/product-identity/image-analysis-cache.ts:314:13)
+
+    console.log
+      [Cache] All entries cleared
+
+      at ImageAnalysisCache.clear (src/lib/product-identity/image-analysis-cache.ts:314:13)
+
+    console.log
+      [Cache] All entries cleared
+
+      at ImageAnalysisCache.clear (src/lib/product-identity/image-analysis-cache.ts:314:13)
+
+    console.log
+      [Cache] Evicted 2 LRU entries, size now 0.01MB
+
+      at ImageAnalysisCache.evictIfNeeded (src/lib/product-identity/image-analysis-cache.ts:148:15)
+
+    console.log
+      [Cache] Evicted 2 LRU entries, size now 0.01MB
+
+      at ImageAnalysisCache.evictIfNeeded (src/lib/product-identity/image-analysis-cache.ts:148:15)
+
+    console.log
+      [Cache] Evicted 2 LRU entries, size now 0.01MB
+
+      at ImageAnalysisCache.evictIfNeeded (src/lib/product-identity/image-analysis-cache.ts:148:15)
+
+    console.log
+      [Cache] Evicted 2 LRU entries, size now 0.01MB
+
+      at ImageAnalysisCache.evictIfNeeded (src/lib/product-identity/image-analysis-cache.ts:148:15)
+
+    console.log
+      [Cache] Evicted 3 LRU entries, size now 0.01MB
+
+      at ImageAnalysisCache.evictIfNeeded (src/lib/product-identity/image-analysis-cache.ts:148:15)
+
+    console.log
+      [Cache] Evicted 2 LRU entries, size now 0.01MB
+
+      at ImageAnalysisCache.evictIfNeeded (src/lib/product-identity/image-analysis-cache.ts:148:15)
+
+    console.log
+      [Cache] Evicted 2 LRU entries, size now 0.01MB
+
+      at ImageAnalysisCache.evictIfNeeded (src/lib/product-identity/image-analysis-cache.ts:148:15)
+
+    console.log
+      [Cache] Evicted 2 LRU entries, size now 0.01MB
+
+      at ImageAnalysisCache.evictIfNeeded (src/lib/product-identity/image-analysis-cache.ts:148:15)
+
+    console.log
+      [Cache] All entries cleared
+
+      at ImageAnalysisCache.clear (src/lib/product-identity/image-analysis-cache.ts:314:13)
+
+    console.log
+      [Cache] All entries cleared
+
+      at ImageAnalysisCache.clear (src/lib/product-identity/image-analysis-cache.ts:314:13)
+
+    console.log
+      [Cache] All entries cleared
+
+      at ImageAnalysisCache.clear (src/lib/product-identity/image-analysis-cache.ts:314:13)
+
+    console.log
+      [Cache] All entries cleared
+
+      at ImageAnalysisCache.clear (src/lib/product-identity/image-analysis-cache.ts:314:13)
+
+    console.log
+      [Cache] All entries cleared
+
+      at ImageAnalysisCache.clear (src/lib/product-identity/image-analysis-cache.ts:314:13)
+
+    console.log
+      [Cache] All entries cleared
+
+      at ImageAnalysisCache.clear (src/lib/product-identity/image-analysis-cache.ts:314:13)
+
+A worker process has failed to exit gracefully and has been force exited. This is likely caused by tests leaking due to improper teardown. Try running with --detectOpenHandles to find leaks. Active timers can also cause this, ensure that .unref() was called on them.
+
+Test Suites: 3 passed, 3 total
+Tests:       56 passed, 56 total
+Snapshots:   0 total
+Time:        4.473 s
+Ran all test suites matching /src\/lib\/product-identity\/__tests__\//i.
+{"numFailedTestSuites":0,"numFailedTests":0,"numPassedTestSuites":3,"numPassedTests":56,"numPendingTestSuites":0,"numPendingTests":0,"numRuntimeErrorTestSuites":0,"numTodoTests":0,"numTotalTestSuites":3,"numTotalTests":56,"openHandles":[],"snapshot":{"added":0,"didUpdate":false,"failure":false,"filesAdded":0,"filesRemoved":0,"filesRemovedList":[],"filesUnmatched":0,"filesUpdated":0,"matched":0,"total":0,"unchecked":0,"uncheckedKeysByFile":[],"unmatched":0,"updated":0},"startTime":1768053989544,"success":true,"testResults":[{"assertionResults":[{"ancestorTitles":["Batch Embedding Generation","generateBatchImageEmbeddings"],"duration":11,"failureDetails":[],"failureMessages":[],"fullName":"Batch Embedding Generation generateBatchImageEmbeddings should process a single batch of images successfully","invocations":1,"location":null,"numPassingAsserts":10,"retryReasons":[],"status":"passed","title":"should process a single batch of images successfully"},{"ancestorTitles":["Batch Embedding Generation","generateBatchImageEmbeddings"],"duration":2,"failureDetails":[],"failureMessages":[],"fullName":"Batch Embedding Generation generateBatchImageEmbeddings should split large batches into multiple API calls","invocations":1,"location":null,"numPassingAsserts":4,"retryReasons":[],"status":"passed","title":"should split large batches into multiple API calls"},{"ancestorTitles":["Batch Embedding Generation","generateBatchImageEmbeddings"],"duration":1,"failureDetails":[],"failureMessages":[],"fullName":"Batch Embedding Generation generateBatchImageEmbeddings should handle empty image array gracefully","invocations":1,"location":null,"numPassingAsserts":5,"retryReasons":[],"status":"passed","title":"should handle empty image array gracefully"},{"ancestorTitles":["Batch Embedding Generation","generateBatchImageEmbeddings"],"duration":1,"failureDetails":[],"failureMessages":[],"fullName":"Batch Embedding Generation generateBatchImageEmbeddings should use custom batch size when provided","invocations":1,"location":null,"numPassingAsserts":3,"retryReasons":[],"status":"passed","title":"should use custom batch size when provided"},{"ancestorTitles":["Batch Embedding Generation","Error Handling"],"duration":0,"failureDetails":[],"failureMessages":[],"fullName":"Batch Embedding Generation Error Handling should handle Bedrock API failures gracefully","invocations":1,"location":null,"numPassingAsserts":5,"retryReasons":[],"status":"passed","title":"should handle Bedrock API failures gracefully"},{"ancestorTitles":["Batch Embedding Generation","Error Handling"],"duration":5,"failureDetails":[],"failureMessages":[],"fullName":"Batch Embedding Generation Error Handling should continue processing other batches if one fails","invocations":1,"location":null,"numPassingAsserts":3,"retryReasons":[],"status":"passed","title":"should continue processing other batches if one fails"},{"ancestorTitles":["Batch Embedding Generation","Error Handling"],"duration":1,"failureDetails":[],"failureMessages":[],"fullName":"Batch Embedding Generation Error Handling should validate invalid Bedrock response structure","invocations":1,"location":null,"numPassingAsserts":2,"retryReasons":[],"status":"passed","title":"should validate invalid Bedrock response structure"},{"ancestorTitles":["Batch Embedding Generation","Error Handling"],"duration":0,"failureDetails":[],"failureMessages":[],"fullName":"Batch Embedding Generation Error Handling should validate embedding array length mismatch","invocations":1,"location":null,"numPassingAsserts":2,"retryReasons":[],"status":"passed","title":"should validate embedding array length mismatch"},{"ancestorTitles":["Batch Embedding Generation","Error Handling"],"duration":1,"failureDetails":[],"failureMessages":[],"fullName":"Batch Embedding Generation Error Handling should validate empty image buffer","invocations":1,"location":null,"numPassingAsserts":2,"retryReasons":[],"status":"passed","title":"should validate empty image buffer"},{"ancestorTitles":["Batch Embedding Generation","Error Handling"],"duration":0,"failureDetails":[],"failureMessages":[],"fullName":"Batch Embedding Generation Error Handling should validate oversized image buffer","invocations":1,"location":null,"numPassingAsserts":2,"retryReasons":[],"status":"passed","title":"should validate oversized image buffer"},{"ancestorTitles":["Batch Embedding Generation","Performance Characteristics"],"duration":1,"failureDetails":[],"failureMessages":[],"fullName":"Batch Embedding Generation Performance Characteristics should include timing metadata in results","invocations":1,"location":null,"numPassingAsserts":4,"retryReasons":[],"status":"passed","title":"should include timing metadata in results"},{"ancestorTitles":["Batch Embedding Generation","Performance Characteristics"],"duration":3,"failureDetails":[],"failureMessages":[],"fullName":"Batch Embedding Generation Performance Characteristics should process batches with controlled concurrency","invocations":1,"location":null,"numPassingAsserts":3,"retryReasons":[],"status":"passed","title":"should process batches with controlled concurrency"},{"ancestorTitles":["Batch Embedding Generation","generateSingleImageEmbedding"],"duration":1,"failureDetails":[],"failureMessages":[],"fullName":"Batch Embedding Generation generateSingleImageEmbedding should process single image and return embedding","invocations":1,"location":null,"numPassingAsserts":3,"retryReasons":[],"status":"passed","title":"should process single image and return embedding"},{"ancestorTitles":["Batch Embedding Generation","generateSingleImageEmbedding"],"duration":7,"failureDetails":[],"failureMessages":[],"fullName":"Batch Embedding Generation generateSingleImageEmbedding should throw error if embedding generation fails","invocations":1,"location":null,"numPassingAsserts":1,"retryReasons":[],"status":"passed","title":"should throw error if embedding generation fails"},{"ancestorTitles":["Batch Embedding Generation","Integration Compatibility"],"duration":1,"failureDetails":[],"failureMessages":[],"fullName":"Batch Embedding Generation Integration Compatibility should return embeddings in Map format for O(1) lookup","invocations":1,"location":null,"numPassingAsserts":4,"retryReasons":[],"status":"passed","title":"should return embeddings in Map format for O(1) lookup"},{"ancestorTitles":["Batch Embedding Generation","Integration Compatibility"],"duration":1,"failureDetails":[],"failureMessages":[],"fullName":"Batch Embedding Generation Integration Compatibility should maintain embedding vector length compatibility (1024 dimensions)","invocations":1,"location":null,"numPassingAsserts":2,"retryReasons":[],"status":"passed","title":"should maintain embedding vector length compatibility (1024 dimensions)"},{"ancestorTitles":["Batch Embedding Generation","Integration Compatibility"],"duration":0,"failureDetails":[],"failureMessages":[],"fullName":"Batch Embedding Generation Integration Compatibility should include model ID for tracking","invocations":1,"location":null,"numPassingAsserts":1,"retryReasons":[],"status":"passed","title":"should include model ID for tracking"}],"endTime":1768053990368,"message":"","name":"/Users/davideagle/git/CarouselLabs/enterprise-packages/services/bg-remover/src/lib/product-identity/__tests__/batch-embeddings.test.ts","startTime":1768053989934,"status":"passed","summary":""},{"assertionResults":[{"ancestorTitles":["Parallel Clustering","processParallel"],"duration":45,"failureDetails":[],"failureMessages":[],"fullName":"Parallel Clustering processParallel should process items in parallel","invocations":1,"location":null,"numPassingAsserts":3,"retryReasons":[],"status":"passed","title":"should process items in parallel"},{"ancestorTitles":["Parallel Clustering","processParallel"],"duration":216,"failureDetails":[],"failureMessages":[],"fullName":"Parallel Clustering processParallel should respect concurrency limits","invocations":1,"location":null,"numPassingAsserts":2,"retryReasons":[],"status":"passed","title":"should respect concurrency limits"},{"ancestorTitles":["Parallel Clustering","processParallel"],"duration":12,"failureDetails":[],"failureMessages":[],"fullName":"Parallel Clustering processParallel should handle failures gracefully","invocations":1,"location":null,"numPassingAsserts":3,"retryReasons":[],"status":"passed","title":"should handle failures gracefully"},{"ancestorTitles":["Parallel Clustering","processParallel"],"duration":102,"failureDetails":[],"failureMessages":[],"fullName":"Parallel Clustering processParallel should handle timeout","invocations":1,"location":null,"numPassingAsserts":3,"retryReasons":[],"status":"passed","title":"should handle timeout"},{"ancestorTitles":["Parallel Clustering","processParallel"],"duration":12,"failureDetails":[],"failureMessages":[],"fullName":"Parallel Clustering processParallel should calculate average time correctly","invocations":1,"location":null,"numPassingAsserts":2,"retryReasons":[],"status":"passed","title":"should calculate average time correctly"},{"ancestorTitles":["Parallel Clustering","extractFeaturesParallel"],"duration":24,"failureDetails":[],"failureMessages":[],"fullName":"Parallel Clustering extractFeaturesParallel should extract features from images in parallel","invocations":1,"location":null,"numPassingAsserts":5,"retryReasons":[],"status":"passed","title":"should extract features from images in parallel"},{"ancestorTitles":["Parallel Clustering","extractFeaturesParallel"],"duration":1,"failureDetails":[],"failureMessages":[],"fullName":"Parallel Clustering extractFeaturesParallel should handle extraction failures","invocations":1,"location":null,"numPassingAsserts":1,"retryReasons":[],"status":"passed","title":"should handle extraction failures"},{"ancestorTitles":["Parallel Clustering","calculateSimilaritiesParallel"],"duration":11,"failureDetails":[],"failureMessages":[],"fullName":"Parallel Clustering calculateSimilaritiesParallel should calculate similarities in parallel","invocations":1,"location":null,"numPassingAsserts":3,"retryReasons":[],"status":"passed","title":"should calculate similarities in parallel"},{"ancestorTitles":["Parallel Clustering","clusterImagesParallel"],"duration":12,"failureDetails":[],"failureMessages":[],"fullName":"Parallel Clustering clusterImagesParallel should cluster similar images together","invocations":1,"location":null,"numPassingAsserts":5,"retryReasons":[],"status":"passed","title":"should cluster similar images together"},{"ancestorTitles":["Parallel Clustering","clusterImagesParallel"],"duration":1,"failureDetails":[],"failureMessages":[],"fullName":"Parallel Clustering clusterImagesParallel should create singleton clusters for dissimilar images","invocations":1,"location":null,"numPassingAsserts":4,"retryReasons":[],"status":"passed","title":"should create singleton clusters for dissimilar images"},{"ancestorTitles":["Parallel Clustering","clusterImagesParallel"],"duration":0,"failureDetails":[],"failureMessages":[],"fullName":"Parallel Clustering clusterImagesParallel should handle single image","invocations":1,"location":null,"numPassingAsserts":2,"retryReasons":[],"status":"passed","title":"should handle single image"},{"ancestorTitles":["Parallel Clustering","clusterImagesParallel"],"duration":1,"failureDetails":[],"failureMessages":[],"fullName":"Parallel Clustering clusterImagesParallel should handle empty array","invocations":1,"location":null,"numPassingAsserts":1,"retryReasons":[],"status":"passed","title":"should handle empty array"},{"ancestorTitles":["Parallel Clustering","clusterImagesParallel"],"duration":0,"failureDetails":[],"failureMessages":[],"fullName":"Parallel Clustering clusterImagesParallel should respect threshold","invocations":1,"location":null,"numPassingAsserts":2,"retryReasons":[],"status":"passed","title":"should respect threshold"},{"ancestorTitles":["Parallel Clustering","batchItems"],"duration":1,"failureDetails":[],"failureMessages":[],"fullName":"Parallel Clustering batchItems should batch items correctly","invocations":1,"location":null,"numPassingAsserts":5,"retryReasons":[],"status":"passed","title":"should batch items correctly"},{"ancestorTitles":["Parallel Clustering","batchItems"],"duration":0,"failureDetails":[],"failureMessages":[],"fullName":"Parallel Clustering batchItems should handle empty array","invocations":1,"location":null,"numPassingAsserts":1,"retryReasons":[],"status":"passed","title":"should handle empty array"},{"ancestorTitles":["Parallel Clustering","batchItems"],"duration":0,"failureDetails":[],"failureMessages":[],"fullName":"Parallel Clustering batchItems should handle single batch","invocations":1,"location":null,"numPassingAsserts":2,"retryReasons":[],"status":"passed","title":"should handle single batch"},{"ancestorTitles":["Parallel Clustering","Performance"],"duration":1348,"failureDetails":[],"failureMessages":[],"fullName":"Parallel Clustering Performance should be faster with higher concurrency","invocations":1,"location":null,"numPassingAsserts":1,"retryReasons":[],"status":"passed","title":"should be faster with higher concurrency"},{"ancestorTitles":["Parallel Clustering","Performance"],"duration":42,"failureDetails":[],"failureMessages":[],"fullName":"Parallel Clustering Performance should track processing metrics","invocations":1,"location":null,"numPassingAsserts":3,"retryReasons":[],"status":"passed","title":"should track processing metrics"}],"endTime":1768053992004,"message":"","name":"/Users/davideagle/git/CarouselLabs/enterprise-packages/services/bg-remover/src/lib/product-identity/__tests__/parallel-clustering.test.ts","startTime":1768053989934,"status":"passed","summary":""},{"assertionResults":[{"ancestorTitles":["Image Analysis Cache","Basic Operations"],"duration":12,"failureDetails":[],"failureMessages":[],"fullName":"Image Analysis Cache Basic Operations should cache and retrieve embeddings","invocations":1,"location":null,"numPassingAsserts":3,"retryReasons":[],"status":"passed","title":"should cache and retrieve embeddings"},{"ancestorTitles":["Image Analysis Cache","Basic Operations"],"duration":1,"failureDetails":[],"failureMessages":[],"fullName":"Image Analysis Cache Basic Operations should return undefined for cache miss","invocations":1,"location":null,"numPassingAsserts":1,"retryReasons":[],"status":"passed","title":"should return undefined for cache miss"},{"ancestorTitles":["Image Analysis Cache","Basic Operations"],"duration":0,"failureDetails":[],"failureMessages":[],"fullName":"Image Analysis Cache Basic Operations should cache Bedrock analysis results","invocations":1,"location":null,"numPassingAsserts":1,"retryReasons":[],"status":"passed","title":"should cache Bedrock analysis results"},{"ancestorTitles":["Image Analysis Cache","Basic Operations"],"duration":1,"failureDetails":[],"failureMessages":[],"fullName":"Image Analysis Cache Basic Operations should cache Rekognition labels","invocations":1,"location":null,"numPassingAsserts":1,"retryReasons":[],"status":"passed","title":"should cache Rekognition labels"},{"ancestorTitles":["Image Analysis Cache","Basic Operations"],"duration":0,"failureDetails":[],"failureMessages":[],"fullName":"Image Analysis Cache Basic Operations should cache clustering results","invocations":1,"location":null,"numPassingAsserts":1,"retryReasons":[],"status":"passed","title":"should cache clustering results"},{"ancestorTitles":["Image Analysis Cache","Cache Key Generation"],"duration":0,"failureDetails":[],"failureMessages":[],"fullName":"Image Analysis Cache Cache Key Generation should generate same key for identical image buffers","invocations":1,"location":null,"numPassingAsserts":2,"retryReasons":[],"status":"passed","title":"should generate same key for identical image buffers"},{"ancestorTitles":["Image Analysis Cache","Cache Key Generation"],"duration":1,"failureDetails":[],"failureMessages":[],"fullName":"Image Analysis Cache Cache Key Generation should generate different keys for different image buffers","invocations":1,"location":null,"numPassingAsserts":2,"retryReasons":[],"status":"passed","title":"should generate different keys for different image buffers"},{"ancestorTitles":["Image Analysis Cache","Cache Key Generation"],"duration":0,"failureDetails":[],"failureMessages":[],"fullName":"Image Analysis Cache Cache Key Generation should generate different keys for same image with different prompts","invocations":1,"location":null,"numPassingAsserts":2,"retryReasons":[],"status":"passed","title":"should generate different keys for same image with different prompts"},{"ancestorTitles":["Image Analysis Cache","TTL and Expiration"],"duration":1102,"failureDetails":[],"failureMessages":[],"fullName":"Image Analysis Cache TTL and Expiration should expire entries after TTL","invocations":1,"location":null,"numPassingAsserts":2,"retryReasons":[],"status":"passed","title":"should expire entries after TTL"},{"ancestorTitles":["Image Analysis Cache","TTL and Expiration"],"duration":1102,"failureDetails":[],"failureMessages":[],"fullName":"Image Analysis Cache TTL and Expiration should support custom TTL per entry","invocations":1,"location":null,"numPassingAsserts":2,"retryReasons":[],"status":"passed","title":"should support custom TTL per entry"},{"ancestorTitles":["Image Analysis Cache","TTL and Expiration"],"duration":1102,"failureDetails":[],"failureMessages":[],"fullName":"Image Analysis Cache TTL and Expiration should clean expired entries","invocations":1,"location":null,"numPassingAsserts":2,"retryReasons":[],"status":"passed","title":"should clean expired entries"},{"ancestorTitles":["Image Analysis Cache","Size Limits and Eviction"],"duration":0,"failureDetails":[],"failureMessages":[],"fullName":"Image Analysis Cache Size Limits and Eviction should track cache size","invocations":1,"location":null,"numPassingAsserts":2,"retryReasons":[],"status":"passed","title":"should track cache size"},{"ancestorTitles":["Image Analysis Cache","Size Limits and Eviction"],"duration":1,"failureDetails":[],"failureMessages":[],"fullName":"Image Analysis Cache Size Limits and Eviction should evict LRU entries when size limit reached","invocations":1,"location":null,"numPassingAsserts":2,"retryReasons":[],"status":"passed","title":"should evict LRU entries when size limit reached"},{"ancestorTitles":["Image Analysis Cache","Size Limits and Eviction"],"duration":1,"failureDetails":[],"failureMessages":[],"fullName":"Image Analysis Cache Size Limits and Eviction should evict least used entries first","invocations":1,"location":null,"numPassingAsserts":1,"retryReasons":[],"status":"passed","title":"should evict least used entries first"},{"ancestorTitles":["Image Analysis Cache","Statistics"],"duration":1,"failureDetails":[],"failureMessages":[],"fullName":"Image Analysis Cache Statistics should track cache hits and misses","invocations":1,"location":null,"numPassingAsserts":5,"retryReasons":[],"status":"passed","title":"should track cache hits and misses"},{"ancestorTitles":["Image Analysis Cache","Statistics"],"duration":0,"failureDetails":[],"failureMessages":[],"fullName":"Image Analysis Cache Statistics should calculate correct hit rate","invocations":1,"location":null,"numPassingAsserts":3,"retryReasons":[],"status":"passed","title":"should calculate correct hit rate"},{"ancestorTitles":["Image Analysis Cache","Statistics"],"duration":1,"failureDetails":[],"failureMessages":[],"fullName":"Image Analysis Cache Statistics should track evictions","invocations":1,"location":null,"numPassingAsserts":1,"retryReasons":[],"status":"passed","title":"should track evictions"},{"ancestorTitles":["Image Analysis Cache","Statistics"],"duration":0,"failureDetails":[],"failureMessages":[],"fullName":"Image Analysis Cache Statistics should reset statistics","invocations":1,"location":null,"numPassingAsserts":3,"retryReasons":[],"status":"passed","title":"should reset statistics"},{"ancestorTitles":["Image Analysis Cache","Clear Operations"],"duration":0,"failureDetails":[],"failureMessages":[],"fullName":"Image Analysis Cache Clear Operations should clear all entries","invocations":1,"location":null,"numPassingAsserts":3,"retryReasons":[],"status":"passed","title":"should clear all entries"},{"ancestorTitles":["Image Analysis Cache","Global Cache Instances"],"duration":1,"failureDetails":[],"failureMessages":[],"fullName":"Image Analysis Cache Global Cache Instances should have separate embedding and analysis caches","invocations":1,"location":null,"numPassingAsserts":2,"retryReasons":[],"status":"passed","title":"should have separate embedding and analysis caches"},{"ancestorTitles":["Image Analysis Cache","Metadata Support"],"duration":0,"failureDetails":[],"failureMessages":[],"fullName":"Image Analysis Cache Metadata Support should store and retrieve metadata with embeddings","invocations":1,"location":null,"numPassingAsserts":1,"retryReasons":[],"status":"passed","title":"should store and retrieve metadata with embeddings"}],"endTime":1768053993502,"message":"","name":"/Users/davideagle/git/CarouselLabs/enterprise-packages/services/bg-remover/src/lib/product-identity/__tests__/image-analysis-cache.test.ts","startTime":1768053989934,"status":"passed","summary":""}],"wasInterrupted":false}

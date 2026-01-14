@@ -4,7 +4,7 @@ import { jest } from '@jest/globals';
 // Mock environment variables
 process.env.STAGE = 'test';
 process.env.AWS_REGION = 'eu-west-1';
-process.env.JOB_STORE_TABLE_NAME = 'bg-remover-jobs-test';
+process.env.DYNAMODB_TABLE = 'bg-remover-jobs-test';
 process.env.ANALYTICS_BUCKET = 'test-analytics-bucket';
 
 // Mock AWS SDK clients

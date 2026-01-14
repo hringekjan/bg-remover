@@ -1,0 +1,9 @@
+{
+  "images_processed": 10,
+  "embeddings_generated": 10,
+  "cache_hits": 0,
+  "cache_misses": 10,
+  "clusters_found": 3,
+  "total_time_ms": 15000,
+  "status": "success"
+}

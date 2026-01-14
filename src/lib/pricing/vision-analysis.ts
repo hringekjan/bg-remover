@@ -173,9 +173,34 @@ export class VisionAnalysisService {
 
     console.log('[VisionAnalysis] Initialized', {
       region: this.region,
-      model: 'us.amazon.nova-lite-v1:0',
       timeout: `${this.requestTimeout}ms`,
     });
+  }
+
+  /**
+   * Select optimal Bedrock model based on product context for cost optimization
+   *
+   * Current strategy: Use Nova Lite for all products (balanced cost/performance)
+   * Future enhancement: Cost-based routing when Nova Micro becomes available
+   *
+   * Cost-based routing strategy (when implemented):
+   * - Nova Micro: 15% cheaper than Lite, suitable for simple goods
+   * - Nova Lite: Default choice for most products (balanced cost/performance)
+   * - Nova Pro: Only when complex analysis is absolutely needed
+   *
+   * @param context - Product context for model selection
+   * @returns Selected model ID
+   */
+  private selectBedrockModel(context?: ProductContext): string {
+    // Currently using Nova Lite for all products
+    // TODO: Implement cost-based routing when Nova Micro becomes available
+    // if (context?.category?.toLowerCase().includes('simple') ||
+    //     context?.category?.toLowerCase().includes('basic') ||
+    //     context?.category?.toLowerCase().includes('generic')) {
+    //   return 'amazon.nova-micro-v1:0'; // 15% cost savings
+    // }
+
+    return 'us.amazon.nova-lite-v1:0';
   }
 
   /**
@@ -230,10 +255,11 @@ export class VisionAnalysisService {
       }
 
       const prompt = this.buildPrompt(context);
+      const selectedModel = this.selectBedrockModel(context);
 
       const response = await this.bedrock.send(
         new InvokeModelCommand({
-          modelId: 'us.amazon.nova-lite-v1:0',
+          modelId: selectedModel,
           contentType: 'application/json',
           accept: 'application/json',
           body: JSON.stringify({
@@ -311,7 +337,8 @@ export class VisionAnalysisService {
       const assessment = BedrockAssessmentSchema.parse(rawAssessment);
 
       const duration = Date.now() - startTime;
-      console.log('[VisionAnalysis] Bedrock Nova Lite completed', {
+      console.log('[VisionAnalysis] Bedrock analysis completed', {
+        model: selectedModel,
         duration,
         conditionScore: assessment.conditionScore,
         overallAssessment: assessment.overallAssessment,
@@ -457,5 +484,148 @@ Return ONLY the JSON object, no additional text.`;
       multiplier: avgMultiplier,
       reasoning: `Analyzed ${images.length} images. ${worstAssessment.reasoning}`,
     };
+  }
+
+  /**
+   * Generate embedding for product image using Titan Embeddings
+   *
+   * Converts image to 1024-dimensional vector for visual similarity search.
+   * Uses amazon.titan-embed-image-v1 model for consistent embeddings.
+   *
+   * Cost: ~$0.00006 per request
+   * Latency: ~1-2 seconds per image
+   *
+   * @param imageInput - Image input with base64 and media type, or plain base64 string
+   * @returns 1024-dimensional embedding array
+   * @throws Error if image validation fails or Bedrock call fails
+   */
+  async generateEmbedding(
+    imageInput: ImageInput | string
+  ): Promise<number[]> {
+    const startTime = Date.now();
+
+    try {
+      // Handle both legacy string input and new ImageInput interface
+      let base64: string;
+      let mediaType: ImageMediaType;
+
+      if (typeof imageInput === 'string') {
+        // Legacy support: validate and auto-detect format
+        base64 = imageInput;
+        validateBase64Image(base64);
+        mediaType = detectImageFormat(base64);
+      } else {
+        // New ImageInput interface
+        base64 = imageInput.base64;
+        mediaType = imageInput.mediaType;
+        validateBase64Image(base64);
+      }
+
+      const response = await this.bedrock.send(
+        new InvokeModelCommand({
+          modelId: 'amazon.titan-embed-image-v1',
+          contentType: 'application/json',
+          accept: 'application/json',
+          body: JSON.stringify({
+            inputImage: base64,
+          }),
+        })
+      );
+
+      // Validate response body exists
+      if (!response.body) {
+        throw new Error('Empty response body from Bedrock Titan Embeddings');
+      }
+
+      // Read response body
+      const bodyString = await new Response(response.body as any).text();
+
+      // Parse response
+      let result: any;
+      try {
+        result = JSON.parse(bodyString);
+      } catch (e) {
+        throw new Error('Failed to parse Bedrock Titan response');
+      }
+
+      // Extract embedding from response
+      const embedding: number[] = result.embedding;
+
+      if (!Array.isArray(embedding)) {
+        throw new Error('Response does not contain embedding array');
+      }
+
+      // Validate embedding dimensions (must be exactly 1024)
+      if (embedding.length !== 1024) {
+        throw new Error(
+          `Invalid embedding dimensions: expected 1024, got ${embedding.length}`
+        );
+      }
+
+      // Validate all elements are numbers
+      if (!embedding.every((v) => typeof v === 'number')) {
+        throw new Error('Embedding contains non-numeric values');
+      }
+
+      const duration = Date.now() - startTime;
+      console.log('[VisionAnalysis] Embedding generated', {
+        duration,
+        dimensions: embedding.length,
+        magnitude: Math.sqrt(embedding.reduce((sum, v) => sum + v * v, 0)),
+      });
+
+      return embedding;
+    } catch (error) {
+      const duration = Date.now() - startTime;
+      const errorMessage = error instanceof Error ? error.message : String(error);
+
+      console.error('[VisionAnalysis] Embedding generation failed', {
+        error: errorMessage,
+        duration,
+        type: error instanceof Error ? error.constructor.name : 'unknown',
+      });
+
+      throw error;
+    }
+  }
+
+  /**
+   * Generate embeddings for multiple images in batch
+   *
+   * Processes multiple images in parallel for efficient batch operations.
+   *
+   * @param images - Array of image inputs (base64 strings or ImageInput objects)
+   * @returns Promise<Array<{image: ImageInput | string, embedding: number[], error?: string}>>
+   *   - Each result contains the original image input and either embedding or error
+   */
+  async generateBatchEmbeddings(
+    images: (ImageInput | string)[]
+  ): Promise<
+    Array<{
+      image: ImageInput | string;
+      embedding?: number[];
+      error?: string;
+    }>
+  > {
+    const results = await Promise.allSettled(
+      images.map((img) => this.generateEmbedding(img))
+    );
+
+    return results.map((result, index) => {
+      if (result.status === 'fulfilled') {
+        return {
+          image: images[index],
+          embedding: result.value,
+        };
+      } else {
+        const error = result.reason;
+        const errorMessage =
+          error instanceof Error ? error.message : String(error);
+        return {
+          image: images[index],
+          error: errorMessage,
+        };
+      }
+    });
   }
 }

@@ -10,6 +10,7 @@ import { createRemoteJWKSet, jwtVerify, type JWTPayload } from 'jose';
 import { createHmac } from 'crypto';
 import { getCacheManager } from '../cache/cache-manager';
 import { buildCacheKey, CacheTTL } from '../cache/constants';
+import { loadTenantCognitoConfig } from '../tenant/cognito-config';
 
 // HMAC secret for secure cache key generation
 // CRITICAL: This prevents cache poisoning attacks by ensuring only authorized parties can generate valid cache keys
@@ -34,25 +35,9 @@ export interface CognitoConfig {
   audience?: string[];  // Client IDs that are allowed
 }
 
-// Tenant-specific Cognito pools (one pool per tenant per stage)
-// These should match the pools used by carousel-api authorizer
-const TENANT_COGNITO_POOLS: Record<string, CognitoConfig> = {
-  'carousel-labs': {
-    userPoolId: 'eu-west-1_vLdYTnLGY',
-    region: 'eu-west-1',
-    issuer: 'https://cognito-idp.eu-west-1.amazonaws.com/eu-west-1_vLdYTnLGY',
-    audience: ['7ph029to7u4edosrot896bbvru'],
-  },
-  'hringekjan': {
-    userPoolId: 'eu-west-1_PRuF4zx1a',
-    region: 'eu-west-1',
-    issuer: 'https://cognito-idp.eu-west-1.amazonaws.com/eu-west-1_PRuF4zx1a',
-    audience: ['7ieik03s0tcigkbpg9psc90sih'],
-  },
-};
-
-// M2M (Machine-to-Machine) support - allow any client_id from tenant pools
-const M2M_ALLOWED_POOLS = new Set(Object.values(TENANT_COGNITO_POOLS).map(c => c.userPoolId));
+// NOTE: Tenant-specific Cognito configs are now loaded at RUNTIME from SSM
+// using loadTenantCognitoConfig() from ../tenant/cognito-config.ts
+// This enables true multi-tenant support without hardcoded configs
 
 // Fallback to env vars if tenant not found (for backwards compatibility)
 const DEFAULT_COGNITO_CONFIG: CognitoConfig = {
@@ -63,10 +48,21 @@ const DEFAULT_COGNITO_CONFIG: CognitoConfig = {
 };
 
 /**
- * Get Cognito config for a specific tenant
+ * Get Cognito config for a specific tenant (loads from SSM at runtime)
+ * @param tenantId - Tenant identifier
+ * @param stage - Deployment stage (defaults to process.env.STAGE)
+ * @returns Promise<CognitoConfig> - Tenant-specific Cognito configuration
  */
-export function getCognitoConfigForTenant(tenantId: string): CognitoConfig {
-  return TENANT_COGNITO_POOLS[tenantId] || DEFAULT_COGNITO_CONFIG;
+export async function getCognitoConfigForTenantAsync(
+  tenantId: string,
+  stage: string = process.env.STAGE || 'dev'
+): Promise<CognitoConfig> {
+  try {
+    return await loadTenantCognitoConfig(tenantId, stage);
+  } catch (error) {
+    console.warn(`Failed to load Cognito config for tenant ${tenantId}, using default:`, error);
+    return DEFAULT_COGNITO_CONFIG;
+  }
 }
 
 // JWKS endpoint for verifying JWT signatures
@@ -185,24 +181,27 @@ export async function validateJWT(
 
     const { payload } = await jwtVerify(token, jwks, verifyOptions);
 
-    // For access tokens (M2M), validate client_id instead of aud
+    // For access tokens (M2M), optionally validate client_id
     if (tokenUse === 'access') {
       const clientId = payload.client_id as string;
-      const isKnownClient = config.audience?.includes(clientId);
-      const isM2MAllowed = M2M_ALLOWED_POOLS.has(config.userPoolId);
 
-      if (!isKnownClient && !isM2MAllowed) {
-        console.log('[JWTValidator] ❌ Invalid client_id for access token', { clientId, isM2MAllowed });
-        return {
-          isValid: false,
-          error: `Invalid client_id: ${clientId}`,
-        };
+      // If audience is configured, validate client_id matches
+      if (config.audience && config.audience.length > 0) {
+        const isKnownClient = config.audience.includes(clientId);
+        if (!isKnownClient) {
+          console.log('[JWTValidator] ❌ Invalid client_id for access token', {
+            clientId,
+            allowedAudiences: config.audience
+          });
+          return {
+            isValid: false,
+            error: `Invalid client_id: ${clientId}`,
+          };
+        }
       }
 
       // Log M2M access for audit
-      if (!isKnownClient && isM2MAllowed) {
-        console.log('[JWTValidator] M2M client access', { clientId, userPoolId: config.userPoolId });
-      }
+      console.log('[JWTValidator] M2M client access', { clientId, userPoolId: config.userPoolId });
     }
 
     // Extract user information from token claims
@@ -291,38 +290,24 @@ export async function validateJWTFromEvent(
     };
   }
 
-  // If no config provided, try to derive from tenant header or token issuer
+  // If no config provided, load from SSM based on tenant
   let effectiveConfig = config;
   if (!effectiveConfig) {
     // Try to get tenant from header
     const tenantId = event.headers?.['x-tenant-id'] || event.headers?.['X-Tenant-Id'];
+    const stage = process.env.STAGE || 'dev';
+
     if (tenantId) {
-      effectiveConfig = getCognitoConfigForTenant(tenantId);
-      console.log('[JWTValidator] Using tenant-specific config:', { tenantId, poolId: effectiveConfig.userPoolId });
+      effectiveConfig = await getCognitoConfigForTenantAsync(tenantId, stage);
+      console.log('[JWTValidator] Loaded tenant-specific config from SSM:', {
+        tenantId,
+        poolId: effectiveConfig.userPoolId,
+        stage
+      });
     } else {
-      // Fall back to decoding token to get issuer
-      try {
-        const tokenParts = token.split('.');
-        const payloadBase64 = tokenParts[1];
-        const decodedPayload = JSON.parse(Buffer.from(payloadBase64, 'base64url').toString());
-        const tokenIssuer = decodedPayload.iss as string;
-
-        // Find matching tenant config by issuer
-        for (const [tenant, cfg] of Object.entries(TENANT_COGNITO_POOLS)) {
-          if (cfg.issuer === tokenIssuer) {
-            effectiveConfig = cfg;
-            console.log('[JWTValidator] Derived config from token issuer:', { tenant, poolId: cfg.userPoolId });
-            break;
-          }
-        }
-      } catch {
-        // Ignore decode errors, will use default config
-      }
-
-      if (!effectiveConfig) {
-        effectiveConfig = DEFAULT_COGNITO_CONFIG;
-        console.log('[JWTValidator] Using default config');
-      }
+      // Fall back to default config if no tenant specified
+      effectiveConfig = DEFAULT_COGNITO_CONFIG;
+      console.log('[JWTValidator] Using default config (no tenant specified)');
     }
   }
 

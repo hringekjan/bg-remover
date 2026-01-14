@@ -1,0 +1,15 @@
+{
+  "totalTests": 21,
+  "passed": 21,
+  "failed": 0,
+  "statistics": {
+    "cacheHits": 17,
+    "cacheMisses": 4,
+    "hitRate": 0.8095238095,
+    "averageHitTimeMs": 8,
+    "averageMissTimeMs": 520
+  },
+  "ttl": 3600,
+  "evictionPolicy": "LRU",
+  "cacheInstances": ["embedding", "analysis", "clustering"]
+}

@@ -3,6 +3,11 @@
  *
  * Retrieves the status and result of a background removal job.
  * Uses DynamoDB for persistent storage across Lambda cold starts.
+ *
+ * Security:
+ * - Requires authentication (JWT token)
+ * - Enforces ownership validation (user can only access their own jobs)
+ * - Admins can access any job within their tenant
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -13,6 +18,8 @@ import {
   updateJobStatus,
   type JobStatus,
 } from '@/lib/dynamo/job-store';
+import { requireAuthAndResourceAccess, requireAuthAndResourceModification } from '@/lib/auth/middleware';
+import { validateCsrf } from '@/lib/auth/csrf';
 
 export const runtime = 'nodejs';
 
@@ -58,6 +65,27 @@ export async function GET(
       );
     }
 
+    // SECURITY: Verify ownership before returning job data
+    // This prevents horizontal privilege escalation (user accessing other users' jobs)
+
+    // CRITICAL: Validate userId exists to prevent bypass attacks
+    if (!job.userId) {
+      console.error(`[BG-Remover] Job ${jobId} missing userId field - potential security violation`);
+      return NextResponse.json(
+        { error: 'Invalid job data - missing ownership information' },
+        { status: 500 }
+      );
+    }
+
+    const userOrError = await requireAuthAndResourceAccess(request, {
+      userId: job.userId,  // Safe - validated above
+      tenantId: job.tenant || 'carousel-labs',
+    });
+
+    if (userOrError instanceof NextResponse) {
+      return userOrError; // 401 Unauthorized or 403 Forbidden
+    }
+
     // Return job status with TTL info
     return NextResponse.json({
       jobId: job.jobId,
@@ -86,11 +114,22 @@ export async function GET(
 }
 
 // DELETE to cancel a pending job (optional)
+// SECURITY: Protected with CSRF token validation
 export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ jobId: string }> }
 ): Promise<NextResponse> {
   try {
+    // CRITICAL: Validate CSRF token before any other operations
+    const csrfResult = validateCsrf(request);
+    if (!csrfResult.valid) {
+      console.warn('[BG-Remover] CSRF validation failed for DELETE /api/status/[jobId]:', csrfResult.error);
+      return NextResponse.json(
+        { error: 'CSRF validation failed', details: csrfResult.error },
+        { status: 403 }
+      );
+    }
+
     const resolvedParams = await params;
 
     // Validate job ID
@@ -112,6 +151,27 @@ export async function DELETE(
         { error: 'Job not found' },
         { status: 404 }
       );
+    }
+
+    // SECURITY: Verify ownership before allowing deletion
+    // This prevents users from cancelling other users' jobs
+
+    // CRITICAL: Validate userId exists to prevent bypass attacks
+    if (!job.userId) {
+      console.error(`[BG-Remover] Job ${jobId} missing userId field - cannot authorize deletion`);
+      return NextResponse.json(
+        { error: 'Invalid job data - missing ownership information' },
+        { status: 500 }
+      );
+    }
+
+    const userOrError = await requireAuthAndResourceModification(request, {
+      userId: job.userId,  // Safe - validated above
+      tenantId: job.tenant || 'carousel-labs',
+    });
+
+    if (userOrError instanceof NextResponse) {
+      return userOrError; // 401 Unauthorized or 403 Forbidden
     }
 
     // Can only cancel pending or processing jobs

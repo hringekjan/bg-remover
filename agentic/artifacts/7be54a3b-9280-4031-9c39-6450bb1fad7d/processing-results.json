@@ -1,0 +1,572 @@
+{
+  "success": true,
+  "timestamp": "2026-01-12T00:40:22.231Z",
+  "totalImages": 10,
+  "successfulProcessing": 10,
+  "modelsUsed": {
+    "backgroundRemoval": "amazon.nova-canvas-v1:0",
+    "productAnalysis": "aws.rekognition.detect-labels"
+  },
+  "performance": {
+    "totalProcessingTimeMs": 72315,
+    "averagePerImageMs": 7232,
+    "successRate": "100%"
+  },
+  "results": [
+    {
+      "jobId": "img-001",
+      "originalFilename": "1000011962.webp",
+      "backgroundRemoval": {
+        "success": true,
+        "outputPath": "services/bg-remover/artifacts/execution-results/img-001-no-bg.png",
+        "processingTimeMs": 5714
+      },
+      "productAnalysis": {
+        "category": "Clothing",
+        "colors": [
+          "grey",
+          "grey",
+          "grey",
+          "grey",
+          "grey"
+        ],
+        "features": [
+          "Clothing",
+          "Sleeve",
+          "Fashion",
+          "Robe",
+          "Dress"
+        ],
+        "confidence": 99.99955749511719,
+        "labels": [
+          {
+            "name": "Clothing",
+            "confidence": 99.99955749511719
+          },
+          {
+            "name": "Sleeve",
+            "confidence": 99.99955749511719
+          },
+          {
+            "name": "Fashion",
+            "confidence": 98.61978912353516
+          },
+          {
+            "name": "Robe",
+            "confidence": 94.56028747558594
+          },
+          {
+            "name": "Dress",
+            "confidence": 94.16085815429688
+          }
+        ]
+      }
+    },
+    {
+      "jobId": "img-002",
+      "originalFilename": "IMG_6292_Y6Muo3X_e5fdc2b0-f50c-4e82-b8d4-85a0d5ec18e6.webp",
+      "backgroundRemoval": {
+        "success": true,
+        "outputPath": "services/bg-remover/artifacts/execution-results/img-002-no-bg.png",
+        "processingTimeMs": 5737
+      },
+      "productAnalysis": {
+        "category": "Clothing",
+        "colors": [
+          "red",
+          "brown",
+          "brown",
+          "brown",
+          "red",
+          "green",
+          "brown",
+          "black",
+          "brown"
+        ],
+        "features": [
+          "Clothing",
+          "Dress",
+          "Sleeve",
+          "Formal Wear",
+          "Coat",
+          "Velvet"
+        ],
+        "confidence": 99.99826049804688,
+        "labels": [
+          {
+            "name": "Clothing",
+            "confidence": 99.99826049804688
+          },
+          {
+            "name": "Dress",
+            "confidence": 99.99826049804688
+          },
+          {
+            "name": "Sleeve",
+            "confidence": 98.9919204711914
+          },
+          {
+            "name": "Formal Wear",
+            "confidence": 97.46674346923828
+          },
+          {
+            "name": "Coat",
+            "confidence": 96.52635955810547
+          },
+          {
+            "name": "Velvet",
+            "confidence": 95.56951141357422
+          }
+        ]
+      }
+    },
+    {
+      "jobId": "img-003",
+      "originalFilename": "IMG_6295_chZ8uM0_4939f3e0-64ed-4fa7-8b7e-e78ffb69dbb7.webp",
+      "backgroundRemoval": {
+        "success": true,
+        "outputPath": "services/bg-remover/artifacts/execution-results/img-003-no-bg.png",
+        "processingTimeMs": 7301
+      },
+      "productAnalysis": {
+        "category": "Clothing",
+        "colors": [
+          "grey",
+          "grey",
+          "grey",
+          "grey",
+          "green",
+          "brown",
+          "black"
+        ],
+        "features": [
+          "Clothing",
+          "Sleeve",
+          "Home Decor",
+          "Linen",
+          "Blouse",
+          "Long Sleeve"
+        ],
+        "confidence": 100,
+        "labels": [
+          {
+            "name": "Clothing",
+            "confidence": 100
+          },
+          {
+            "name": "Sleeve",
+            "confidence": 100
+          },
+          {
+            "name": "Home Decor",
+            "confidence": 96.35089111328125
+          },
+          {
+            "name": "Linen",
+            "confidence": 96.35089111328125
+          },
+          {
+            "name": "Blouse",
+            "confidence": 82.72716522216797
+          },
+          {
+            "name": "Long Sleeve",
+            "confidence": 81.05854034423828
+          }
+        ]
+      }
+    },
+    {
+      "jobId": "img-004",
+      "originalFilename": "1000012002_de7d7c36-418d-4cff-b365-3f20f1820762.webp",
+      "backgroundRemoval": {
+        "success": true,
+        "outputPath": "services/bg-remover/artifacts/execution-results/img-004-no-bg.png",
+        "processingTimeMs": 7900
+      },
+      "productAnalysis": {
+        "category": "Clothing",
+        "colors": [
+          "brown",
+          "grey",
+          "brown",
+          "grey",
+          "grey",
+          "grey",
+          "brown",
+          "red"
+        ],
+        "features": [
+          "Clothing",
+          "Coat",
+          "Jacket",
+          "Overcoat"
+        ],
+        "confidence": 100,
+        "labels": [
+          {
+            "name": "Clothing",
+            "confidence": 100
+          },
+          {
+            "name": "Coat",
+            "confidence": 100
+          },
+          {
+            "name": "Jacket",
+            "confidence": 99.9472427368164
+          },
+          {
+            "name": "Overcoat",
+            "confidence": 96.23162841796875
+          },
+          {
+            "name": "Fur",
+            "confidence": 77.85211181640625
+          }
+        ]
+      }
+    },
+    {
+      "jobId": "img-005",
+      "originalFilename": "image_KRWqbD1_016150ca-6c93-4f65-be95-16b90ebf39f4.jpg",
+      "backgroundRemoval": {
+        "success": true,
+        "outputPath": "services/bg-remover/artifacts/execution-results/img-005-no-bg.png",
+        "processingTimeMs": 6880
+      },
+      "productAnalysis": {
+        "category": "Clothing",
+        "colors": [
+          "grey",
+          "black",
+          "grey",
+          "grey",
+          "grey",
+          "brown"
+        ],
+        "features": [
+          "Clothing",
+          "Pants",
+          "Jeans",
+          "Shorts",
+          "Accessories",
+          "Bag",
+          "Handbag"
+        ],
+        "confidence": 100,
+        "labels": [
+          {
+            "name": "Clothing",
+            "confidence": 100
+          },
+          {
+            "name": "Pants",
+            "confidence": 100
+          },
+          {
+            "name": "Jeans",
+            "confidence": 99.86534118652344
+          },
+          {
+            "name": "Shorts",
+            "confidence": 97.6971435546875
+          },
+          {
+            "name": "Accessories",
+            "confidence": 94.6826400756836
+          },
+          {
+            "name": "Bag",
+            "confidence": 94.6826400756836
+          },
+          {
+            "name": "Handbag",
+            "confidence": 94.6826400756836
+          }
+        ]
+      }
+    },
+    {
+      "jobId": "img-006",
+      "originalFilename": "1000_kr_35.jpg",
+      "backgroundRemoval": {
+        "success": true,
+        "outputPath": "services/bg-remover/artifacts/execution-results/img-006-no-bg.png",
+        "processingTimeMs": 7200
+      },
+      "productAnalysis": {
+        "category": "Blouse",
+        "colors": [
+          "grey",
+          "grey",
+          "grey",
+          "grey",
+          "black",
+          "grey"
+        ],
+        "features": [
+          "Blouse",
+          "Clothing",
+          "Shirt",
+          "Home Decor",
+          "Linen",
+          "Sleeve"
+        ],
+        "confidence": 99.99991607666016,
+        "labels": [
+          {
+            "name": "Blouse",
+            "confidence": 99.99991607666016
+          },
+          {
+            "name": "Clothing",
+            "confidence": 99.99991607666016
+          },
+          {
+            "name": "Shirt",
+            "confidence": 99.99979400634766
+          },
+          {
+            "name": "Home Decor",
+            "confidence": 99.93341827392578
+          },
+          {
+            "name": "Linen",
+            "confidence": 99.93341827392578
+          },
+          {
+            "name": "Sleeve",
+            "confidence": 99.42269134521484
+          },
+          {
+            "name": "Beachwear",
+            "confidence": 76.8135757446289
+          }
+        ]
+      }
+    },
+    {
+      "jobId": "img-007",
+      "originalFilename": "download (1).png",
+      "backgroundRemoval": {
+        "success": true,
+        "outputPath": "services/bg-remover/artifacts/execution-results/img-007-no-bg.png",
+        "processingTimeMs": 6325
+      },
+      "productAnalysis": {
+        "category": "Clothing",
+        "colors": [
+          "white",
+          "black",
+          "blue",
+          "grey",
+          "grey",
+          "grey",
+          "grey",
+          "grey"
+        ],
+        "features": [
+          "Clothing",
+          "Long Sleeve",
+          "Sleeve",
+          "Velvet",
+          "Coat"
+        ],
+        "confidence": 100,
+        "labels": [
+          {
+            "name": "Clothing",
+            "confidence": 100
+          },
+          {
+            "name": "Long Sleeve",
+            "confidence": 100
+          },
+          {
+            "name": "Sleeve",
+            "confidence": 100
+          },
+          {
+            "name": "Velvet",
+            "confidence": 99.93903350830078
+          },
+          {
+            "name": "Coat",
+            "confidence": 99.6723861694336
+          },
+          {
+            "name": "Costume",
+            "confidence": 78.33351135253906
+          },
+          {
+            "name": "Person",
+            "confidence": 78.33351135253906
+          }
+        ]
+      }
+    },
+    {
+      "jobId": "img-008",
+      "originalFilename": "download.png",
+      "backgroundRemoval": {
+        "success": true,
+        "outputPath": "services/bg-remover/artifacts/execution-results/img-008-no-bg.png",
+        "processingTimeMs": 5467
+      },
+      "productAnalysis": {
+        "category": "Clothing",
+        "colors": [
+          "white",
+          "black",
+          "blue",
+          "grey",
+          "grey",
+          "grey",
+          "grey",
+          "grey"
+        ],
+        "features": [
+          "Clothing",
+          "Long Sleeve",
+          "Sleeve",
+          "Velvet",
+          "Coat"
+        ],
+        "confidence": 100,
+        "labels": [
+          {
+            "name": "Clothing",
+            "confidence": 100
+          },
+          {
+            "name": "Long Sleeve",
+            "confidence": 100
+          },
+          {
+            "name": "Sleeve",
+            "confidence": 100
+          },
+          {
+            "name": "Velvet",
+            "confidence": 99.93903350830078
+          },
+          {
+            "name": "Coat",
+            "confidence": 99.6723861694336
+          },
+          {
+            "name": "Costume",
+            "confidence": 78.33351135253906
+          },
+          {
+            "name": "Person",
+            "confidence": 78.33351135253906
+          }
+        ]
+      }
+    },
+    {
+      "jobId": "img-009",
+      "originalFilename": "image_o4IH5CW.jpg",
+      "backgroundRemoval": {
+        "success": true,
+        "outputPath": "services/bg-remover/artifacts/execution-results/img-009-no-bg.png",
+        "processingTimeMs": 6643
+      },
+      "productAnalysis": {
+        "category": "Clothing",
+        "colors": [
+          "brown",
+          "grey",
+          "black",
+          "blue",
+          "brown",
+          "grey",
+          "grey"
+        ],
+        "features": [
+          "Clothing",
+          "Long Sleeve",
+          "Sleeve",
+          "Coat",
+          "Wood"
+        ],
+        "confidence": 100,
+        "labels": [
+          {
+            "name": "Clothing",
+            "confidence": 100
+          },
+          {
+            "name": "Long Sleeve",
+            "confidence": 100
+          },
+          {
+            "name": "Sleeve",
+            "confidence": 100
+          },
+          {
+            "name": "Coat",
+            "confidence": 99.00126647949219
+          },
+          {
+            "name": "Wood",
+            "confidence": 81.83686828613281
+          }
+        ]
+      }
+    },
+    {
+      "jobId": "img-010",
+      "originalFilename": "image_o4IH5CW.webp",
+      "backgroundRemoval": {
+        "success": true,
+        "outputPath": "services/bg-remover/artifacts/execution-results/img-010-no-bg.png",
+        "processingTimeMs": 6865
+      },
+      "productAnalysis": {
+        "category": "Clothing",
+        "colors": [
+          "brown",
+          "grey",
+          "black",
+          "blue",
+          "brown",
+          "grey",
+          "grey"
+        ],
+        "features": [
+          "Clothing",
+          "Long Sleeve",
+          "Sleeve",
+          "Coat",
+          "Wood"
+        ],
+        "confidence": 100,
+        "labels": [
+          {
+            "name": "Clothing",
+            "confidence": 100
+          },
+          {
+            "name": "Long Sleeve",
+            "confidence": 100
+          },
+          {
+            "name": "Sleeve",
+            "confidence": 100
+          },
+          {
+            "name": "Coat",
+            "confidence": 96.1463851928711
+          },
+          {
+            "name": "Wood",
+            "confidence": 85.08877563476562
+          }
+        ]
+      }
+    }
+  ]
+}

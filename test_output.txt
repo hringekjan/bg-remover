@@ -1,0 +1,833 @@
+
+> @carousellabs/bg-remover@1.0.0 test
+> jest parallel-clustering.test.ts --verbose
+
+  console.log
+    [ParallelProcessing] Processing 5 items with concurrency 2
+
+      at processParallel (src/lib/product-identity/parallel-clustering.ts:78:11)
+
+  console.log
+    [ParallelProcessing] Item 1/5 completed in 11ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 0)
+
+  console.log
+    [ParallelProcessing] Item 2/5 completed in 11ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 1)
+
+  console.log
+    [ParallelProcessing] Item 3/5 completed in 10ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 2)
+
+  console.log
+    [ParallelProcessing] Item 4/5 completed in 11ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 3)
+
+  console.log
+    [ParallelProcessing] Item 5/5 completed in 11ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 4)
+
+  console.log
+    [ParallelProcessing] Complete: {
+      total: 5,
+      success: 5,
+      failures: 0,
+      totalTime: 50,
+      avgTimePerItem: '10.0ms'
+    }
+
+      at processParallel (src/lib/product-identity/parallel-clustering.ts:125:11)
+
+  console.log
+    [ParallelProcessing] Processing 10 items with concurrency 3
+
+      at processParallel (src/lib/product-identity/parallel-clustering.ts:78:11)
+
+  console.log
+    [ParallelProcessing] Item 1/10 completed in 50ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 0)
+
+  console.log
+    [ParallelProcessing] Item 2/10 completed in 51ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 1)
+
+  console.log
+    [ParallelProcessing] Item 3/10 completed in 51ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 2)
+
+  console.log
+    [ParallelProcessing] Item 4/10 completed in 50ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 3)
+
+  console.log
+    [ParallelProcessing] Item 5/10 completed in 50ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 4)
+
+  console.log
+    [ParallelProcessing] Item 6/10 completed in 51ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 5)
+
+  console.log
+    [ParallelProcessing] Item 7/10 completed in 51ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 6)
+
+  console.log
+    [ParallelProcessing] Item 8/10 completed in 52ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 7)
+
+  console.log
+    [ParallelProcessing] Item 9/10 completed in 52ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 8)
+
+  console.log
+    [ParallelProcessing] Item 10/10 completed in 51ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 9)
+
+  console.log
+    [ParallelProcessing] Complete: {
+      total: 10,
+      success: 10,
+      failures: 0,
+      totalTime: 222,
+      avgTimePerItem: '22.2ms'
+    }
+
+      at processParallel (src/lib/product-identity/parallel-clustering.ts:125:11)
+
+  console.log
+    [ParallelProcessing] Processing 5 items with concurrency 4
+
+      at processParallel (src/lib/product-identity/parallel-clustering.ts:78:11)
+
+  console.log
+    [ParallelProcessing] Item 1/5 completed in 0ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 0)
+
+  console.log
+    [ParallelProcessing] Item 2/5 completed in 0ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 1)
+
+  console.error
+    [ParallelProcessing] Item 3 failed: Item 3 failed
+
+       99 |     } catch (error) {
+      100 |       const errorMessage = error instanceof Error ? error.message : String(error);
+    > 101 |       console.error(`[ParallelProcessing] Item ${index + 1} failed:`, errorMessage);
+          |               ^
+      102 |
+      103 |       return {
+      104 |         success: false as const,
+
+      at src/lib/product-identity/parallel-clustering.ts:101:15
+      at ConcurrencyLimiter.run (src/lib/product-identity/parallel-clustering.ts:51:14)
+          at async Promise.all (index 2)
+      at processParallel (src/lib/product-identity/parallel-clustering.ts:111:23)
+      at Object.<anonymous> (src/lib/product-identity/__tests__/parallel-clustering.test.ts:66:22)
+
+  console.log
+    [ParallelProcessing] Item 4/5 completed in 2ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 3)
+
+  console.log
+    [ParallelProcessing] Item 5/5 completed in 0ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 4)
+
+  console.log
+    [ParallelProcessing] Complete: {
+      total: 5,
+      success: 4,
+      failures: 1,
+      totalTime: 12,
+      avgTimePerItem: '2.4ms'
+    }
+
+      at processParallel (src/lib/product-identity/parallel-clustering.ts:125:11)
+
+  console.log
+    [ParallelProcessing] Processing 3 items with concurrency 4
+
+      at processParallel (src/lib/product-identity/parallel-clustering.ts:78:11)
+
+  console.log
+    [ParallelProcessing] Item 1/3 completed in 0ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 0)
+
+  console.log
+    [ParallelProcessing] Item 3/3 completed in 1ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 2)
+
+  console.error
+    [ParallelProcessing] Item 2 failed: Operation timeout
+
+       99 |     } catch (error) {
+      100 |       const errorMessage = error instanceof Error ? error.message : String(error);
+    > 101 |       console.error(`[ParallelProcessing] Item ${index + 1} failed:`, errorMessage);
+          |               ^
+      102 |
+      103 |       return {
+      104 |         success: false as const,
+
+      at src/lib/product-identity/parallel-clustering.ts:101:15
+      at ConcurrencyLimiter.run (src/lib/product-identity/parallel-clustering.ts:51:14)
+          at async Promise.all (index 1)
+      at processParallel (src/lib/product-identity/parallel-clustering.ts:111:23)
+      at Object.<anonymous> (src/lib/product-identity/__tests__/parallel-clustering.test.ts:83:22)
+
+  console.log
+    [ParallelProcessing] Complete: {
+      total: 3,
+      success: 2,
+      failures: 1,
+      totalTime: 103,
+      avgTimePerItem: '34.3ms'
+    }
+
+      at processParallel (src/lib/product-identity/parallel-clustering.ts:125:11)
+
+  console.log
+    [ParallelProcessing] Processing 3 items with concurrency 4
+
+      at processParallel (src/lib/product-identity/parallel-clustering.ts:78:11)
+
+  console.log
+    [ParallelProcessing] Item 1/3 completed in 10ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 0)
+
+  console.log
+    [ParallelProcessing] Item 2/3 completed in 11ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 1)
+
+  console.log
+    [ParallelProcessing] Item 3/3 completed in 11ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 2)
+
+  console.log
+    [ParallelProcessing] Complete: {
+      total: 3,
+      success: 3,
+      failures: 0,
+      totalTime: 11,
+      avgTimePerItem: '3.7ms'
+    }
+
+      at processParallel (src/lib/product-identity/parallel-clustering.ts:125:11)
+
+  console.log
+    [ParallelProcessing] Processing 3 items with concurrency 2
+
+      at processParallel (src/lib/product-identity/parallel-clustering.ts:78:11)
+
+  console.log
+    [ParallelProcessing] Item 1/3 completed in 10ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 0)
+
+  console.log
+    [ParallelProcessing] Item 2/3 completed in 11ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 1)
+
+  console.log
+    [ParallelProcessing] Item 3/3 completed in 11ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 2)
+
+  console.log
+    [ParallelProcessing] Complete: {
+      total: 3,
+      success: 3,
+      failures: 0,
+      totalTime: 23,
+      avgTimePerItem: '7.7ms'
+    }
+
+      at processParallel (src/lib/product-identity/parallel-clustering.ts:125:11)
+
+  console.log
+    [ParallelProcessing] Processing 3 items with concurrency 4
+
+      at processParallel (src/lib/product-identity/parallel-clustering.ts:78:11)
+
+  console.log
+    [ParallelProcessing] Item 1/3 completed in 0ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 0)
+
+  console.error
+    [ParallelProcessing] Item 2 failed: Extraction failed
+
+       99 |     } catch (error) {
+      100 |       const errorMessage = error instanceof Error ? error.message : String(error);
+    > 101 |       console.error(`[ParallelProcessing] Item ${index + 1} failed:`, errorMessage);
+          |               ^
+      102 |
+      103 |       return {
+      104 |         success: false as const,
+
+      at src/lib/product-identity/parallel-clustering.ts:101:15
+      at ConcurrencyLimiter.run (src/lib/product-identity/parallel-clustering.ts:51:14)
+          at async Promise.all (index 1)
+      at processParallel (src/lib/product-identity/parallel-clustering.ts:111:23)
+      at extractFeaturesParallel (src/lib/product-identity/parallel-clustering.ts:149:18)
+      at Object.<anonymous> (src/lib/product-identity/__tests__/parallel-clustering.test.ts:143:23)
+
+  console.log
+    [ParallelProcessing] Item 3/3 completed in 1ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 2)
+
+  console.log
+    [ParallelProcessing] Complete: {
+      total: 3,
+      success: 2,
+      failures: 1,
+      totalTime: 1,
+      avgTimePerItem: '0.3ms'
+    }
+
+      at processParallel (src/lib/product-identity/parallel-clustering.ts:125:11)
+
+  console.warn
+    [ParallelFeatureExtraction] 1 images failed feature extraction
+
+      157 |
+      158 |   if (result.failures.length > 0) {
+    > 159 |     console.warn(`[ParallelFeatureExtraction] ${result.failures.length} images failed feature extraction`);
+          |             ^
+      160 |   }
+      161 |
+      162 |   return result.success;
+
+      at extractFeaturesParallel (src/lib/product-identity/parallel-clustering.ts:159:13)
+      at Object.<anonymous> (src/lib/product-identity/__tests__/parallel-clustering.test.ts:143:23)
+
+  console.log
+    [ParallelProcessing] Processing 3 items with concurrency 4
+
+      at processParallel (src/lib/product-identity/parallel-clustering.ts:78:11)
+
+  console.log
+    [ParallelProcessing] Item 1/3 completed in 11ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 0)
+
+  console.log
+    [ParallelProcessing] Item 2/3 completed in 12ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 1)
+
+  console.log
+    [ParallelProcessing] Item 3/3 completed in 12ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 2)
+
+  console.log
+    [ParallelProcessing] Complete: {
+      total: 3,
+      success: 3,
+      failures: 0,
+      totalTime: 12,
+      avgTimePerItem: '4.0ms'
+    }
+
+      at processParallel (src/lib/product-identity/parallel-clustering.ts:125:11)
+
+  console.log
+    [ParallelClustering] Clustering 4 images with threshold 0.9
+
+      at clusterImagesParallel (src/lib/product-identity/parallel-clustering.ts:200:11)
+
+  console.log
+    [ParallelClustering] Computing 6 similarity comparisons in parallel
+
+      at clusterImagesParallel (src/lib/product-identity/parallel-clustering.ts:210:11)
+
+  console.log
+    [ParallelClustering] Created 2 clusters from 4 images
+
+      at clusterImagesParallel (src/lib/product-identity/parallel-clustering.ts:253:11)
+
+  console.log
+    [ParallelClustering] Clustering 3 images with threshold 0.9
+
+      at clusterImagesParallel (src/lib/product-identity/parallel-clustering.ts:200:11)
+
+  console.log
+    [ParallelClustering] Computing 3 similarity comparisons in parallel
+
+      at clusterImagesParallel (src/lib/product-identity/parallel-clustering.ts:210:11)
+
+  console.log
+    [ParallelClustering] Created 3 clusters from 3 images
+
+      at clusterImagesParallel (src/lib/product-identity/parallel-clustering.ts:253:11)
+
+  console.log
+    [ParallelClustering] Clustering 1 images with threshold 0.9
+
+      at clusterImagesParallel (src/lib/product-identity/parallel-clustering.ts:200:11)
+
+  console.log
+    [ParallelClustering] Computing 0 similarity comparisons in parallel
+
+      at clusterImagesParallel (src/lib/product-identity/parallel-clustering.ts:210:11)
+
+  console.log
+    [ParallelClustering] Created 1 clusters from 1 images
+
+      at clusterImagesParallel (src/lib/product-identity/parallel-clustering.ts:253:11)
+
+  console.log
+    [ParallelClustering] Clustering 0 images with threshold 0.9
+
+      at clusterImagesParallel (src/lib/product-identity/parallel-clustering.ts:200:11)
+
+  console.log
+    [ParallelClustering] Computing 0 similarity comparisons in parallel
+
+      at clusterImagesParallel (src/lib/product-identity/parallel-clustering.ts:210:11)
+
+  console.log
+    [ParallelClustering] Created 0 clusters from 0 images
+
+      at clusterImagesParallel (src/lib/product-identity/parallel-clustering.ts:253:11)
+
+  console.log
+    [ParallelClustering] Clustering 3 images with threshold 0.9
+
+      at clusterImagesParallel (src/lib/product-identity/parallel-clustering.ts:200:11)
+
+  console.log
+    [ParallelClustering] Computing 3 similarity comparisons in parallel
+
+      at clusterImagesParallel (src/lib/product-identity/parallel-clustering.ts:210:11)
+
+  console.log
+    [ParallelClustering] Created 2 clusters from 3 images
+
+      at clusterImagesParallel (src/lib/product-identity/parallel-clustering.ts:253:11)
+
+  console.log
+    [ParallelClustering] Clustering 3 images with threshold 0.5
+
+      at clusterImagesParallel (src/lib/product-identity/parallel-clustering.ts:200:11)
+
+  console.log
+    [ParallelClustering] Computing 3 similarity comparisons in parallel
+
+      at clusterImagesParallel (src/lib/product-identity/parallel-clustering.ts:210:11)
+
+  console.log
+    [ParallelClustering] Created 1 clusters from 3 images
+
+      at clusterImagesParallel (src/lib/product-identity/parallel-clustering.ts:253:11)
+
+  console.log
+    [ParallelProcessing] Processing 20 items with concurrency 1
+
+      at processParallel (src/lib/product-identity/parallel-clustering.ts:78:11)
+
+  console.log
+    [ParallelProcessing] Item 1/20 completed in 50ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 0)
+
+  console.log
+    [ParallelProcessing] Item 2/20 completed in 52ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 1)
+
+  console.log
+    [ParallelProcessing] Item 3/20 completed in 52ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 2)
+
+  console.log
+    [ParallelProcessing] Item 4/20 completed in 52ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 3)
+
+  console.log
+    [ParallelProcessing] Item 5/20 completed in 51ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 4)
+
+  console.log
+    [ParallelProcessing] Item 6/20 completed in 50ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 5)
+
+  console.log
+    [ParallelProcessing] Item 7/20 completed in 50ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 6)
+
+  console.log
+    [ParallelProcessing] Item 8/20 completed in 51ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 7)
+
+  console.log
+    [ParallelProcessing] Item 9/20 completed in 50ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 8)
+
+  console.log
+    [ParallelProcessing] Item 10/20 completed in 50ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 9)
+
+  console.log
+    [ParallelProcessing] Item 11/20 completed in 51ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 10)
+
+  console.log
+    [ParallelProcessing] Item 12/20 completed in 50ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 11)
+
+  console.log
+    [ParallelProcessing] Item 13/20 completed in 50ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 12)
+
+  console.log
+    [ParallelProcessing] Item 14/20 completed in 50ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 13)
+
+  console.log
+    [ParallelProcessing] Item 15/20 completed in 52ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 14)
+
+  console.log
+    [ParallelProcessing] Item 16/20 completed in 50ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 15)
+
+  console.log
+    [ParallelProcessing] Item 17/20 completed in 50ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 16)
+
+  console.log
+    [ParallelProcessing] Item 18/20 completed in 51ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 17)
+
+  console.log
+    [ParallelProcessing] Item 19/20 completed in 51ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 18)
+
+  console.log
+    [ParallelProcessing] Item 20/20 completed in 51ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 19)
+
+  console.log
+    [ParallelProcessing] Complete: {
+      total: 20,
+      success: 20,
+      failures: 0,
+      totalTime: 1074,
+      avgTimePerItem: '53.7ms'
+    }
+
+      at processParallel (src/lib/product-identity/parallel-clustering.ts:125:11)
+
+  console.log
+    [ParallelProcessing] Processing 20 items with concurrency 4
+
+      at processParallel (src/lib/product-identity/parallel-clustering.ts:78:11)
+
+  console.log
+    [ParallelProcessing] Item 1/20 completed in 51ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 0)
+
+  console.log
+    [ParallelProcessing] Item 2/20 completed in 52ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 1)
+
+  console.log
+    [ParallelProcessing] Item 3/20 completed in 52ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 2)
+
+  console.log
+    [ParallelProcessing] Item 4/20 completed in 52ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 3)
+
+  console.log
+    [ParallelProcessing] Item 5/20 completed in 50ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 4)
+
+  console.log
+    [ParallelProcessing] Item 6/20 completed in 50ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 5)
+
+  console.log
+    [ParallelProcessing] Item 7/20 completed in 51ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 6)
+
+  console.log
+    [ParallelProcessing] Item 8/20 completed in 51ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 7)
+
+  console.log
+    [ParallelProcessing] Item 9/20 completed in 51ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 8)
+
+  console.log
+    [ParallelProcessing] Item 10/20 completed in 52ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 9)
+
+  console.log
+    [ParallelProcessing] Item 11/20 completed in 52ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 10)
+
+  console.log
+    [ParallelProcessing] Item 12/20 completed in 52ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 11)
+
+  console.log
+    [ParallelProcessing] Item 13/20 completed in 52ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 12)
+
+  console.log
+    [ParallelProcessing] Item 14/20 completed in 52ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 13)
+
+  console.log
+    [ParallelProcessing] Item 15/20 completed in 52ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 14)
+
+  console.log
+    [ParallelProcessing] Item 16/20 completed in 53ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 15)
+
+  console.log
+    [ParallelProcessing] Item 17/20 completed in 51ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 16)
+
+  console.log
+    [ParallelProcessing] Item 18/20 completed in 52ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 17)
+
+  console.log
+    [ParallelProcessing] Item 19/20 completed in 52ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 18)
+
+  console.log
+    [ParallelProcessing] Item 20/20 completed in 52ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 19)
+
+  console.log
+    [ParallelProcessing] Complete: {
+      total: 20,
+      success: 20,
+      failures: 0,
+      totalTime: 265,
+      avgTimePerItem: '13.3ms'
+    }
+
+      at processParallel (src/lib/product-identity/parallel-clustering.ts:125:11)
+
+  console.log
+    [ParallelProcessing] Processing 5 items with concurrency 4
+
+      at processParallel (src/lib/product-identity/parallel-clustering.ts:78:11)
+
+  console.log
+    [ParallelProcessing] Item 1/5 completed in 20ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 0)
+
+  console.log
+    [ParallelProcessing] Item 2/5 completed in 20ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 1)
+
+  console.log
+    [ParallelProcessing] Item 3/5 completed in 21ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 2)
+
+  console.log
+    [ParallelProcessing] Item 4/5 completed in 21ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 3)
+
+  console.log
+    [ParallelProcessing] Item 5/5 completed in 21ms
+
+      at src/lib/product-identity/parallel-clustering.ts:96:15
+          at async Promise.all (index 4)
+
+  console.log
+    [ParallelProcessing] Complete: {
+      total: 5,
+      success: 5,
+      failures: 0,
+      totalTime: 44,
+      avgTimePerItem: '8.8ms'
+    }
+
+      at processParallel (src/lib/product-identity/parallel-clustering.ts:125:11)
+
+PASS src/lib/product-identity/__tests__/parallel-clustering.test.ts
+  Parallel Clustering
+    processParallel
+      ✓ should process items in parallel (53 ms)
+      ✓ should respect concurrency limits (223 ms)
+      ✓ should handle failures gracefully (13 ms)
+      ✓ should handle timeout (103 ms)
+      ✓ should calculate average time correctly (12 ms)
+    extractFeaturesParallel
+      ✓ should extract features from images in parallel (25 ms)
+      ✓ should handle extraction failures (2 ms)
+    calculateSimilaritiesParallel
+      ✓ should calculate similarities in parallel (13 ms)
+    clusterImagesParallel
+      ✓ should cluster similar images together (13 ms)
+      ✓ should create singleton clusters for dissimilar images (1 ms)
+      ✓ should handle single image (1 ms)
+      ✓ should handle empty array (1 ms)
+      ✓ should respect threshold (1 ms)
+    batchItems
+      ✓ should batch items correctly (3 ms)
+      ✓ should handle empty array
+      ✓ should handle single batch
+    Performance
+      ✓ should be faster with higher concurrency (1340 ms)
+      ✓ should track processing metrics (44 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       18 passed, 18 total
+Snapshots:   0 total
+Time:        2.132 s
+Ran all test suites matching /parallel-clustering.test.ts/i.
+Jest did not exit one second after the test run has completed.
+
+'This usually means that there are asynchronous operations that weren't stopped in your tests. Consider running Jest with `--detectOpenHandles` to troubleshoot this issue.

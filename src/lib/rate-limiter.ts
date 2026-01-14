@@ -118,9 +118,9 @@ const dynamoClient = new DynamoDBClient({
 });
 
 // Single-table design: use shared table with job store
-// pk: TENANT#<tenant>#RATELIMIT (or TENANT#<tenant>#RATELIMIT#USER#<userId>)
-// sk: ACTION#<action>#WINDOW#<timestamp>
-const TABLE_NAME = process.env.BG_REMOVER_TABLE_NAME || process.env.RATE_LIMIT_TABLE_NAME || 'bg-remover-dev';
+// PK: TENANT#<tenant>#RATELIMIT (or TENANT#<tenant>#RATELIMIT#USER#<userId>)
+// SK: ACTION#<action>#WINDOW#<timestamp>
+const TABLE_NAME = process.env.DYNAMODB_TABLE || `carousel-main-${process.env.STAGE || 'dev'}`;
 
 // ============================================================================
 // Rate Limiter Implementation
@@ -218,8 +218,8 @@ export async function checkRateLimit(
     const result = await dynamoClient.send(new UpdateItemCommand({
       TableName: TABLE_NAME,
       Key: {
-        pk: { S: pk },
-        sk: { S: sk },
+        PK: { S: pk },
+        SK: { S: sk },
       },
       UpdateExpression: updateExpression,
       ExpressionAttributeNames: expressionAttributeNames,
@@ -302,8 +302,8 @@ async function checkBurstLimit(
     const result = await dynamoClient.send(new UpdateItemCommand({
       TableName: TABLE_NAME,
       Key: {
-        pk: { S: pk },
-        sk: { S: sk },
+        PK: { S: pk },
+        SK: { S: sk },
       },
       UpdateExpression: 'SET #count = if_not_exists(#count, :zero) + :inc, #ttl = :ttl, #tenant = :tenant, #entityType = :entityType',
       ExpressionAttributeNames: {
@@ -354,8 +354,8 @@ export async function getRateLimitStatus(
     const result = await dynamoClient.send(new GetItemCommand({
       TableName: TABLE_NAME,
       Key: {
-        pk: { S: pk },
-        sk: { S: sk },
+        PK: { S: pk },
+        SK: { S: sk },
       },
     }));
 
@@ -485,7 +485,7 @@ export async function getTenantRateLimits(
       TableName: TABLE_NAME,
       KeyConditionExpression: '#pk = :pk',
       ExpressionAttributeNames: {
-        '#pk': 'pk',
+        '#pk': 'PK',
       },
       ExpressionAttributeValues: {
         ':pk': { S: pk },

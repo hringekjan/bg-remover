@@ -49,34 +49,32 @@ export async function analyzeImageForDescription(
     selectedModelId,  // Primary model from routing decision
   ];
 
-  const prompt = productName
-    ? `Analyze this product image and provide a detailed sales description. The product appears to be: ${productName}.
+  const prompt = `Act as a high-end fashion copywriter for Hringekjan.is. 
+Generate elegant, professional product metadata for a premium second-hand item.
 
-Please provide:
-1. A short title/name (max 50 characters) - perfect for listings
-2. A detailed sales description (max 200 characters) - persuasive and appealing
-3. Product category (e.g., clothing, electronics, home goods, accessories)
-4. Main colors in the product (comma-separated list)
-5. Product condition assessment - choose ONE from: new_with_tags, like_new, very_good, good, fair
-6. Relevant keywords for search (comma-separated list)
+Context:
+${productName ? `- Product Name: ${productName}` : ''}
 
-Format your response as JSON with keys: short, long, category, colors, condition, keywords`
-    : `Analyze this product image and provide a detailed sales description.
+Instructions:
+1. Provide a specific 'Elegant Name' (e.g., 'Tailored Silk Blouse' instead of just 'Shirt').
+2. Write a 3-sentence 'Marketing Description' that sounds timeless, sophisticated, and sustainable.
+3. Identify the product category (clothing, accessories, etc.).
+4. List main colors.
+5. Provide a product condition assessment (choose from: new_with_tags, like_new, very_good, good, fair).
+6. Suggest relevant SEO keywords.
+7. Include a 'Styling Tip'.
 
-Please provide:
-1. A short title/name (max 50 characters) - perfect for listings
-2. A detailed sales description (max 200 characters) - persuasive and appealing
-3. Product category (e.g., clothing, electronics, home goods, accessories)
-4. Main colors in the product (comma-separated list)
-5. Product condition assessment - choose ONE from: new_with_tags, like_new, very_good, good, fair
-6. Relevant keywords for search (comma-separated list)
-
-Format your response as JSON with keys: short, long, category, colors, condition, keywords`;
+Format your response as JSON with keys: short, long, category, colors, condition, keywords, stylingTip`;
 
   // Try each model in order
   for (const modelId of modelsToTry) {
     try {
-      console.log(`Trying model: ${modelId}`, {
+      // Prioritize Nova Pro for elegant fashion runs if available or requested
+      const actualModelId = (selectedModelId.includes('nova-lite') && routingTier === 'premium') 
+        ? 'amazon.nova-pro-v1:0' 
+        : modelId;
+
+      console.log(`Trying model: ${actualModelId}`, {
         tier: routingTier,
         confidence: routingConfidence,
         hasMetadata: !!metadata,
@@ -84,9 +82,9 @@ Format your response as JSON with keys: short, long, category, colors, condition
 
       // Nova models use Messages API with native image support
       const requestBody = {
-        anthropic_version: 'bedrock-2023-05-31',
         max_tokens: 1000,
         temperature: 0.7,
+        system: [{ text: "You are an expert fashion curator and copywriter for Hringekjan, a premium sustainable marketplace." }],
         messages: [
           {
             role: 'user',
@@ -109,7 +107,7 @@ Format your response as JSON with keys: short, long, category, colors, condition
       };
 
       const response = await bedrockClient.send(new InvokeModelCommand({
-        modelId,
+        modelId: actualModelId,
         contentType: 'application/json',
         accept: 'application/json',
         body: JSON.stringify(requestBody)
@@ -117,29 +115,31 @@ Format your response as JSON with keys: short, long, category, colors, condition
 
       const responseBody = JSON.parse(new TextDecoder().decode(response.body));
 
-      // Nova models return Anthropic-style responses
-      const analysisText: string = responseBody.content?.[0]?.text || '';
+      // Nova Converse API response structure
+      const analysisText: string = responseBody.output?.message?.content?.[0]?.text || '';
 
       if (!analysisText) {
-        throw new Error(`No text content in response from ${modelId}`);
+        throw new Error(`No text content in response from ${actualModelId}`);
       }
 
-      // Parse the JSON response
-      const analysis = JSON.parse(analysisText);
+      // Extract JSON from potential conversational wrapper
+      const jsonMatch = analysisText.match(/\{[\s\S]*\}/);
+      const parsedJSON = jsonMatch ? JSON.parse(jsonMatch[0]) : JSON.parse(analysisText);
 
-      const condition = analysis.condition && validConditions.includes(analysis.condition as ProductCondition)
-        ? analysis.condition as ProductCondition
+      const condition = parsedJSON.condition && validConditions.includes(parsedJSON.condition as ProductCondition)
+        ? parsedJSON.condition as ProductCondition
         : 'very_good';
 
-      console.log(`Successfully analyzed with model: ${modelId}`);
+      console.log(`Successfully analyzed with model: ${actualModelId}`);
 
       return {
-        short: analysis.short || productName || 'Product',
-        long: analysis.long || 'High-quality product processed and optimized for sale.',
-        category: analysis.category || 'General',
-        colors: Array.isArray(analysis.colors) ? analysis.colors : (analysis.colors ? analysis.colors.split(',').map((c: string) => c.trim()) : ['various']),
+        short: parsedJSON.short || parsedJSON.en_name || productName || 'Product',
+        long: parsedJSON.long || parsedJSON.en_description || 'High-quality product processed and optimized for sale.',
+        category: parsedJSON.category || 'General',
+        colors: Array.isArray(parsedJSON.colors) ? parsedJSON.colors : (parsedJSON.colors ? parsedJSON.colors.split(',').map((c: string) => c.trim()) : ['various']),
         condition,
-        keywords: Array.isArray(analysis.keywords) ? analysis.keywords : (analysis.keywords ? analysis.keywords.split(',').map((k: string) => k.trim()) : ['product'])
+        keywords: Array.isArray(parsedJSON.keywords) ? parsedJSON.keywords : (parsedJSON.keywords ? parsedJSON.keywords.split(',').map((k: string) => k.trim()) : ['product']),
+        stylingTip: parsedJSON.stylingTip
       };
     } catch (error) {
       console.error(`Model ${modelId} failed:`, error instanceof Error ? error.message : String(error));

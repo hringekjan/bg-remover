@@ -17,6 +17,52 @@ const isValidBase64 = (str: string) => {
 };
 
 /**
+ * Validate that base64 string contains valid image data (PNG, JPEG, WebP, or HEIC)
+ * Uses magic bytes detection for security
+ */
+const isValidImageBase64 = (base64: string): boolean => {
+  try {
+    // Decode base64 to get first 12 bytes for magic byte detection
+    const buffer = Buffer.from(base64.substring(0, Math.min(base64.length, 100)), 'base64');
+
+    // Check magic bytes for common image formats
+    // PNG: 89 50 4E 47 0D 0A 1A 0A
+    if (buffer.length >= 8 &&
+        buffer[0] === 0x89 && buffer[1] === 0x50 &&
+        buffer[2] === 0x4E && buffer[3] === 0x47) {
+      return true;
+    }
+
+    // JPEG: FF D8 FF
+    if (buffer.length >= 3 &&
+        buffer[0] === 0xFF && buffer[1] === 0xD8 && buffer[2] === 0xFF) {
+      return true;
+    }
+
+    // WebP: RIFF ... WEBP (bytes 0-3: RIFF, bytes 8-11: WEBP)
+    if (buffer.length >= 12 &&
+        buffer[0] === 0x52 && buffer[1] === 0x49 &&
+        buffer[2] === 0x46 && buffer[3] === 0x46 &&
+        buffer[8] === 0x57 && buffer[9] === 0x45 &&
+        buffer[10] === 0x42 && buffer[11] === 0x50) {
+      return true;
+    }
+
+    // HEIC/HEIF: ftyp at bytes 4-7 followed by heic/mif1/msf1/heix/hevx
+    if (buffer.length >= 12 &&
+        buffer[4] === 0x66 && buffer[5] === 0x74 &&
+        buffer[6] === 0x79 && buffer[7] === 0x70) {
+      return true;
+    }
+
+    return false;
+  } catch (error) {
+    console.warn('Failed to validate image magic bytes:', error instanceof Error ? error.message : 'Unknown error');
+    return false;
+  }
+};
+
+/**
  * Check if an IP address is in a private/reserved range (SSRF protection)
  * Covers all RFC 1918 private ranges and other reserved addresses
  */
@@ -143,6 +189,7 @@ export const ProcessRequestSchema = z.object({
   imageBase64: z.string()
     .refine((val) => val.length <= MAX_BASE64_SIZE, 'Base64 image too large (max 10MB)')
     .refine(isValidBase64, 'Invalid base64 format')
+    .refine(isValidImageBase64, 'Invalid image format - must be PNG, JPEG, WebP, or HEIC')
     .optional(),
   outputFormat: z.enum(['png', 'jpeg', 'webp'], {
     errorMap: () => ({ message: 'Output format must be png, jpeg, or webp' })
@@ -405,7 +452,8 @@ export const GroupImagesRequestSchema = z.object({
       .optional(), // Optional - backend generates if not provided
     imageBase64: z.string()
       .refine((val) => val.length <= MAX_BASE64_SIZE, 'Base64 image too large (max 10MB)')
-      .refine(isValidBase64, 'Invalid base64 format'),
+      .refine(isValidBase64, 'Invalid base64 format')
+      .refine(isValidImageBase64, 'Invalid image format - must be PNG, JPEG, WebP, or HEIC'),
     filename: z.string()
       .max(255, 'Filename too long')
       .optional(),
@@ -459,3 +507,32 @@ export const ProcessGroupsRequestSchema = z.object({
 });
 
 export type ProcessGroupsRequest = z.infer<typeof ProcessGroupsRequestSchema>;
+
+// Batch processing types
+export const BatchRequestSchema = z.object({
+  images: z.array(z.object({
+    url: z.string().url().optional(),
+    base64: z.string().optional(),
+    productId: z.string().optional(),
+  })).min(1, 'At least one image is required'),
+  outputFormat: z.enum(['png', 'jpeg', 'webp']).default('png'),
+  quality: z.number().int().min(1).max(100).default(90),
+  tenant: z.string().min(1, 'Tenant is required'),
+  concurrency: z.number().int().min(1).max(10).default(3),
+});
+
+export type BatchTask = z.infer<typeof BatchRequestSchema>;
+
+export interface BatchResult {
+  batchId: string;
+  status: 'processing' | 'completed' | 'failed' | 'partial';
+  totalImages: number;
+  processedImages: number;
+  successfulImages: number;
+  failedImages: number;
+  results: ProcessResult[];
+  startTime: string;
+  endTime?: string;
+  processingTimeMs?: number;
+  error?: string;
+}

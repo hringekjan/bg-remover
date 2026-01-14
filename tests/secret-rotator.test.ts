@@ -82,7 +82,7 @@ describe('SecretRotator', () => {
       expect(mockSSMSend).toHaveBeenCalledWith(
         expect.objectContaining({
           input: {
-            Name: '/tf/test/test-tenant/api-keys/carousel',
+            Name: '/tf/test/test-tenant/services/bg-remover/admin-api-keys',
             Value: expect.stringContaining('new-key-123'),
             Type: 'SecureString',
             Overwrite: true,
@@ -100,7 +100,7 @@ describe('SecretRotator', () => {
       expect(mockSSMSend).toHaveBeenCalledWith(
         expect.objectContaining({
           input: {
-            Name: '/tf/test/test-tenant/api-keys/carousel',
+            Name: '/tf/test/test-tenant/services/bg-remover/admin-api-keys',
             Value: expect.stringContaining('new-key-123'),
             Type: 'SecureString',
             Overwrite: true,
@@ -226,7 +226,7 @@ describe('SecretRotator', () => {
       expect(mockSSMSend).toHaveBeenCalledWith(
         expect.objectContaining({
           input: {
-            Name: '/tf/test/test-tenant/api-keys/carousel',
+            Name: '/tf/test/test-tenant/services/bg-remover/admin-api-keys',
             WithDecryption: true,
           },
         })
@@ -236,7 +236,7 @@ describe('SecretRotator', () => {
       expect(mockSSMSend).toHaveBeenCalledWith(
         expect.objectContaining({
           input: expect.objectContaining({
-            Name: '/tf/test/test-tenant/api-keys/carousel',
+            Name: '/tf/test/test-tenant/services/bg-remover/admin-api-keys',
             Value: expect.stringContaining('YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4enkxMjM0NTY'),
             Type: 'SecureString',
           }),
@@ -296,7 +296,7 @@ describe('SecretRotator', () => {
       expect(mockSSMSend).toHaveBeenCalledWith(
         expect.objectContaining({
           input: {
-            Name: '/tf/test/test-tenant/api-keys/carousel',
+            Name: '/tf/test/test-tenant/services/bg-remover/admin-api-keys',
             WithDecryption: true,
           },
         })

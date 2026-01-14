@@ -9,10 +9,12 @@ import { resolveTenantFromRequest } from '../lib/tenant/resolver';
 import { validateJWTFromEvent } from '../lib/auth/jwt-validator';
 import { loadTenantCognitoConfig } from '../lib/tenant/cognito-config';
 import { validateAndDebitCredits } from '../lib/credits/client';
+import { bgRemoverTelemetry, calculateBgRemoverCost } from '../lib/telemetry/bg-remover-telemetry';
+import { issueJobToken } from '../lib/job-token';
 
 const dynamoDB = new DynamoDBClient({});
 const lambda = new LambdaClient({});
-const tableName = global.process.env.BG_REMOVER_TABLE_NAME!;
+const tableName = global.process.env.DYNAMODB_TABLE || `carousel-main-${global.process.env.STAGE || 'dev'}`;
 const workerFunctionName = global.process.env.WORKER_FUNCTION_NAME!;
 
 /**
@@ -30,7 +32,15 @@ const workerFunctionName = global.process.env.WORKER_FUNCTION_NAME!;
  */
 export class ProcessHandler extends BaseHandler {
   async handle(event: any): Promise<any> {
+    const startTime = Date.now();
     console.log('Process function called (async pattern)', JSON.stringify(event, null, 2));
+
+    // Initialize agent state if needed
+    // Temporarily disabled due to build issues
+    // if (this.context.agentState.getState().status === 'stopped') {
+    //   await this.context.agentState.initialize();
+    // }
+
     const httpMethod = event.requestContext?.http?.method || event.httpMethod;
 
     if (httpMethod === 'OPTIONS') {
@@ -46,6 +56,14 @@ export class ProcessHandler extends BaseHandler {
     const stage = this.context.stage;
     const jobId = randomUUID();
 
+    // Record task start
+    // Temporarily disabled due to build issues
+    // await this.context.agentState.startTask(jobId, {
+    //   operation: 'image_processing_request',
+    //   stage,
+    //   httpMethod
+    // });
+
     // ===== TENANT RESOLUTION (BEFORE AUTH) =====
     // Resolve tenant from request (header, domain, JWT claims, or default)
     const tenant = await resolveTenantFromRequest(event, stage);
@@ -54,7 +72,7 @@ export class ProcessHandler extends BaseHandler {
     console.log('[ProcessHandler] 📋 Request context:', {
       tenant,
       stage,
-      requireAuth: stage === 'prod' || global.process.env.REQUIRE_AUTH === 'true',
+      requireAuth: true,
       host: event.headers?.host,
       path: event.requestContext?.http?.path,
       hasAuthHeader: !!event.headers?.authorization,
@@ -63,7 +81,8 @@ export class ProcessHandler extends BaseHandler {
     });
 
     // ===== JWT AUTHENTICATION (WITH TENANT-SPECIFIC CONFIG) =====
-    const requireAuth = stage === 'prod' || global.process.env.REQUIRE_AUTH === 'true';
+    // Always validate JWT token (API Gateway authorizer provides primary auth, this is defense in depth)
+    const requireAuth = true;
 
     // Load tenant-specific Cognito configuration for JWT validation
     let cognitoConfig;
@@ -214,16 +233,20 @@ export class ProcessHandler extends BaseHandler {
       // ===== END CREDITS VALIDATION =====
 
       // Create job record in DynamoDB
-      const pk = `TENANT#${tenant}#JOB`;
-      const sk = `JOB#${jobId}`;
+      const pk = `TENANT#${tenant}#BG_REMOVER_JOB#${jobId}`;
+      const sk = 'METADATA';
+      const gsi1pk = `TENANT#${tenant}#BG_REMOVER_JOBS`;
+      const gsi1sk = `${now}#JOB#${jobId}`;
       const now = new Date().toISOString();
       const ttl = Math.floor(Date.now() / 1000) + (7 * 24 * 60 * 60); // 7 days
 
       await dynamoDB.send(new PutItemCommand({
         TableName: tableName,
         Item: marshall({
-          pk,
-          sk,
+          PK: pk,
+          SK: sk,
+          GSI1PK: gsi1pk,
+          GSI1SK: gsi1sk,
           jobId,
           tenant,
           userId,
@@ -233,6 +256,7 @@ export class ProcessHandler extends BaseHandler {
           ttl,
           productId,
           creditTransactionId,
+          entityType: 'BG_REMOVER_JOB',
         }),
       }));
 
@@ -256,6 +280,37 @@ export class ProcessHandler extends BaseHandler {
 
       console.info('Worker Lambda invoked asynchronously', { jobId, tenant });
 
+      // Record successful task completion telemetry
+      const processingTime = Date.now() - startTime;
+
+      // Estimate cost for job acceptance (minimal, just coordinator overhead)
+      const cost = calculateBgRemoverCost({
+        imageSize: 1024 * 100, // Estimated ~100KB for coordinator
+        processingTime,
+        qualityLevel: 'low',
+        imageCount: 1,
+      });
+
+      await bgRemoverTelemetry.recordImageProcessing({
+        taskId: jobId,
+        success: true,
+        responseTimeMs: processingTime,
+        costUsd: cost,
+        metadata: {
+          imageSize: 1024 * 100,
+          processingMode: 'single',
+          qualityLevel: 'coordinator',
+          outputFormat: 'job-accepted',
+          pipelineType: productId ? 'product-processing' : 'image-processing',
+        },
+      });
+
+      const jobToken = issueJobToken({
+        jobId,
+        tenant,
+        userId: authResult.userId || undefined,
+      });
+
       // Return 202 Accepted immediately
       return this.createJsonResponse({
         success: true,
@@ -263,16 +318,31 @@ export class ProcessHandler extends BaseHandler {
         status: 'pending',
         message: 'Job accepted and queued for processing',
         statusUrl: `/bg-remover/status/${jobId}`,
+        jobToken,
       }, 202);
 
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      const processingTime = Date.now() - startTime;
 
       console.error('Failed to create job', {
         jobId,
         tenant,
         userId,
         error: errorMessage,
+      });
+
+      // Record failed task telemetry
+      await bgRemoverTelemetry.recordImageProcessing({
+        taskId: jobId,
+        success: false,
+        responseTimeMs: processingTime,
+        costUsd: 0,
+        error: {
+          message: errorMessage,
+          code: 'JOB_CREATION_FAILED',
+          stack: error instanceof Error ? error.stack : undefined,
+        },
       });
 
       return this.createErrorResponse(errorMessage, 500);

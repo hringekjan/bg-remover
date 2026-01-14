@@ -1,0 +1,60 @@
+{
+  "version": "1.0.0",
+  "name": "BG-Remover Incubation Workflow",
+  "description": "Full agentic workflow for bg-remover analysis, research, and optimization recommendations",
+  "workflow_pattern": "sequential-dag",
+  "parameters": {
+    "focus_areas": ["architecture_review", "code_analysis", "optimization"],
+    "tag": "bg-remover-incubation",
+    "include_human_review": true
+  },
+  "steps": [
+    {
+      "name": "architecture_research",
+      "agent_class": "generic",
+      "prompt": "Research and analyze the bg-remover service architecture. Review codebase structure in services/bg-remover/. Analyze:\n1. Current implementation patterns\n2. API endpoints and contracts\n3. AWS Lambda function structure\n4. Dependencies and libraries used\n5. Deployment configuration\n\nGenerate a comprehensive architecture analysis report with diagrams, component relationships, and data flow. Output should be actionable and include strengths, weaknesses, and areas for improvement."
+    },
+    {
+      "name": "image_pipeline_analysis",
+      "agent_class": "generic",
+      "depends_on": [0],
+      "prompt": "Analyze the image processing pipeline in bg-remover service. Research:\n1. Sharp library usage and configuration\n2. Background removal algorithms and techniques\n3. Image format handling (JPEG, PNG, WebP)\n4. Performance characteristics and bottlenecks\n5. Error handling and edge cases\n\nGenerate a detailed technical report on the image processing pipeline with code examples, performance metrics, and optimization opportunities."
+    },
+    {
+      "name": "aws_integration_review",
+      "agent_class": "reviewer",
+      "depends_on": [0, 1],
+      "prompt": "Review AWS service integrations in bg-remover:\n1. AWS Titan Multimodal Embeddings usage\n2. AWS Rekognition API integration\n3. S3 storage patterns\n4. Lambda optimization opportunities\n5. Cost analysis and optimization\n\nProvide security review, performance assessment, and cost optimization recommendations. Include specific code changes and configuration improvements."
+    },
+    {
+      "name": "clustering_algorithm_analysis",
+      "agent_class": "generic",
+      "depends_on": [1, 2],
+      "prompt": "Research and analyze product clustering algorithms:\n1. Review current K-means implementation\n2. Analyze embedding quality and dimensions\n3. Evaluate clustering accuracy metrics\n4. Research alternative algorithms (DBSCAN, hierarchical, etc.)\n5. Assess product identity detection logic\n\nGenerate research report comparing algorithms with recommendations for improving product grouping accuracy."
+    },
+    {
+      "name": "code_quality_review",
+      "agent_class": "reviewer",
+      "depends_on": [0, 1, 2],
+      "prompt": "Perform comprehensive code quality review of bg-remover service:\n1. Security vulnerabilities and fixes\n2. Code maintainability and complexity\n3. Test coverage gaps\n4. Error handling patterns\n5. Documentation quality\n\nGenerate prioritized list of code quality issues with severity ratings (P0-P3) and specific remediation steps."
+    },
+    {
+      "name": "performance_optimization",
+      "agent_class": "generic",
+      "depends_on": [1, 2, 3],
+      "prompt": "Research performance optimization strategies for bg-remover:\n1. Image processing parallelization\n2. Caching strategies for embeddings and analysis\n3. Batch processing optimization\n4. Lambda cold start reduction\n5. Memory and CPU optimization\n\nGenerate actionable performance optimization plan with estimated impact, effort, and implementation priority."
+    },
+    {
+      "name": "integration_testing_plan",
+      "agent_class": "ops",
+      "depends_on": [4, 5],
+      "prompt": "Design comprehensive integration testing strategy for bg-remover:\n1. E2E test scenarios for image upload → clustering → output\n2. AWS service integration tests\n3. Performance and load testing approach\n4. Error scenario coverage\n5. CI/CD pipeline integration\n\nCreate detailed test plan with test cases, automation strategy, and success criteria."
+    },
+    {
+      "name": "implementation_roadmap",
+      "agent_class": "generic",
+      "depends_on": [3, 4, 5, 6],
+      "prompt": "Generate implementation roadmap for bg-remover improvements:\n1. Prioritized list of enhancements from all analysis steps\n2. Effort estimates and dependencies\n3. Risk assessment for each change\n4. Phased rollout strategy\n5. Success metrics and KPIs\n\nCreate actionable implementation plan with clear milestones, timelines, and resource requirements. Include quick wins and long-term improvements."
+    }
+  ]
+}

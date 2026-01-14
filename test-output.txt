@@ -1,0 +1,296 @@
+
+> @carousellabs/bg-remover@1.0.0 test
+> jest image-analysis-cache.test.ts --verbose
+
+  console.log
+    [Cache] All entries cleared
+
+      at ImageAnalysisCache.clear (src/lib/product-identity/image-analysis-cache.ts:314:13)
+
+  console.log
+    [Cache] All entries cleared
+
+      at ImageAnalysisCache.clear (src/lib/product-identity/image-analysis-cache.ts:314:13)
+
+  console.log
+    [Cache] All entries cleared
+
+      at ImageAnalysisCache.clear (src/lib/product-identity/image-analysis-cache.ts:314:13)
+
+  console.log
+    [Cache] All entries cleared
+
+      at ImageAnalysisCache.clear (src/lib/product-identity/image-analysis-cache.ts:314:13)
+
+  console.log
+    [Cache] All entries cleared
+
+      at ImageAnalysisCache.clear (src/lib/product-identity/image-analysis-cache.ts:314:13)
+
+  console.log
+    [Cache] All entries cleared
+
+      at ImageAnalysisCache.clear (src/lib/product-identity/image-analysis-cache.ts:314:13)
+
+  console.log
+    [Cache] All entries cleared
+
+      at ImageAnalysisCache.clear (src/lib/product-identity/image-analysis-cache.ts:314:13)
+
+  console.log
+    [Cache] All entries cleared
+
+      at ImageAnalysisCache.clear (src/lib/product-identity/image-analysis-cache.ts:314:13)
+
+  console.log
+    [Cache] All entries cleared
+
+      at ImageAnalysisCache.clear (src/lib/product-identity/image-analysis-cache.ts:314:13)
+
+  console.log
+    [Cache] All entries cleared
+
+      at ImageAnalysisCache.clear (src/lib/product-identity/image-analysis-cache.ts:314:13)
+
+  console.log
+    [Cache] Cleaned 5 expired entries
+
+      at ImageAnalysisCache.cleanExpired (src/lib/product-identity/image-analysis-cache.ts:112:15)
+
+  console.log
+    [Cache] All entries cleared
+
+      at ImageAnalysisCache.clear (src/lib/product-identity/image-analysis-cache.ts:314:13)
+
+  console.log
+    [Cache] All entries cleared
+
+      at ImageAnalysisCache.clear (src/lib/product-identity/image-analysis-cache.ts:314:13)
+
+  console.log
+    [Cache] Evicted 2 LRU entries, size now 0.01MB
+
+      at ImageAnalysisCache.evictIfNeeded (src/lib/product-identity/image-analysis-cache.ts:148:15)
+
+  console.log
+    [Cache] Evicted 2 LRU entries, size now 0.01MB
+
+      at ImageAnalysisCache.evictIfNeeded (src/lib/product-identity/image-analysis-cache.ts:148:15)
+
+  console.log
+    [Cache] Evicted 2 LRU entries, size now 0.01MB
+
+      at ImageAnalysisCache.evictIfNeeded (src/lib/product-identity/image-analysis-cache.ts:148:15)
+
+  console.log
+    [Cache] Evicted 2 LRU entries, size now 0.01MB
+
+      at ImageAnalysisCache.evictIfNeeded (src/lib/product-identity/image-analysis-cache.ts:148:15)
+
+  console.log
+    [Cache] Evicted 3 LRU entries, size now 0.01MB
+
+      at ImageAnalysisCache.evictIfNeeded (src/lib/product-identity/image-analysis-cache.ts:148:15)
+
+  console.log
+    [Cache] Evicted 2 LRU entries, size now 0.01MB
+
+      at ImageAnalysisCache.evictIfNeeded (src/lib/product-identity/image-analysis-cache.ts:148:15)
+
+  console.log
+    [Cache] Evicted 2 LRU entries, size now 0.01MB
+
+      at ImageAnalysisCache.evictIfNeeded (src/lib/product-identity/image-analysis-cache.ts:148:15)
+
+  console.log
+    [Cache] Evicted 2 LRU entries, size now 0.01MB
+
+      at ImageAnalysisCache.evictIfNeeded (src/lib/product-identity/image-analysis-cache.ts:148:15)
+
+  console.log
+    [Cache] All entries cleared
+
+      at ImageAnalysisCache.clear (src/lib/product-identity/image-analysis-cache.ts:314:13)
+
+  console.log
+    [Cache] Evicted 2 LRU entries, size now 0.01MB
+
+      at ImageAnalysisCache.evictIfNeeded (src/lib/product-identity/image-analysis-cache.ts:148:15)
+
+  console.log
+    [Cache] Evicted 2 LRU entries, size now 0.01MB
+
+      at ImageAnalysisCache.evictIfNeeded (src/lib/product-identity/image-analysis-cache.ts:148:15)
+
+  console.log
+    [Cache] Evicted 2 LRU entries, size now 0.01MB
+
+      at ImageAnalysisCache.evictIfNeeded (src/lib/product-identity/image-analysis-cache.ts:148:15)
+
+  console.log
+    [Cache] Evicted 3 LRU entries, size now 0.01MB
+
+      at ImageAnalysisCache.evictIfNeeded (src/lib/product-identity/image-analysis-cache.ts:148:15)
+
+  console.log
+    [Cache] Evicted 2 LRU entries, size now 0.01MB
+
+      at ImageAnalysisCache.evictIfNeeded (src/lib/product-identity/image-analysis-cache.ts:148:15)
+
+  console.log
+    [Cache] Evicted 1 LRU entries, size now 0.01MB
+
+      at ImageAnalysisCache.evictIfNeeded (src/lib/product-identity/image-analysis-cache.ts:148:15)
+
+  console.log
+    [Cache] Evicted 1 LRU entries, size now 0.01MB
+
+      at ImageAnalysisCache.evictIfNeeded (src/lib/product-identity/image-analysis-cache.ts:148:15)
+
+  console.log
+    [Cache] Evicted 1 LRU entries, size now 0.01MB
+
+      at ImageAnalysisCache.evictIfNeeded (src/lib/product-identity/image-analysis-cache.ts:148:15)
+
+  console.log
+    [Cache] Evicted 1 LRU entries, size now 0.01MB
+
+      at ImageAnalysisCache.evictIfNeeded (src/lib/product-identity/image-analysis-cache.ts:148:15)
+
+  console.log
+    [Cache] Evicted 1 LRU entries, size now 0.01MB
+
+      at ImageAnalysisCache.evictIfNeeded (src/lib/product-identity/image-analysis-cache.ts:148:15)
+
+  console.log
+    [Cache] Evicted 1 LRU entries, size now 0.01MB
+
+      at ImageAnalysisCache.evictIfNeeded (src/lib/product-identity/image-analysis-cache.ts:148:15)
+
+  console.log
+    [Cache] Evicted 1 LRU entries, size now 0.01MB
+
+      at ImageAnalysisCache.evictIfNeeded (src/lib/product-identity/image-analysis-cache.ts:148:15)
+
+  console.log
+    [Cache] All entries cleared
+
+      at ImageAnalysisCache.clear (src/lib/product-identity/image-analysis-cache.ts:314:13)
+
+  console.log
+    [Cache] All entries cleared
+
+      at ImageAnalysisCache.clear (src/lib/product-identity/image-analysis-cache.ts:314:13)
+
+  console.log
+    [Cache] All entries cleared
+
+      at ImageAnalysisCache.clear (src/lib/product-identity/image-analysis-cache.ts:314:13)
+
+  console.log
+    [Cache] Evicted 2 LRU entries, size now 0.01MB
+
+      at ImageAnalysisCache.evictIfNeeded (src/lib/product-identity/image-analysis-cache.ts:148:15)
+
+  console.log
+    [Cache] Evicted 2 LRU entries, size now 0.01MB
+
+      at ImageAnalysisCache.evictIfNeeded (src/lib/product-identity/image-analysis-cache.ts:148:15)
+
+  console.log
+    [Cache] Evicted 2 LRU entries, size now 0.01MB
+
+      at ImageAnalysisCache.evictIfNeeded (src/lib/product-identity/image-analysis-cache.ts:148:15)
+
+  console.log
+    [Cache] Evicted 2 LRU entries, size now 0.01MB
+
+      at ImageAnalysisCache.evictIfNeeded (src/lib/product-identity/image-analysis-cache.ts:148:15)
+
+  console.log
+    [Cache] Evicted 3 LRU entries, size now 0.01MB
+
+      at ImageAnalysisCache.evictIfNeeded (src/lib/product-identity/image-analysis-cache.ts:148:15)
+
+  console.log
+    [Cache] Evicted 2 LRU entries, size now 0.01MB
+
+      at ImageAnalysisCache.evictIfNeeded (src/lib/product-identity/image-analysis-cache.ts:148:15)
+
+  console.log
+    [Cache] Evicted 2 LRU entries, size now 0.01MB
+
+      at ImageAnalysisCache.evictIfNeeded (src/lib/product-identity/image-analysis-cache.ts:148:15)
+
+  console.log
+    [Cache] Evicted 2 LRU entries, size now 0.01MB
+
+      at ImageAnalysisCache.evictIfNeeded (src/lib/product-identity/image-analysis-cache.ts:148:15)
+
+  console.log
+    [Cache] All entries cleared
+
+      at ImageAnalysisCache.clear (src/lib/product-identity/image-analysis-cache.ts:314:13)
+
+  console.log
+    [Cache] All entries cleared
+
+      at ImageAnalysisCache.clear (src/lib/product-identity/image-analysis-cache.ts:314:13)
+
+  console.log
+    [Cache] All entries cleared
+
+      at ImageAnalysisCache.clear (src/lib/product-identity/image-analysis-cache.ts:314:13)
+
+  console.log
+    [Cache] All entries cleared
+
+      at ImageAnalysisCache.clear (src/lib/product-identity/image-analysis-cache.ts:314:13)
+
+  console.log
+    [Cache] All entries cleared
+
+      at ImageAnalysisCache.clear (src/lib/product-identity/image-analysis-cache.ts:314:13)
+
+  console.log
+    [Cache] All entries cleared
+
+      at ImageAnalysisCache.clear (src/lib/product-identity/image-analysis-cache.ts:314:13)
+
+PASS src/lib/product-identity/__tests__/image-analysis-cache.test.ts
+  Image Analysis Cache
+    Basic Operations
+      ✓ should cache and retrieve embeddings (17 ms)
+      ✓ should return undefined for cache miss (1 ms)
+      ✓ should cache Bedrock analysis results (1 ms)
+      ✓ should cache Rekognition labels (1 ms)
+      ✓ should cache clustering results (1 ms)
+    Cache Key Generation
+      ✓ should generate same key for identical image buffers
+      ✓ should generate different keys for different image buffers (1 ms)
+      ✓ should generate different keys for same image with different prompts (1 ms)
+    TTL and Expiration
+      ✓ should expire entries after TTL (1102 ms)
+      ✓ should support custom TTL per entry (1115 ms)
+      ✓ should clean expired entries (1106 ms)
+    Size Limits and Eviction
+      ✓ should track cache size (2 ms)
+      ✓ should evict LRU entries when size limit reached (5 ms)
+      ✓ should evict least used entries first (3 ms)
+    Statistics
+      ✓ should track cache hits and misses (1 ms)
+      ✓ should calculate correct hit rate (1 ms)
+      ✓ should track evictions (1 ms)
+      ✓ should reset statistics
+    Clear Operations
+      ✓ should clear all entries (1 ms)
+    Global Cache Instances
+      ✓ should have separate embedding and analysis caches (1 ms)
+    Metadata Support
+      ✓ should store and retrieve metadata with embeddings (1 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       21 passed, 21 total
+Snapshots:   0 total
+Time:        3.601 s, estimated 4 s
+Ran all test suites matching /image-analysis-cache.test.ts/i.

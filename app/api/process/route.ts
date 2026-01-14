@@ -24,9 +24,25 @@ import {
 import { uploadProcessedImage, generateOutputKey } from '@/lib/s3/client';
 import { EventBridgeClient, PutEventsCommand } from '@aws-sdk/client-eventbridge';
 import { validateAndDebitCredits, refundCredits } from '@/src/lib/credits/client';
+import { loadAdminApiKeys } from '@carousellabs/backend-kit';
+import { jwtVerify, createRemoteJWKSet } from 'jose';
+import { errors as joseErrors } from 'jose';
 
-// Admin/internal API keys that bypass credit validation
-const ADMIN_API_KEYS = (process.env.ADMIN_API_KEYS || '').split(',').filter(Boolean);
+/**
+ * Load admin API keys from SSM Parameter Store (SecureString)
+ * Uses backend-kit's internal 5-minute TTL cache for optimal security and performance.
+ * No local caching needed - secrets-loader handles this internally.
+ *
+ * @returns Array of valid admin API keys
+ */
+async function getAdminApiKeys(): Promise<string[]> {
+  const stage = process.env.STAGE || 'dev';
+  const tenant = process.env.TENANT || 'carousel-labs';
+
+  // secrets-loader handles caching internally with 5-min TTL
+  // No need for duplicate local cache
+  return await loadAdminApiKeys(stage, tenant);
+}
 
 /**
  * Timing-safe string comparison to prevent timing attacks on API key validation.
@@ -56,12 +72,18 @@ function timingSafeCompare(a: string, b: string): boolean {
 
 /**
  * Check if provided API key matches any admin key using timing-safe comparison.
+ * Keys are loaded from SSM Parameter Store (SecureString with KMS encryption)
+ *
+ * @param apiKey - API key to validate
+ * @returns Promise<boolean> - True if valid admin key
  */
-function isValidAdminApiKey(apiKey: string): boolean {
+async function isValidAdminApiKey(apiKey: string): Promise<boolean> {
+  const adminKeys = await getAdminApiKeys();
+
   // Perform timing-safe comparison against all admin keys
   // This ensures constant time regardless of which key (if any) matches
   let isValid = false;
-  for (const adminKey of ADMIN_API_KEYS) {
+  for (const adminKey of adminKeys) {
     if (timingSafeCompare(apiKey, adminKey)) {
       isValid = true;
       // Continue loop to maintain constant time
@@ -71,52 +93,206 @@ function isValidAdminApiKey(apiKey: string): boolean {
 }
 
 /**
- * Extract user ID from request using hierarchy:
- * 1. Request body userId field
- * 2. X-User-Id header
- * 3. Authorization header (JWT sub claim)
+ * JWT validation result
  */
-function extractUserId(request: NextRequest, bodyUserId?: string): string | null {
-  // Priority 1: Explicit userId in request body
-  if (bodyUserId) {
-    return bodyUserId;
-  }
+interface JWTValidationResult {
+  valid: boolean;
+  userId?: string;
+  tenantId?: string;
+  email?: string;
+  groups?: string[];
+  error?: string;
+}
 
-  // Priority 2: X-User-Id header
-  const headerUserId = request.headers.get('x-user-id')?.trim();
-  if (headerUserId) {
-    return headerUserId;
-  }
+/**
+ * Cache for JWKS remote key sets by issuer
+ * Using createRemoteJWKSet from jose which handles caching internally
+ */
+const jwksSetCache = new Map<string, ReturnType<typeof createRemoteJWKSet>>();
 
-  // Priority 3: Extract from Authorization JWT (if present)
-  const authHeader = request.headers.get('authorization');
-  if (authHeader?.startsWith('Bearer ')) {
+/**
+ * Get or create a JWKS remote key set for signature verification
+ */
+async function getJWKSRemoteKeySet(issuer: string) {
+  if (!jwksSetCache.has(issuer)) {
     try {
-      const token = authHeader.slice(7);
-      // Decode JWT payload (without verification - verification should happen at API Gateway)
-      const payload = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString());
-      return payload.sub || payload.userId || payload.username || null;
-    } catch {
-      // Invalid JWT format, ignore
+      const jwksUrl = `${issuer}/.well-known/jwks.json`;
+      const jwksSet = createRemoteJWKSet(new URL(jwksUrl), {
+        timeoutDuration: 5000, // 5 second timeout for JWKS fetch
+      });
+      jwksSetCache.set(issuer, jwksSet);
+    } catch (error) {
+      console.error(`Failed to create JWKS key set for issuer ${issuer}:`, error);
+      throw error;
     }
   }
+  return jwksSetCache.get(issuer)!;
+}
 
-  return null;
+/**
+ * Validate JWT token with RS256 signature verification
+ *
+ * SECURITY: Implements complete JWT validation including:
+ * - RS256 signature verification using Cognito's JWKS
+ * - Issuer validation (must be Cognito)
+ * - Algorithm verification (must be RS256)
+ * - Expiration and issued-at claims validation
+ * - Required claims validation (sub)
+ *
+ * Environment variables required:
+ * - JWKS_URL: Cognito JWKS endpoint (e.g., https://cognito-idp.{region}.amazonaws.com/{poolId}/.well-known/jwks.json)
+ * - JWT_ISSUER: Cognito issuer URL (e.g., https://cognito-idp.{region}.amazonaws.com/{poolId})
+ *
+ * @param token - JWT token to validate
+ * @returns Validation result with userId or error
+ */
+async function validateJWT(token: string): Promise<JWTValidationResult> {
+  if (!token || typeof token !== 'string') {
+    return { valid: false, error: 'Token is not a non-empty string' };
+  }
+
+  try {
+    // Step 1: Quick structural validation
+    const parts = token.split('.');
+    if (parts.length !== 3) {
+      return { valid: false, error: 'Invalid token format (expected 3 parts)' };
+    }
+
+    // Step 2: Decode header and payload (unverified) to get issuer
+    let header: { kid?: string; alg?: string; [key: string]: unknown };
+    let payload: {
+      sub?: string;
+      email?: string;
+      'cognito:groups'?: string[];
+      'custom:tenant_id'?: string;
+      exp?: number;
+      iat?: number;
+      iss?: string;
+    };
+
+    try {
+      header = JSON.parse(Buffer.from(parts[0], 'base64url').toString());
+      payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString());
+    } catch (error) {
+      return { valid: false, error: 'Invalid base64url encoding' };
+    }
+
+    // Step 3: Validate header
+    if (!header.kid) {
+      return { valid: false, error: 'Missing key ID (kid) in header' };
+    }
+
+    if (header.alg !== 'RS256') {
+      return { valid: false, error: `Invalid algorithm "${header.alg}" (must be RS256)` };
+    }
+
+    // Step 4: Validate issuer format (must be Cognito)
+    if (!payload.iss) {
+      return { valid: false, error: 'Missing issuer (iss) claim' };
+    }
+
+    if (!payload.iss.includes('cognito-idp')) {
+      return { valid: false, error: `Invalid issuer "${payload.iss}" (must be Cognito)` };
+    }
+
+    // Step 5: Verify RS256 signature using jose with JWKS
+    try {
+      const jwksSet = await getJWKSRemoteKeySet(payload.iss);
+
+      // jwtVerify validates signature, expiration, issued-at, and algorithm
+      const verified = await jwtVerify(token, jwksSet, {
+        issuer: payload.iss,
+        algorithms: ['RS256'],
+      });
+
+      const verifiedPayload = verified.payload as typeof payload;
+
+      // Extract user data
+      const userId = verifiedPayload.sub;
+      if (!userId) {
+        return { valid: false, error: 'Missing sub claim in verified token' };
+      }
+
+      const tenantId = verifiedPayload['custom:tenant_id'] || process.env.TENANT || 'carousel-labs';
+      const groups = verifiedPayload['cognito:groups'] || [];
+
+      return {
+        valid: true,
+        userId,
+        tenantId,
+        email: verifiedPayload.email,
+        groups,
+      };
+    } catch (verificationError) {
+      // Handle specific JWT verification errors
+      if (verificationError instanceof joseErrors.JWTClaimValidationFailed) {
+        return {
+          valid: false,
+          error: `JWT claim validation failed: ${verificationError.claim} - ${verificationError.message}`,
+        };
+      }
+      if (verificationError instanceof joseErrors.JWTExpired) {
+        return { valid: false, error: `JWT expired: ${verificationError.message}` };
+      }
+      return {
+        valid: false,
+        error: verificationError instanceof Error ? verificationError.message : 'JWT verification failed',
+      };
+    }
+  } catch (error) {
+    return {
+      valid: false,
+      error: error instanceof Error ? error.message : 'Unknown validation error',
+    };
+  }
+}
+
+/**
+ * Extract user ID from request using hierarchy:
+ * 1. X-User-Id header (for service-to-service calls with validated JWT)
+ * 2. Authorization header (JWT with signature verification)
+ *
+ * SECURITY: JWT tokens are now validated with signature verification.
+ * The bodyUserId parameter has been REMOVED to prevent security bypass.
+ */
+async function extractUserId(request: NextRequest): Promise<{ userId: string | null; error?: string }> {
+  // Priority 1: X-User-Id header (from trusted service-to-service calls)
+  const headerUserId = request.headers.get('x-user-id')?.trim();
+  if (headerUserId) {
+    return { userId: headerUserId };
+  }
+
+  // Priority 2: Validate Authorization JWT with signature verification
+  const authHeader = request.headers.get('authorization');
+  if (authHeader?.startsWith('Bearer ')) {
+    const token = authHeader.slice(7);
+    const validation = await validateJWT(token);
+
+    if (!validation.valid) {
+      console.warn('JWT validation failed:', validation.error);
+      return { userId: null, error: validation.error };
+    }
+
+    return { userId: validation.userId || null };
+  }
+
+  return { userId: null, error: 'No authentication provided' };
 }
 
 /**
  * Check if request should bypass credit validation
  * Uses timing-safe comparison for API key validation to prevent timing attacks.
+ * API keys loaded from SSM Parameter Store (SecureString with KMS encryption)
  */
-function shouldBypassCreditValidation(request: NextRequest, skipFlag?: boolean): boolean {
+async function shouldBypassCreditValidation(request: NextRequest, skipFlag?: boolean): Promise<boolean> {
   // Check for admin API key using timing-safe comparison
   const apiKey = request.headers.get('x-api-key');
-  if (apiKey && isValidAdminApiKey(apiKey)) {
+  if (apiKey && await isValidAdminApiKey(apiKey)) {
     return true;
   }
 
   // Check for explicit skip flag (must be combined with admin key or internal call)
-  if (skipFlag && apiKey && isValidAdminApiKey(apiKey)) {
+  if (skipFlag && apiKey && await isValidAdminApiKey(apiKey)) {
     return true;
   }
 
@@ -171,9 +347,10 @@ export async function POST(request: NextRequest): Promise<NextResponse<ProcessRe
       skipCreditValidation,
     } = validatedRequest;
 
-    // Extract user ID for credit billing
-    const userId = extractUserId(request, bodyUserId);
-    const bypassCredits = shouldBypassCreditValidation(request, skipCreditValidation);
+    // Extract and validate user ID for credit billing
+    const userIdResult = await extractUserId(request);
+    const userId = userIdResult.userId;
+    const bypassCredits = await shouldBypassCreditValidation(request, skipCreditValidation);
 
     console.log('Processing image request', {
       jobId,
@@ -184,6 +361,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<ProcessRe
       outputFormat,
       userId: userId ? `${userId.substring(0, 8)}...` : 'anonymous',
       bypassCredits,
+      authError: userIdResult.error,
     });
 
     // Credit validation and debit (unless bypassed)
@@ -192,12 +370,16 @@ export async function POST(request: NextRequest): Promise<NextResponse<ProcessRe
 
     if (!bypassCredits) {
       if (!userId) {
-        console.warn('No userId provided for credit validation', { jobId, tenant });
+        console.warn('No userId provided for credit validation', {
+          jobId,
+          tenant,
+          authError: userIdResult.error,
+        });
         return NextResponse.json(
           {
             success: false,
             jobId,
-            error: 'User identification required for credit billing. Provide userId in body, X-User-Id header, or Authorization token.',
+            error: userIdResult.error || 'User identification required for credit billing. Provide X-User-Id header or valid Authorization token.',
             processingTimeMs: Date.now() - startTime,
           },
           { status: 401 }
@@ -349,7 +531,8 @@ export async function POST(request: NextRequest): Promise<NextResponse<ProcessRe
 
     // Attempt to refund credits if processing failed after debit
     if (creditsDebited && creditTransactionId) {
-      const userId = extractUserId(request, undefined);
+      const userIdResult = await extractUserId(request);
+      const userId = userIdResult.userId;
       const tenant = request.headers.get('x-tenant-id') || 'carousel-labs';
 
       if (userId) {

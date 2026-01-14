@@ -13,8 +13,9 @@
     "paths": {
       "@/*": ["./*"]
     },
-    "types": ["node"]
+    "types": ["node"],
+    "typeRoots": ["./src/@types", "./node_modules/@types", "../../node_modules/@types"]
   },
-  "include": ["src/**/*.ts", "lib/**/*.ts", "app/**/*.ts"],
-  "exclude": ["node_modules", "**/*.test.ts", "**/__tests__/**"]
+  "include": ["src/**/*.ts", "src/lib/**/*.ts", "src/handlers/**/*.ts"],
+  "exclude": ["node_modules", "**/*.test.ts", "**/__tests__/**", "*.py"]
 }

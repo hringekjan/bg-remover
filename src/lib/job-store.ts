@@ -53,7 +53,7 @@ export interface JobStatus {
 // ============================================================================
 
 // Single-table design: shared table with rate limiter
-const TABLE_NAME = process.env.BG_REMOVER_TABLE_NAME || process.env.JOB_STORE_TABLE_NAME || 'bg-remover-dev';
+const TABLE_NAME = process.env.DYNAMODB_TABLE || `carousel-main-${process.env.STAGE || 'dev'}`;
 const JOB_TTL_SECONDS = 24 * 60 * 60; // 24 hours
 const DEFAULT_TENANT = process.env.TENANT || 'default';
 
@@ -66,8 +66,8 @@ const DEFAULT_TENANT = process.env.TENANT || 'default';
  */
 function generateJobKeys(jobId: string, tenant: string = DEFAULT_TENANT): { pk: string; sk: string } {
   return {
-    pk: `TENANT#${tenant}#JOB`,
-    sk: `JOB#${jobId}`,
+    pk: `TENANT#${tenant}#BG_REMOVER_JOB#${jobId}`,
+    sk: 'METADATA',
   };
 }
 
@@ -102,8 +102,8 @@ export async function getJobStatus(jobId: string, tenant?: string): Promise<JobS
       new GetItemCommand({
         TableName: TABLE_NAME,
         Key: {
-          pk: { S: pk },
-          sk: { S: sk },
+          PK: { S: pk },
+          SK: { S: sk },
         },
       })
     );
@@ -133,11 +133,13 @@ export async function setJobStatus(job: JobStatus): Promise<void> {
   const { pk, sk } = generateJobKeys(job.jobId, tenant);
 
   // Set TTL if not already set
-  const jobWithTTL: JobStatus & { pk: string; sk: string; entityType: string } = {
+  const jobWithTTL: JobStatus & { PK: string; SK: string; entityType: string; GSI1PK: string; GSI1SK: string } = {
     ...job,
-    pk,
-    sk,
-    entityType: 'JOB', // For GSI queries by entity type
+    PK: pk,
+    SK: sk,
+    GSI1PK: `TENANT#${tenant}#BG_REMOVER_JOBS`,
+    GSI1SK: `${new Date().toISOString()}#JOB#${job.jobId}`,
+    entityType: 'BG_REMOVER_JOB',
     tenant, // Ensure tenant is always set
     expiresAt: job.expiresAt || Math.floor(Date.now() / 1000) + JOB_TTL_SECONDS,
     updatedAt: new Date().toISOString(),
@@ -210,14 +212,14 @@ export async function updateJobStatus(
       new UpdateItemCommand({
         TableName: TABLE_NAME,
         Key: {
-          pk: { S: pk },
-          sk: { S: sk },
+          PK: { S: pk },
+          SK: { S: sk },
         },
         UpdateExpression: `SET ${updateExpressions.join(', ')}`,
         ExpressionAttributeNames: expressionAttributeNames,
-        ExpressionAttributeValues: marshall(expressionAttributeValues),
+        ExpressionAttributeValues: marshall(expressionAttributeValues, { removeUndefinedValues: true }),
         ReturnValues: 'ALL_NEW',
-        ConditionExpression: 'attribute_exists(pk)',
+        ConditionExpression: 'attribute_exists(PK)',
       })
     );
 
@@ -255,10 +257,10 @@ export async function deleteJob(jobId: string, tenant?: string): Promise<boolean
       new DeleteItemCommand({
         TableName: TABLE_NAME,
         Key: {
-          pk: { S: pk },
-          sk: { S: sk },
+          PK: { S: pk },
+          SK: { S: sk },
         },
-        ConditionExpression: 'attribute_exists(pk)',
+        ConditionExpression: 'attribute_exists(PK)',
       })
     );
     return true;
@@ -364,17 +366,15 @@ export async function getJobsByTenant(
   options?: { limit?: number; status?: JobStatus['status'] }
 ): Promise<JobStatus[]> {
   const client = getClient();
-  const pk = `TENANT#${tenant}#JOB`;
+  const gsi1pk = `TENANT#${tenant}#BG_REMOVER_JOBS`;
 
   try {
     const queryParams: any = {
       TableName: TABLE_NAME,
-      KeyConditionExpression: '#pk = :pk',
-      ExpressionAttributeNames: {
-        '#pk': 'pk',
-      },
+      IndexName: 'GSI1',
+      KeyConditionExpression: 'GSI1PK = :pk',
       ExpressionAttributeValues: {
-        ':pk': { S: pk },
+        ':pk': { S: gsi1pk },
       },
       Limit: options?.limit || 100,
       ScanIndexForward: false, // Most recent first

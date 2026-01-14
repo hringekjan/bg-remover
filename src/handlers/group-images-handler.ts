@@ -13,7 +13,7 @@ import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
 
 const dynamoDB = new DynamoDBClient({});
 const lambdaClient = new LambdaClient({});
-const tableName = process.env.BG_REMOVER_TABLE_NAME!;
+const tableName = process.env.DYNAMODB_TABLE!;
 
 /**
  * Group Images Handler - Phase 1: Upload & Group

@@ -98,12 +98,17 @@ export class AppError extends Error {
 
 /**
  * Default CORS headers for all responses
+ * NOTE: These are placeholder defaults. Use createTenantCorsHeaders() from lib/cors.ts
+ * for proper tenant-aware CORS headers in production handlers.
  */
 export const DEFAULT_HEADERS: Record<string, string> = {
   'Content-Type': 'application/json',
-  'Access-Control-Allow-Origin': '*',
+  // DEPRECATED: Use tenant-aware CORS headers via createTenantCorsHeaders()
+  // Kept for backward compatibility only - will be removed in future versions
+  'Access-Control-Allow-Origin': 'null',
   'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Tenant-Id',
+  'Vary': 'Origin',
 };
 
 /**

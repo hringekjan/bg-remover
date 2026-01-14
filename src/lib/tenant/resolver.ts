@@ -41,6 +41,24 @@ export const resolveTenantFromRequest = async (event: any, stage: string): Promi
     }
   }
 
+  // Strategy 2b: Domain-based resolution from Origin header (useful for API subdomains)
+  const origin = headers['origin'] || headers['Origin'] || '';
+  if (origin) {
+    try {
+      const originHost = new URL(origin).host;
+      const tenant = extractTenantFromHost(originHost);
+      if (tenant) {
+        console.log('Tenant resolved from origin:', originHost, '->', tenant);
+        return tenant;
+      }
+    } catch (error) {
+      console.warn('Failed to parse origin header for tenant resolution', {
+        origin,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
   // Strategy 3: Extract from JWT claims if present
   const authHeader = headers['authorization'] || headers['Authorization'];
   if (authHeader) {
@@ -108,6 +126,16 @@ function extractTenantFromHost(host: string): string | null {
     if (subdomain === 'carousel') {
       return 'hringekjan';
     }
+  }
+
+  // Pattern: carousel.dev.hringekjan.is or carousel.hringekjan.is
+  if (hostname === 'carousel.hringekjan.is' || hostname === 'carousel.dev.hringekjan.is') {
+    return 'hringekjan';
+  }
+
+  // Pattern: api.dev.hringekjan.is or api.hringekjan.is
+  if (hostname === 'api.hringekjan.is' || hostname === 'api.dev.hringekjan.is') {
+    return 'hringekjan';
   }
 
   // Special case: direct hringekjan domain

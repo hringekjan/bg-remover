@@ -72,7 +72,7 @@ export class SecretRotator {
    * Stores both current and previous keys during grace period
    */
   async updateSSMParameter(newKey: string, oldKey?: string): Promise<void> {
-    const ssmPath = `/tf/${this.config.stage}/${this.config.tenant}/api-keys/carousel`;
+    const ssmPath = `/tf/${this.config.stage}/${this.config.tenant}/services/bg-remover/admin-api-keys`;
 
     try {
       // Prepare parameter value with current and previous keys
@@ -187,7 +187,7 @@ export class SecretRotator {
       let oldKey: string | undefined;
       try {
         const currentParam = await this.ssmClient.send(new GetParameterCommand({
-          Name: `/tf/${this.config.stage}/${this.config.tenant}/api-keys/carousel`,
+          Name: `/tf/${this.config.stage}/${this.config.tenant}/services/bg-remover/admin-api-keys`,
           WithDecryption: true,
         }));
 
@@ -251,7 +251,7 @@ export class SecretRotator {
   async getCurrentAPIKey(): Promise<string | null> {
     try {
       const command = new GetParameterCommand({
-        Name: `/tf/${this.config.stage}/${this.config.tenant}/api-keys/carousel`,
+        Name: `/tf/${this.config.stage}/${this.config.tenant}/services/bg-remover/admin-api-keys`,
         WithDecryption: true,
       });
 

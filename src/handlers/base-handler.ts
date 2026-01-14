@@ -1,9 +1,12 @@
 import { getCacheManager } from '../lib/cache/cache-manager';
+// Temporarily disabled due to build issues - not critical for core functionality
+// import { bgRemoverAgentState } from '../lib/agent-state';
 
 export interface HandlerContext {
   cacheManager: ReturnType<typeof getCacheManager>;
   stage: string;
   region: string;
+  // agentState: typeof bgRemoverAgentState;
 }
 
 export class BaseHandler {
@@ -23,6 +26,7 @@ export class BaseHandler {
       }),
       stage: process.env.STAGE || 'dev',
       region: process.env.AWS_REGION || 'eu-west-1',
+      // agentState: bgRemoverAgentState,
     };
   }
 
@@ -46,11 +50,16 @@ export class BaseHandler {
     return data;
   }
 
+  /**
+   * @deprecated Use createTenantCorsHeaders from lib/cors.ts instead
+   * This method uses wildcard CORS which is insecure for production.
+   */
   protected createCorsHeaders(additionalHeaders: Record<string, string> = {}): Record<string, string> {
     return {
-      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Origin': 'null',  // Secure: no wildcard
       'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
       'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Tenant-Id, Cache-Control, Pragma, Expires',
+      'Vary': 'Origin',  // CRITICAL: Prevent cache poisoning
       ...additionalHeaders,
     };
   }
@@ -60,29 +69,73 @@ export class BaseHandler {
     statusCode: number = 200,
     additionalHeaders: Record<string, string> = {}
   ): any {
+    // Generate ETag for cache validation
+    const bodyString = JSON.stringify(body);
+    const etag = this.generateETag(bodyString);
+
     return {
       statusCode,
       headers: {
         ...this.createCorsHeaders(),
         'Content-Type': 'application/json',
+        // CloudFront cache headers - 5 minute TTL
+        'Cache-Control': 'public, max-age=300, must-revalidate',
+        'ETag': etag,
+        'Vary': 'Authorization, X-Tenant-Id',
         ...additionalHeaders,
       },
-      body: JSON.stringify(body),
+      body: bodyString,
     };
+  }
+
+  /**
+   * Generate ETag for cache validation
+   * Uses simple hash of response body for cache validation
+   */
+  protected generateETag(content: string): string {
+    const crypto = require('crypto');
+    const hash = crypto.createHash('md5').update(content).digest('hex');
+    return `"${hash}"`;
   }
 
   protected createErrorResponse(
     message: string,
     statusCode: number = 500,
+    headersOrDetails?: Record<string, string> | any,
     details?: any
   ): any {
+    // Support backward compatibility: third param can be headers or details
+    let additionalHeaders: Record<string, string> = {};
+    let errorDetails: any = undefined;
+
+    if (headersOrDetails) {
+      // If third param looks like HTTP headers (has common header keys), treat as headers
+      const headerKeys = ['WWW-Authenticate', 'Content-Type', 'Cache-Control', 'Location'];
+      const isHeaders = typeof headersOrDetails === 'object' &&
+        Object.keys(headersOrDetails).some(key => headerKeys.includes(key));
+
+      if (isHeaders) {
+        additionalHeaders = headersOrDetails;
+        errorDetails = details;
+      } else {
+        // Third param is details (old signature)
+        errorDetails = headersOrDetails;
+      }
+    }
+
     const errorBody = {
       error: message,
-      ...(details && { details }),
+      ...(errorDetails && { details: errorDetails }),
       timestamp: new Date().toISOString(),
     };
 
-    return this.createJsonResponse(errorBody, statusCode);
+    // Error responses should not be cached
+    return this.createJsonResponse(errorBody, statusCode, {
+      'Cache-Control': 'no-store, no-cache, must-revalidate, private',
+      'Pragma': 'no-cache',
+      'Expires': '0',
+      ...additionalHeaders,
+    });
   }
 
   protected validateTenant(tenant: string): boolean {

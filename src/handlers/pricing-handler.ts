@@ -232,6 +232,7 @@ function parseRequestBody(body: string | null | undefined): any {
 
 /**
  * Build success response with cache metrics in headers
+ * TODO: Migrate to tenant-aware CORS using createTenantCorsHeaders from lib/cors.ts
  */
 function buildSuccessResponse(statusCode: number, body: any): APIGatewayProxyResult {
   return {
@@ -240,9 +241,11 @@ function buildSuccessResponse(statusCode: number, body: any): APIGatewayProxyRes
       'Content-Type': 'application/json',
       'X-Cache-Hit-Rate': ((body.cacheMetrics?.hitRate || 0) * 100).toFixed(1),
       'X-Cache-Size-Percent': body.cacheMetrics?.cacheSizePercent || '0',
-      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Origin': 'null',  // Secure: no wildcard CORS
       'Access-Control-Allow-Methods': 'POST, OPTIONS',
       'Access-Control-Allow-Headers': 'Content-Type, x-tenant-id',
+      'Access-Control-Max-Age': '86400',
+      'Vary': 'Origin',  // Prevent cache poisoning
     },
     body: JSON.stringify(body),
   };
@@ -250,15 +253,18 @@ function buildSuccessResponse(statusCode: number, body: any): APIGatewayProxyRes
 
 /**
  * Build error response
+ * TODO: Migrate to tenant-aware CORS using createTenantCorsHeaders from lib/cors.ts
  */
 function buildErrorResponse(statusCode: number, message: string): APIGatewayProxyResult {
   return {
     statusCode,
     headers: {
       'Content-Type': 'application/json',
-      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Origin': 'null',  // Secure: no wildcard CORS
       'Access-Control-Allow-Methods': 'POST, OPTIONS',
       'Access-Control-Allow-Headers': 'Content-Type, x-tenant-id',
+      'Access-Control-Max-Age': '86400',
+      'Vary': 'Origin',  // Prevent cache poisoning
     },
     body: JSON.stringify({
       error: message,
@@ -269,15 +275,18 @@ function buildErrorResponse(statusCode: number, message: string): APIGatewayProx
 
 /**
  * Build CORS response
+ * TODO: Migrate to tenant-aware CORS using createTenantCorsHeaders from lib/cors.ts
  */
 function buildCorsResponse(statusCode: number, body: any): APIGatewayProxyResult {
   return {
     statusCode,
     headers: {
       'Content-Type': 'application/json',
-      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Origin': 'null',  // Secure: no wildcard CORS
       'Access-Control-Allow-Methods': 'POST, OPTIONS',
       'Access-Control-Allow-Headers': 'Content-Type, x-tenant-id',
+      'Access-Control-Max-Age': '86400',
+      'Vary': 'Origin',  // Prevent cache poisoning
     },
     body: JSON.stringify(body),
   };

@@ -10,11 +10,12 @@ import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
 import { DynamoDBClient, PutItemCommand, UpdateItemCommand } from '@aws-sdk/client-dynamodb';
 import { marshall } from '@aws-sdk/util-dynamodb';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import { issueJobToken } from '../lib/job-token';
 
 const lambdaClient = new LambdaClient({});
 const dynamoDB = new DynamoDBClient({});
 const s3Client = new S3Client({});
-const tableName = process.env.BG_REMOVER_TABLE_NAME!;
+const tableName = process.env.DYNAMODB_TABLE || `carousel-main-${process.env.STAGE || 'dev'}`;
 const workerFunctionName = process.env.WORKER_FUNCTION_NAME!;
 
 // Validate TEMP_IMAGES_BUCKET environment variable
@@ -160,17 +161,6 @@ export class ProcessGroupsHandler extends BaseHandler {
           productName: group.productName,
         });
 
-        // Store job metadata in DynamoDB
-        await this.createJobRecord(tenant, jobId, {
-          groupId: group.groupId,
-          imageCount: groupImages.length,
-          productName: group.productName,
-          pipeline: pipelineName,
-          status: 'pending',
-          createdAt: new Date().toISOString(),
-          requestId,
-        });
-
         // Upload images to S3 to avoid Lambda 1MB payload limit
         console.log('[ProcessGroups] Uploading images to S3', {
           jobId,
@@ -216,9 +206,26 @@ export class ProcessGroupsHandler extends BaseHandler {
             failedCount: failedUploads.length,
           });
 
-          await this.updateJobStatus(tenant, jobId, 'failed', {
+          await this.createJobRecord(tenant, jobId, {
+            groupId: group.groupId,
+            imageCount: 0,
+            productName: group.productName,
+            pipeline: pipelineName,
+            status: 'failed',
+            createdAt: new Date().toISOString(),
+            requestId,
             error: 'All image uploads failed',
             failedImages: failedUploads,
+            images: [],
+            progress: {
+              total: 0,
+              completed: 0,
+              failed: 0,
+              processing: 0,
+              pending: 0,
+            },
+            continuationToken: null,
+            resumable: true,
           });
           continue; // Skip this group, try next one
         }
@@ -239,6 +246,39 @@ export class ProcessGroupsHandler extends BaseHandler {
           successCount: s3ImageKeys.length,
           failedCount: failedUploads.length,
           s3Keys: s3ImageKeys,
+        });
+
+        // Prepare resumable state for images once upload results are known
+        const imageStates = s3ImageKeys.map((s3Key, index) => ({
+          s3Key,
+          index,
+          status: 'pending' as const,
+          filename: `${group.productName || 'product'}_${index + 1}`,
+          attempts: 0,
+          lastAttemptAt: null,
+          error: null,
+        }));
+
+        // Store job metadata in DynamoDB with resumable state
+        await this.createJobRecord(tenant, jobId, {
+          groupId: group.groupId,
+          imageCount: s3ImageKeys.length,
+          productName: group.productName,
+          pipeline: pipelineName,
+          status: 'pending',
+          createdAt: new Date().toISOString(),
+          requestId,
+          // Resumable state
+          images: imageStates,
+          progress: {
+            total: s3ImageKeys.length,
+            completed: 0,
+            failed: 0,
+            processing: 0,
+            pending: s3ImageKeys.length,
+          },
+          continuationToken: null, // For future resume functionality
+          resumable: true,
         });
 
         // Build group context for enhanced AI-generated content
@@ -294,6 +334,10 @@ export class ProcessGroupsHandler extends BaseHandler {
             status: 'pending',
             imageCount: groupImages.length,
             productName: group.productName,
+            jobToken: issueJobToken({
+              jobId,
+              tenant,
+            }),
           });
         } catch (error) {
           console.error('[ProcessGroups] Failed to invoke worker', {
@@ -465,14 +509,19 @@ export class ProcessGroupsHandler extends BaseHandler {
     jobId: string,
     metadata: Record<string, any>
   ): Promise<void> {
-    const pk = `TENANT#${tenant}#JOB`;
-    const sk = `JOB#${jobId}`;
+    const pk = `TENANT#${tenant}#BG_REMOVER_JOB#${jobId}`;
+    const sk = 'METADATA';
+    const gsi1pk = `TENANT#${tenant}#BG_REMOVER_JOBS`;
+    const gsi1sk = `${new Date().toISOString()}#JOB#${jobId}`;
 
     const item = marshall({
-      pk,
-      sk,
+      PK: pk,
+      SK: sk,
+      GSI1PK: gsi1pk,
+      GSI1SK: gsi1sk,
       jobId,
       tenant,
+      entityType: 'BG_REMOVER_JOB',
       ...metadata,
       ttl: Math.floor(Date.now() / 1000) + 86400 * 7, // 7 days retention
     });
@@ -486,6 +535,106 @@ export class ProcessGroupsHandler extends BaseHandler {
   }
 
   /**
+   * Resume a failed or partial job
+   */
+  private async resumeJob(tenant: string, jobId: string): Promise<any> {
+    try {
+      // Load current job state
+      const { DynamoDBDocumentClient, GetCommand } = await import('@aws-sdk/lib-dynamodb');
+      const docClient = DynamoDBDocumentClient.from(dynamoDB);
+
+      const response = await docClient.send(new GetCommand({
+        TableName: tableName,
+        Key: {
+          PK: `TENANT#${tenant}#BG_REMOVER_JOB#${jobId}`,
+          SK: 'METADATA',
+        },
+      }));
+
+      const job = response.Item;
+      if (!job) {
+        throw new Error(`Job ${jobId} not found`);
+      }
+
+      if (!job.resumable) {
+        throw new Error(`Job ${jobId} is not resumable`);
+      }
+
+      if (job.status === 'completed') {
+        throw new Error(`Job ${jobId} is already completed`);
+      }
+
+      // Check if job can be resumed
+      const pendingImages = job.images?.filter((img: any) => img.status === 'pending' || img.status === 'failed') || [];
+      if (pendingImages.length === 0) {
+        throw new Error(`Job ${jobId} has no pending or failed images to resume`);
+      }
+
+      console.log('[ProcessGroups] Resuming job', {
+        jobId,
+        tenant,
+        pendingImages: pendingImages.length,
+        totalImages: job.images?.length || 0,
+      });
+
+      // Update job status to processing
+      await this.updateJobStatus(tenant, jobId, 'processing', {
+        resumedAt: new Date().toISOString(),
+        resumeAttempt: (job.resumeAttempt || 0) + 1,
+      });
+
+      // Reconstruct image data for worker
+      const imagesForWorker = job.images.map((img: any, index: number) => ({
+        s3Bucket: tempImagesBucket,
+        s3Key: img.s3Key,
+        filename: img.filename,
+        isPrimary: index === 0, // First image is primary
+      }));
+
+      // Invoke worker with resume flag
+      const workerPayload = {
+        jobId,
+        tenant,
+        stage: process.env.STAGE || 'dev',
+        groupId: job.groupId,
+        images: imagesForWorker,
+        productName: job.productName,
+        pipeline: job.pipeline,
+        processingOptions: job.processingOptions || {},
+        serviceApiKey: '', // Will be loaded by worker
+        requestId: randomUUID(),
+        resume: true, // Flag to indicate this is a resume operation
+      };
+
+      const invokeCommand = new InvokeCommand({
+        FunctionName: workerFunctionName,
+        InvocationType: 'Event',
+        Payload: Buffer.from(JSON.stringify(workerPayload)),
+      });
+
+      await lambdaClient.send(invokeCommand);
+
+      console.log('[ProcessGroups] Resume worker invoked', {
+        jobId,
+        functionName: workerFunctionName,
+      });
+
+      return {
+        jobId,
+        status: 'resuming',
+        message: `Resuming job with ${pendingImages.length} pending images`,
+      };
+    } catch (error) {
+      console.error('[ProcessGroups] Failed to resume job', {
+        jobId,
+        tenant,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      throw error;
+    }
+  }
+
+  /**
    * Update job status in DynamoDB
    */
   private async updateJobStatus(
@@ -494,8 +643,8 @@ export class ProcessGroupsHandler extends BaseHandler {
     status: string,
     result?: Record<string, any>
   ): Promise<void> {
-    const pk = `TENANT#${tenant}#JOB`;
-    const sk = `JOB#${jobId}`;
+    const pk = `TENANT#${tenant}#BG_REMOVER_JOB#${jobId}`;
+    const sk = 'METADATA';
 
     const updateExpression = result
       ? 'SET #status = :status, #result = :result, #updatedAt = :updatedAt'
@@ -515,7 +664,7 @@ export class ProcessGroupsHandler extends BaseHandler {
     await dynamoDB.send(
       new UpdateItemCommand({
         TableName: tableName,
-        Key: marshall({ pk, sk }),
+        Key: marshall({ PK: pk, SK: sk }),
         UpdateExpression: updateExpression,
         ExpressionAttributeNames: {
           '#status': 'status',

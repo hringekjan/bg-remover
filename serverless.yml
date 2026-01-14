@@ -154,14 +154,16 @@ provider:
           Action:
             - ssm:PutParameter
           Resource: "arn:aws:ssm:${aws:region}:${aws:accountId}:parameter/tf/${sls:stage}/${env:TENANT, 'carousel-labs'}/services/${self:service}/secrets"
-        # Bedrock Nova Lite permissions - RESTRICTED to Nova Lite model only
-        # Security: Prevents access to all other foundation models (security violation, cost risk)
+        # Bedrock Nova permissions - Nova Lite, Pro and Canvas
+        # Security: Specifically allowed models for background removal and copywriting
         # NOTE: Bedrock is only available in us-east-1 region
         - Effect: Allow
           Action:
             - bedrock:InvokeModel
           Resource:
             - "arn:aws:bedrock:us-east-1::foundation-model/us.amazon.nova-lite-v1:0"
+            - "arn:aws:bedrock:us-east-1::foundation-model/us.amazon.nova-pro-v1:0"
+            - "arn:aws:bedrock:us-east-1::foundation-model/amazon.nova-canvas-v1:0"
         # Bedrock Titan Embeddings for product image embeddings
         # Used by pricing calculator and smartgo exporter
         - Effect: Allow
@@ -468,6 +470,19 @@ functions:
           method: POST
       - httpApi:
           path: /bg-remover/process-groups
+          method: OPTIONS
+
+  metadataApproval:
+    handler: src/handlers/metadata-approval-handler.handler
+    description: Endpoint for AI metadata approval and rule-engine checks
+    memorySize: 512
+    timeout: 30
+    events:
+      - httpApi:
+          path: /bg-remover/metadata-approval
+          method: POST
+      - httpApi:
+          path: /bg-remover/metadata-approval
           method: OPTIONS
 
   pricingCalculator:
