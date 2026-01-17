@@ -25,6 +25,7 @@ build:
     external:
       - '@aws-sdk/*'
       - 'aws-sdk'
+      - '@carousellabs/observability'
 
 provider:
   name: aws
@@ -400,6 +401,8 @@ functions:
     timeout: 900     # 15 minutes for long-running processing
     reservedConcurrency: 10 # Limit concurrent workers to control costs
     onError: !GetAtt ProcessWorkerDLQ.Arn
+    environment:
+      BEDROCK_REGION: us-east-1  # CRITICAL: Bedrock only available in us-east-1
 
   status:
     handler: src/handler.status

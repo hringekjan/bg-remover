@@ -408,6 +408,12 @@ export class ProcessWorkerHandler extends BaseHandler {
     const processingStartTime = Date.now();
 
     const maxConcurrent = Math.min(images.length, 5); // Limit concurrency to prevent Lambda memory issues
+
+    // Initialize variables before try block so they're accessible in catch block
+    let completedCount = 0;
+    let failedCount = 0;
+    let imageStates: Array<any> = [];
+
     try {
       // Update job status to processing
       await this.updateJobStatus(tenant, jobId, 'processing', {
@@ -429,7 +435,7 @@ export class ProcessWorkerHandler extends BaseHandler {
 
       // Load current job state for resumable operations
       const currentJobState = await this.loadJobState(tenant, jobId);
-      const imageStates = currentJobState?.images || images.map((img, index) => ({
+      imageStates = currentJobState?.images || images.map((img, index) => ({
         s3Key: img.s3Key || `temp/${tenant}/${jobId}/${index}_${img.filename}`,
         index,
         status: 'pending' as const,
@@ -439,9 +445,9 @@ export class ProcessWorkerHandler extends BaseHandler {
         error: null,
       }));
 
-      // Initialize progress tracking
-      let completedCount = imageStates.filter(img => img.status === 'completed').length;
-      let failedCount = imageStates.filter(img => img.status === 'failed').length;
+      // Update progress tracking based on resumable state
+      completedCount = imageStates.filter(img => img.status === 'completed').length;
+      failedCount = imageStates.filter(img => img.status === 'failed').length;
 
       const imagePromises = images.map(async (image, index) => {
         // Skip already completed images
@@ -1248,14 +1254,22 @@ export class ProcessWorkerHandler extends BaseHandler {
       ':updatedAt': { S: new Date().toISOString() },
     };
 
-    // Add additional fields dynamically
-    Object.entries(additionalFields).forEach(([key, value], index) => {
-      const namePlaceholder = `#field${index}`;
-      const valuePlaceholder = `:val${index}`;
-      const marshalled = marshall({ value });
+    // Add additional fields dynamically (skip undefined values and clean nested undefined)
+    let fieldIndex = 0;
+    Object.entries(additionalFields).forEach(([key, value]) => {
+      // Skip top-level undefined/null values entirely to avoid DynamoDB errors
+      if (value === undefined || value === null) {
+        return;
+      }
+
+      const namePlaceholder = `#field${fieldIndex}`;
+      const valuePlaceholder = `:val${fieldIndex}`;
+      // CRITICAL: Use removeUndefinedValues to handle nested undefined in objects/arrays
+      const marshalled = marshall({ value }, { removeUndefinedValues: true });
       updateExpression.push(`${namePlaceholder} = ${valuePlaceholder}`);
       expressionAttributeNames[namePlaceholder] = key;
       expressionAttributeValues[valuePlaceholder] = marshalled.value;
+      fieldIndex++;
     });
 
     try {
