@@ -86,12 +86,34 @@ export async function GET(
       return userOrError; // 401 Unauthorized or 403 Forbidden
     }
 
+    // Truncate large descriptions to prevent 413 Content Too Large
+    // Bug fix: processedImages can contain very long bilingual descriptions
+    // that exceed response size limits when 10+ images are processed
+    const truncatedResult = job.result ? {
+      ...job.result,
+      processedImages: job.result.processedImages?.map((img: any) => ({
+        ...img,
+        description: img.description ? {
+          en: img.description.en ? {
+            ...img.description.en,
+            // Truncate long description to 300 chars
+            long: img.description.en.long?.substring(0, 300) || img.description.en.long,
+          } : undefined,
+          is: img.description.is ? {
+            ...img.description.is,
+            // Truncate long description to 300 chars
+            long: img.description.is.long?.substring(0, 300) || img.description.is.long,
+          } : undefined,
+        } : undefined,
+      })),
+    } : job.result;
+
     // Return job status with TTL info
     return NextResponse.json({
       jobId: job.jobId,
       status: job.status,
       progress: job.progress,
-      result: job.result,
+      result: truncatedResult,
       createdAt: job.createdAt,
       updatedAt: job.updatedAt,
       expiresAt: job.expiresAt
