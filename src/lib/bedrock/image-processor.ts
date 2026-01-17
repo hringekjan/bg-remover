@@ -1,7 +1,13 @@
 import { BedrockRuntimeClient, InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime';
 import { loadConfig, type BgRemoverSecrets } from '../config/loader';
-import { generateBilingualDescription, type ProductDescription, type BilingualProductDescription } from './image-analysis';
+import { generateBilingualDescription } from './image-analysis';
+import { type ProductDescription, type BilingualProductDescription } from '../types';
 import { getServiceEndpoint, extractTenantFromEvent } from '../tenant/config';
+import { analyzeWithRekognition } from '../rekognition/analyzer';
+import { analyzeWithNovaPro } from './nova-pro-analyzer';
+
+// Re-export types and utilities from types.ts for backwards compatibility
+export { type BilingualProductDescription, type ProductDescription, createProcessResult } from '../types';
 
 const bedrockClient = new BedrockRuntimeClient({ region: 'us-east-1' });
 
@@ -83,18 +89,25 @@ export const processImageFromBase64 = async (
 }> => {
   const { format, quality, targetSize, generateDescription, productName } = options;
 
-  console.log('✨ Performing direct Bedrock background removal via Nova Canvas', {
+  console.log('✨ Optimized pipeline: Background removal + Rekognition in parallel', {
     tenant,
     productName,
     format: format || 'png'
   });
 
-  // 1. Core Background Removal
-  const { outputBuffer, processingTimeMs } = await removeBackgroundDirect(base64Image, {
-    quality: quality === 'high' ? 'premium' : 'standard',
-    height: targetSize?.height,
-    width: targetSize?.width
-  });
+  const imageBuffer = Buffer.from(base64Image, 'base64');
+
+  // 1. Run background removal AND Rekognition in PARALLEL (saves ~2-3s)
+  const [bgResult, rekResult] = await Promise.all([
+    removeBackgroundDirect(base64Image, {
+      quality: quality === 'high' ? 'premium' : 'standard',
+      height: targetSize?.height,
+      width: targetSize?.width
+    }),
+    analyzeWithRekognition(imageBuffer)
+  ]);
+
+  const { outputBuffer, processingTimeMs } = bgResult;
 
   const resultMetadata = {
     width: targetSize?.width || 1024,
@@ -104,14 +117,19 @@ export const processImageFromBase64 = async (
     processingTimeMs
   };
 
-  // 2. Generate descriptions if requested
+  // 2. Early rejection if Rekognition failed moderation
+  if (!rekResult.approved) {
+    throw new Error(`Image rejected: ${rekResult.reason || 'Content moderation failed'}`);
+  }
+
+  // 3. Generate descriptions using Nova Pro (single call for English + Icelandic)
   let productDescription: ProductDescription | undefined;
   let bilingualDescription: BilingualProductDescription | undefined;
 
   if (generateDescription) {
     try {
-      console.log('Generating bilingual description for processed image');
-      
+      console.log('Generating bilingual description with Nova Pro + Rekognition context');
+
       const imageMetadata = {
         width: resultMetadata.width,
         height: resultMetadata.height,
@@ -119,7 +137,47 @@ export const processImageFromBase64 = async (
         format: format || 'png',
       };
 
-      bilingualDescription = await generateBilingualDescription(outputBuffer, productName, imageMetadata);
+      // Use Nova Pro with Rekognition context (faster, cheaper, better)
+      const novaProResult = await analyzeWithNovaPro(
+        outputBuffer,
+        productName,
+        {
+          labels: rekResult.labels,
+          detectedBrand: rekResult.brand,
+          detectedSize: rekResult.size,
+          category: rekResult.category,
+          colors: rekResult.colors
+        }
+      );
+
+      // Build bilingual description
+      bilingualDescription = {
+        en: {
+          short: novaProResult.short_en,
+          long: novaProResult.long_en,
+          category: novaProResult.category,
+          colors: novaProResult.colors,
+          condition: novaProResult.condition,
+          keywords: novaProResult.keywords,
+          stylingTip: novaProResult.stylingTip_en
+        },
+        is: {
+          short: novaProResult.short_is,
+          long: novaProResult.long_is,
+          category: novaProResult.category,
+          colors: novaProResult.colors,
+          condition: novaProResult.condition,
+          keywords: novaProResult.keywords,
+          stylingTip: novaProResult.stylingTip_is
+        }
+      };
+
+      console.log('✅ Auto-detected from image:', {
+        brand: novaProResult.brand || rekResult.brand,
+        size: novaProResult.size || rekResult.size,
+        material: novaProResult.material
+      });
+
       productDescription = bilingualDescription.en;
     } catch (error) {
       console.error('Failed to generate description:', error);

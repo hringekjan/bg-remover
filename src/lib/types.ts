@@ -294,6 +294,7 @@ export type ProductDescription = {
   category?: string;
   colors?: string[];
   condition?: ProductCondition;
+  stylingTip?: string;
   priceSuggestion?: PriceSuggestion;
   ratingSuggestion?: RatingSuggestion;
 };
