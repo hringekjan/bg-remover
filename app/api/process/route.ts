@@ -21,7 +21,7 @@ import {
   processImageFromBase64,
   createProcessResult,
 } from '@/lib/bedrock/image-processor';
-import { uploadProcessedImage, generateOutputKey } from '@/lib/s3/client';
+import { uploadProcessedImage, generateOutputKey, getOutputBucket } from '../../../lib/s3/client';
 import { EventBridgeClient, PutEventsCommand } from '@aws-sdk/client-eventbridge';
 import { validateAndDebitCredits, refundCredits } from '@/src/lib/credits/client';
 import { loadAdminApiKeys } from '@carousellabs/backend-kit';
@@ -460,20 +460,30 @@ export async function POST(request: NextRequest): Promise<NextResponse<ProcessRe
       );
     }
 
-    // For dev: Return base64 data URL instead of uploading to S3
-    // In production, this would upload to S3 and return a presigned URL
+    // Upload processed image to S3 and return reference URL
     const contentType = outputFormat === 'png' ? 'image/png' :
                        outputFormat === 'webp' ? 'image/webp' : 'image/jpeg';
 
-    const base64Image = result.outputBuffer.toString('base64');
-    const outputUrl = `data:${contentType};base64,${base64Image}`;
+    const bucket = await getOutputBucket(tenant, stage);
+    const outputKey = generateOutputKey(tenant, jobId, outputFormat || 'png');
+    const s3Url = await uploadProcessedImage(
+      bucket,
+      outputKey,
+      result.outputBuffer,
+      contentType,
+      {
+        jobId,
+        tenant,
+        productId: productId || ''
+      }
+    );
 
     const processingTimeMs = Date.now() - startTime;
 
     console.log('Image processed successfully', {
       jobId,
       processingTimeMs,
-      outputSize: base64Image.length,
+      s3Url,
       originalSize: result.metadata.originalSize,
       processedSize: result.metadata.processedSize,
     });
@@ -504,30 +514,16 @@ export async function POST(request: NextRequest): Promise<NextResponse<ProcessRe
       console.error('Failed to emit CarouselImageProcessed event', { jobId, error });
     }
 
-    // 🔧 FIX: Don't return full bilingualDescription (causes 413 Content Too Large)
-    // Return only short summaries to keep response under 10MB
-    const descriptionSummary = result.bilingualDescription ? {
-      en: {
-        short: result.bilingualDescription.en?.short || result.productDescription?.short || '',
-        category: result.bilingualDescription.en?.category || result.productDescription?.category,
-        colors: result.bilingualDescription.en?.colors || result.productDescription?.colors
-      },
-      is: {
-        short: result.bilingualDescription.is?.short || '',
-        category: result.bilingualDescription.is?.category,
-        colors: result.bilingualDescription.is?.colors
-      }
-    } : undefined;
-
+    // 🔧 FIX: Return minimal response to prevent 413 Content Too Large
+    // Full data (image, metadata, descriptions) stored in S3 and retrievable via status endpoint
     return NextResponse.json({
       success: true,
       jobId,
-      outputUrl,
+      s3Url,  // S3 reference, not base64 data
+      status: 'completed',
       processingTimeMs,
-      metadata: result.metadata,
-      productDescription: result.productDescription,
-      descriptionSummary,  // Only short descriptions (not full long text)
-      // Note: Full descriptions available via GET /status/{jobId} endpoint
+      // Minimal metadata
+      imageSize: result.metadata.processedSize,
       // Credit information
       creditsUsed: creditsUsed > 0 ? creditsUsed : undefined,
       creditsRemaining,
