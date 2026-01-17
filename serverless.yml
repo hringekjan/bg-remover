@@ -172,6 +172,14 @@ provider:
             - bedrock:InvokeModel
           Resource:
             - "arn:aws:bedrock:us-east-1::foundation-model/amazon.titan-embed-image-v1"
+        # Bedrock models in eu-west-1 for description generation
+        # Nova Lite for product descriptions, GPT-OSS-120B for translation (more powerful than 20B)
+        - Effect: Allow
+          Action:
+            - bedrock:InvokeModel
+          Resource:
+            - "arn:aws:bedrock:eu-west-1::foundation-model/amazon.nova-lite-v1:0"
+            - "arn:aws:bedrock:eu-west-1::foundation-model/openai.gpt-oss-120b-1:0"
         # S3 access for processed image storage
         - Effect: Allow
           Action:

@@ -302,7 +302,7 @@ export async function translateToIcelandic(description: ProductDescription): Pro
   try {
     // Try GPT OSS model for Icelandic translation
     const translationResponse = await bedrockClient.send(new InvokeModelCommand({
-      modelId: 'openai.gpt-oss-safeguard-20b',
+      modelId: 'openai.gpt-oss-120b-1:0',
       contentType: 'application/json',
       accept: 'application/json',
       body: JSON.stringify({
