@@ -504,6 +504,21 @@ export async function POST(request: NextRequest): Promise<NextResponse<ProcessRe
       console.error('Failed to emit CarouselImageProcessed event', { jobId, error });
     }
 
+    // 🔧 FIX: Don't return full bilingualDescription (causes 413 Content Too Large)
+    // Return only short summaries to keep response under 10MB
+    const descriptionSummary = result.bilingualDescription ? {
+      en: {
+        short: result.bilingualDescription.en?.short || result.productDescription?.short || '',
+        category: result.bilingualDescription.en?.category || result.productDescription?.category,
+        colors: result.bilingualDescription.en?.colors || result.productDescription?.colors
+      },
+      is: {
+        short: result.bilingualDescription.is?.short || '',
+        category: result.bilingualDescription.is?.category,
+        colors: result.bilingualDescription.is?.colors
+      }
+    } : undefined;
+
     return NextResponse.json({
       success: true,
       jobId,
@@ -511,7 +526,8 @@ export async function POST(request: NextRequest): Promise<NextResponse<ProcessRe
       processingTimeMs,
       metadata: result.metadata,
       productDescription: result.productDescription,
-      bilingualDescription: result.bilingualDescription,
+      descriptionSummary,  // Only short descriptions (not full long text)
+      // Note: Full descriptions available via GET /status/{jobId} endpoint
       // Credit information
       creditsUsed: creditsUsed > 0 ? creditsUsed : undefined,
       creditsRemaining,
