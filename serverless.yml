@@ -747,21 +747,31 @@ functions:
           - "arn:aws:dynamodb:${aws:region}:${aws:accountId}:table/${self:service}-${self:provider.stage}-smartgo-export-progress"
           - "arn:aws:dynamodb:${aws:region}:${aws:accountId}:table/${self:service}-${self:provider.stage}-smartgo-export-progress/index/*"
 
-  # DISABLED: Python package too large (73MB unzipped exceeds 250MB limit)
-  # TODO: Optimize Python dependencies or move to Lambda Layer
-  # classifier:
-  #   handler: classifier_handler.handle
-  #   runtime: python3.11
-  #   description: Classify processed images and store memories in mem0
-  #   memorySize: 512
-  #   timeout: 30
-  #   events:
-  #     - eventBridge:
-  #         pattern:
-  #           source:
-  #             - carousel.bg-remover
-  #           detail-type:
-  #             - CarouselImageProcessed
+  # Re-enabled: Using AWS Lambda Powertools layer to reduce package size
+  # Minimal package: only classifier_handler.py + requests (~5MB total)
+  classifier:
+    handler: classifier_handler.handle
+    runtime: python3.11
+    description: Classify processed images using Rekognition DetectLabels
+    memorySize: 512
+    timeout: 30
+    layers:
+      - arn:aws:lambda:eu-west-1:017000801446:layer:AWSLambdaPowertoolsPythonV2:68
+    package:
+      patterns:
+        - '!**'  # Exclude everything
+        - 'classifier_handler.py'  # Include only the handler
+        - '!node_modules/**'
+        - '!src/**'
+        - '!.out/**'
+        - '!.serverless/**'
+    events:
+      - eventBridge:
+          pattern:
+            source:
+              - carousel.bg-remover
+            detail-type:
+              - CarouselImageProcessed
 
   carouselToS3TablesSync:
     handler: src/handlers/carousel-to-s3-tables-sync.handler

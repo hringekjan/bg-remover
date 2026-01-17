@@ -1,3 +1,4 @@
-boto3==1.35.0
+# boto3 and botocore are provided by AWS Lambda runtime - no need to include
+# aws-lambda-powertools moved to Lambda Layer (ARN in serverless.yml)
+# Layer: arn:aws:lambda:eu-west-1:017000801446:layer:AWSLambdaPowertoolsPythonV2:68
 requests==2.32.0
-aws-lambda-powertools==2.40.0
