@@ -51,6 +51,12 @@ export async function GET(
 
     const { jobId } = validation.data;
 
+    // Pagination parameters for progressive rendering
+    // Allows frontend to fetch results incrementally as they complete
+    const { searchParams } = new URL(request.url);
+    const offset = Math.max(0, parseInt(searchParams.get('offset') || '0', 10));
+    const limit = Math.min(50, Math.max(1, parseInt(searchParams.get('limit') || '10', 10))); // Max 50 per page
+
     // Look up job status from DynamoDB
     const job = await getJobStatus(jobId);
 
@@ -86,39 +92,62 @@ export async function GET(
       return userOrError; // 401 Unauthorized or 403 Forbidden
     }
 
-    // Truncate large descriptions to prevent 413 Content Too Large
-    // Bug fix: processedImages can contain very long bilingual descriptions
-    // that exceed response size limits when 10+ images are processed
-    const truncatedResult = job.result ? {
+    // Progressive rendering: Paginate results to prevent 413 Content Too Large
+    // Frontend can fetch incrementally and display products as they complete
+    const allProcessedImages = job.result?.processedImages || [];
+    const totalImages = allProcessedImages.length;
+
+    // Slice images based on pagination params
+    const paginatedImages = allProcessedImages.slice(offset, offset + limit);
+
+    // 🔧 FIX: Return minimal payload to prevent 413 Content Too Large
+    // Strip description field entirely - reduces from ~2KB to ~200 bytes per image
+    // Handles both old format (with description) and new format (minimal fields)
+    const minimalImages = paginatedImages.map((img: any) => ({
+      imageId: img.imageId,
+      processedUrl: img.processedUrl,
+      // Handle both old format (nested in metadata) and new format (top-level fields)
+      width: img.width || img.metadata?.width,
+      height: img.height || img.metadata?.height,
+      status: img.status,
+      processingTimeMs: img.processingTimeMs || img.metadata?.processingTimeMs || 0,
+    }));
+
+    const minimalResult = job.result ? {
       ...job.result,
-      processedImages: job.result.processedImages?.map((img: any) => ({
-        ...img,
-        description: img.description ? {
-          en: img.description.en ? {
-            ...img.description.en,
-            // Truncate long description to 300 chars
-            long: img.description.en.long?.substring(0, 300) || img.description.en.long,
-          } : undefined,
-          is: img.description.is ? {
-            ...img.description.is,
-            // Truncate long description to 300 chars
-            long: img.description.is.long?.substring(0, 300) || img.description.is.long,
-          } : undefined,
-        } : undefined,
-      })),
+      processedImages: minimalImages,
     } : job.result;
 
-    // Return job status with TTL info
+    // Log pagination info for debugging
+    console.log('[BG-Remover] Job status pagination', {
+      jobId,
+      totalImages,
+      offset,
+      limit,
+      returnedImages: minimalImages.length,
+      hasMore: offset + limit < totalImages,
+    });
+
+    // Return job status with pagination metadata
     return NextResponse.json({
       jobId: job.jobId,
       status: job.status,
       progress: job.progress,
-      result: truncatedResult,
+      result: minimalResult,
       createdAt: job.createdAt,
       updatedAt: job.updatedAt,
       expiresAt: job.expiresAt
         ? new Date(job.expiresAt * 1000).toISOString()
         : new Date(new Date(job.createdAt).getTime() + 24 * 60 * 60 * 1000).toISOString(),
+      // Pagination metadata for progressive rendering
+      pagination: {
+        offset,
+        limit,
+        totalImages,
+        returnedImages: minimalImages.length,
+        hasMore: offset + limit < totalImages,
+        nextOffset: offset + limit < totalImages ? offset + limit : null,
+      },
     });
   } catch (error) {
     console.error('Error fetching job status', {

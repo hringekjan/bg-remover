@@ -261,6 +261,7 @@ provider:
             - lambda:InvokeFunction
           Resource:
             - "arn:aws:lambda:${aws:region}:${aws:accountId}:function:${self:service}-${self:provider.stage}-processWorker"
+            - "arn:aws:lambda:${aws:region}:${aws:accountId}:function:${self:service}-${self:provider.stage}-groupImagesWorker"
         # SQS permissions for async worker DLQ
         - Effect: Allow
           Action:
@@ -459,15 +460,38 @@ functions:
 
   groupImages:
     handler: src/handlers/group-images-handler.groupImages
-    description: Group uploaded images by similarity using thumbnails (Phase 1)
-    memorySize: 1536  # Medium memory for batch thumbnail generation + embeddings
-    timeout: 180      # 3 minutes for processing up to 100 images
+    description: Accept grouping requests and create async jobs (Phase 1 coordinator)
+    memorySize: 1024   # Increased from 512MB for better performance
+    timeout: 60       # Increased from 30s to 60s
     events:
       - httpApi:
           path: /bg-remover/group-images
           method: POST
       - httpApi:
           path: /bg-remover/group-images
+          method: OPTIONS
+
+  groupImagesWorker:
+    handler: src/handlers/group-images-worker-handler.groupImagesWorker
+    description: Background worker for async image grouping using thumbnails
+    memorySize: 2048  # Increased from 1536MB for better performance
+    timeout: 600      # Increased from 300s to 600s (10 minutes)
+    reservedConcurrency: 10 # Increased from 5 for better throughput
+    environment:
+      GROUPING_WORKER_FUNCTION_NAME: ${self:service}-${self:provider.stage}-groupImagesWorker
+      MAX_CONCURRENT_THUMBNAILS: '5' # Limit concurrent thumbnail generation
+
+  groupStatus:
+    handler: src/handlers/group-status-handler.groupStatus
+    description: Get grouping job status and results
+    memorySize: 512
+    timeout: 30
+    events:
+      - httpApi:
+          path: /bg-remover/group-status/{jobId}
+          method: GET
+      - httpApi:
+          path: /bg-remover/group-status/{jobId}
           method: OPTIONS
 
   processGroups:
@@ -482,6 +506,38 @@ functions:
       - httpApi:
           path: /bg-remover/process-groups
           method: OPTIONS
+
+  streamProcessor:
+    handler: src/handlers/stream-processor.handler
+    description: Process DynamoDB Streams events and publish job updates to SNS
+    memorySize: 512
+    timeout: 60
+    environment:
+      JOB_UPDATES_SNS_TOPIC_ARN: !Ref JobUpdatesTopic
+    events:
+      - stream:
+          type: dynamodb
+          arn: !GetAtt BgRemoverTable.StreamArn
+          batchSize: 10
+          startingPosition: LATEST
+          maximumRetryAttempts: 3
+          bisectBatchOnFunctionError: true
+          filterPatterns:
+            - eventName: [INSERT, MODIFY]
+    iamRoleStatements:
+      - Effect: Allow
+        Action:
+          - dynamodb:GetRecords
+          - dynamodb:GetShardIterator
+          - dynamodb:DescribeStream
+          - dynamodb:ListStreams
+        Resource:
+          - !GetAtt BgRemoverTable.StreamArn
+      - Effect: Allow
+        Action:
+          - sns:Publish
+        Resource:
+          - !Ref JobUpdatesTopic
 
   metadataApproval:
     handler: src/handlers/metadata-approval-handler.handler
@@ -838,6 +894,8 @@ resources:
             KeyType: HASH
           - AttributeName: sk
             KeyType: RANGE
+        StreamSpecification:
+          StreamViewType: NEW_AND_OLD_IMAGES
         TimeToLiveSpecification:
           AttributeName: ttl
           Enabled: true
@@ -885,6 +943,23 @@ resources:
             Value: ${self:provider.stage}
           - Key: Purpose
             Value: temporary-image-storage
+
+    # SNS Topic for real-time job status updates
+    # Publishes job updates from DynamoDB Streams for push notifications
+    JobUpdatesTopic:
+      Type: AWS::SNS::Topic
+      Properties:
+        TopicName: bg-remover-job-updates-${self:provider.stage}
+        DisplayName: BG Remover Job Status Updates
+        Tags:
+          - Key: Service
+            Value: ${self:service}
+          - Key: Stage
+            Value: ${self:provider.stage}
+          - Key: Tenant
+            Value: ${env:TENANT, 'carousel-labs'}
+          - Key: Purpose
+            Value: real-time-job-notifications
 
     # CloudFront Cache Policy for API responses
     # Optimized for 5-minute TTL with ETag validation

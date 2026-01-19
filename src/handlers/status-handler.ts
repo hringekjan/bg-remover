@@ -118,6 +118,10 @@ export class StatusHandler extends BaseHandler {
       event.headers?.['x-job-token'] ||
       event.headers?.['X-Job-Token'];
 
+    // 🔧 FIX: Extract pagination parameters for progressive rendering
+    const offset = Math.max(0, parseInt(event.queryStringParameters?.offset || '0', 10));
+    const limit = Math.min(50, Math.max(1, parseInt(event.queryStringParameters?.limit || '10', 10)));
+
     // ===== TENANT RESOLUTION (BEFORE AUTH) =====
     let tenant: string;
     let authResult = { isValid: false, userId: undefined as string | undefined, error: undefined as string | undefined };
@@ -238,7 +242,7 @@ export class StatusHandler extends BaseHandler {
     });
 
     if (httpMethod === 'GET') {
-      return this.getJobStatus(tenant, jobId, authResult.userId, corsHeaders);
+      return this.getJobStatus(tenant, jobId, authResult.userId, corsHeaders, offset, limit);
     } else if (httpMethod === 'DELETE') {
       return this.cancelJob(tenant, jobId, authResult.userId, corsHeaders);
     } else {
@@ -253,7 +257,9 @@ export class StatusHandler extends BaseHandler {
     tenant: string,
     jobId: string,
     userId: string | undefined,
-    corsHeaders: Record<string, string>
+    corsHeaders: Record<string, string>,
+    offset: number = 0,
+    limit: number = 10
   ): Promise<any> {
     const pk = `TENANT#${tenant}#BG_REMOVER_JOB#${jobId}`;
     const sk = 'METADATA';
@@ -329,21 +335,58 @@ export class StatusHandler extends BaseHandler {
       if (job.status === 'completed') {
         response.outputUrl = await resolveOutputUrl(tenant, stage, job.outputKey, job.outputUrl);
         response.processingTimeMs = job.processingTimeMs;
-        response.metadata = job.metadata;
-        response.productDescription = job.productDescription;
-        response.multilingualDescription = job.multilingualDescription;
-        response.bilingualDescription = job.bilingualDescription;
+        // 🔧 FIX: Strip metadata and description fields to prevent 413 Content Too Large
+        // These fields can contain large nested objects or bilingual content (200KB+)
+        // Clients can request full metadata via separate endpoint if needed
+        // response.metadata = job.metadata;
+        // response.productDescription = job.productDescription;
+        // response.multilingualDescription = job.multilingualDescription;
+        // response.bilingualDescription = job.bilingualDescription;
         response.completedAt = job.completedAt;
 
-        // For batch jobs, include processed images
+        // For batch jobs, include processed images with pagination
+        // 🔧 FIX: Return minimal payload with pagination to prevent 413 Content Too Large
         if (job.processedImages) {
+          const allImages = job.processedImages;
+          const totalImages = allImages.length;
+
+          // Slice images based on pagination params
+          const paginatedImages = allImages.slice(offset, offset + limit);
+
+          // Return minimal fields for paginated subset
           response.processedImages = await Promise.all(
-            job.processedImages.map(async (img: any) => {
+            paginatedImages.map(async (img: any) => {
               const resolvedUrl = await resolveOutputUrl(tenant, stage, img.outputKey, img.outputUrl);
-              const { outputUrl: _ignored, ...rest } = img || {};
-              return resolvedUrl ? { ...rest, outputUrl: resolvedUrl } : rest;
+              // Return ONLY minimal fields - strip description to prevent 413 error
+              return {
+                imageId: img.imageId,
+                processedUrl: resolvedUrl || img.outputUrl,
+                width: img.width || img.metadata?.width,
+                height: img.height || img.metadata?.height,
+                status: img.status,
+                processingTimeMs: img.processingTimeMs || img.metadata?.processingTimeMs || 0,
+              };
             })
           );
+
+          // Add pagination metadata for progressive rendering
+          response.pagination = {
+            offset,
+            limit,
+            totalImages,
+            returnedImages: paginatedImages.length,
+            hasMore: offset + limit < totalImages,
+            nextOffset: offset + limit < totalImages ? offset + limit : null,
+          };
+
+          console.info('Job status pagination', {
+            jobId,
+            totalImages,
+            offset,
+            limit,
+            returnedImages: paginatedImages.length,
+            hasMore: offset + limit < totalImages,
+          });
         }
       } else if (job.status === 'failed') {
         response.error = job.error;

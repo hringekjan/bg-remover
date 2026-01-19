@@ -18,6 +18,35 @@ const s3Client = new S3Client({});
 const tableName = process.env.DYNAMODB_TABLE || `carousel-main-${process.env.STAGE || 'dev'}`;
 const workerFunctionName = process.env.WORKER_FUNCTION_NAME!;
 
+/**
+ * Simple semaphore for concurrency control
+ */
+class Semaphore {
+  private permits: number;
+  private waitQueue: (() => void)[] = [];
+
+  constructor(permits: number) {
+    this.permits = permits;
+  }
+
+  async acquire(): Promise<void> {
+    if (this.permits > 0) {
+      this.permits--;
+      return;
+    }
+    return new Promise<void>(resolve => this.waitQueue.push(resolve));
+  }
+
+  release(): void {
+    this.permits++;
+    if (this.waitQueue.length > 0) {
+      const resolve = this.waitQueue.shift()!;
+      this.permits--;
+      resolve();
+    }
+  }
+}
+
 // Validate TEMP_IMAGES_BUCKET environment variable
 const tempImagesBucket = process.env.TEMP_IMAGES_BUCKET;
 if (!tempImagesBucket) {
@@ -56,6 +85,28 @@ export class ProcessGroupsHandler extends BaseHandler {
 
   protected internalError(error: any): any {
     return this.createErrorResponse(error.message || 'Internal Server Error', 500, error);
+  }
+
+  /**
+   * Execute async tasks with concurrency limit using Promise.allSettled for error handling
+   */
+  private async executeWithConcurrencyLimit<T>(
+    tasks: (() => Promise<T>)[],
+    limit: number
+  ): Promise<PromiseSettledResult<T>[]> {
+    const semaphore = new Semaphore(limit);
+    const promises = tasks.map(async (task) => {
+      await semaphore.acquire();
+      try {
+        const value = await task();
+        return { status: 'fulfilled' as const, value };
+      } catch (reason) {
+        return { status: 'rejected' as const, reason };
+      } finally {
+        semaphore.release();
+      }
+    });
+    return Promise.all(promises);
   }
 
   async handle(event: any): Promise<any> {
@@ -137,10 +188,8 @@ export class ProcessGroupsHandler extends BaseHandler {
         tenant,
       });
 
-      // Create jobs for each group and invoke workers asynchronously
-      const jobs = [];
-
-      for (const group of groups) {
+      // Create jobs for each group with concurrent processing limited to 5 groups
+      const groupTasks = groups.map(group => async (): Promise<any> => {
         const jobId = randomUUID();
         const groupImages = group.imageIds
           .map(imageId => originalImages[imageId])
@@ -151,7 +200,7 @@ export class ProcessGroupsHandler extends BaseHandler {
             groupId: group.groupId,
             requestedImageIds: group.imageIds,
           });
-          continue;
+          return null;
         }
 
         console.log('[ProcessGroups] Creating job for group', {
@@ -168,7 +217,7 @@ export class ProcessGroupsHandler extends BaseHandler {
           groupId: group.groupId,
         });
 
-        // Use Promise.allSettled for fault tolerance
+        // Use Promise.allSettled for fault tolerance within group
         const uploadResults = await Promise.allSettled(
           groupImages.map((base64, index) =>
             this.uploadImageToS3(
@@ -198,7 +247,7 @@ export class ProcessGroupsHandler extends BaseHandler {
           }
         });
 
-        // If all uploads failed, update job status and continue to next group
+        // If all uploads failed, update job status and skip this group
         if (s3ImageKeys.length === 0) {
           console.error('[ProcessGroups] All images failed to upload for group', {
             jobId,
@@ -227,7 +276,7 @@ export class ProcessGroupsHandler extends BaseHandler {
             continuationToken: null,
             resumable: true,
           });
-          continue; // Skip this group, try next one
+          return null;
         }
 
         // If some uploads failed, log warning but continue with partial set
@@ -328,7 +377,7 @@ export class ProcessGroupsHandler extends BaseHandler {
             functionName: workerFunctionName,
           });
 
-          jobs.push({
+          return {
             jobId,
             groupId: group.groupId,
             status: 'pending',
@@ -338,7 +387,7 @@ export class ProcessGroupsHandler extends BaseHandler {
               jobId,
               tenant,
             }),
-          });
+          };
         } catch (error) {
           console.error('[ProcessGroups] Failed to invoke worker', {
             jobId,
@@ -350,8 +399,28 @@ export class ProcessGroupsHandler extends BaseHandler {
           await this.updateJobStatus(tenant, jobId, 'failed', {
             error: 'Failed to start processing',
           });
+          return null;
         }
-      }
+      });
+
+      // Execute group tasks with concurrency limit of 5
+      const groupResults = await this.executeWithConcurrencyLimit(groupTasks, 5);
+
+      // Collect successful jobs and log failed groups
+      const jobs: any[] = [];
+      groupResults.forEach((result, index) => {
+        if (result.status === 'fulfilled') {
+          if (result.value) {
+            jobs.push(result.value);
+          }
+        } else {
+          console.error('[ProcessGroups] Group processing failed', {
+            groupIndex: index,
+            groupId: groups[index].groupId,
+            error: result.reason instanceof Error ? result.reason.message : String(result.reason),
+          });
+        }
+      });
 
       if (jobs.length === 0) {
         return this.badRequest({
@@ -360,16 +429,22 @@ export class ProcessGroupsHandler extends BaseHandler {
         });
       }
 
-      return this.success({
-        jobs,
-        summary: {
-          totalGroups: groups.length,
-          jobsCreated: jobs.length,
-          pipeline: pipelineName,
+      return this.createJsonResponse(
+        {
+          jobs,
+          summary: {
+            totalGroups: groups.length,
+            jobsCreated: jobs.length,
+            pipeline: pipelineName,
+          },
+          statusEndpoint: `/bg-remover/status/{jobId}`,
+          requestId,
         },
-        statusEndpoint: `/bg-remover/status/{jobId}`,
-        requestId,
-      });
+        200, // Status code
+        {
+          'Cache-Control': 'no-store, no-cache, must-revalidate',
+        }
+      );
     } catch (error) {
       console.error('[ProcessGroups] Request failed', {
         error: error instanceof Error ? error.message : String(error),

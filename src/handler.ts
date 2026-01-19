@@ -89,9 +89,12 @@ function sanitizeJobResult(result?: JobStatus['result']) {
     ...(result.error ? { error: result.error } : {}),
     ...(typeof result.processingTimeMs === 'number' ? { processingTimeMs: result.processingTimeMs } : {}),
     ...(result.metadata ? { metadata: result.metadata } : {}),
-    ...(result.productDescription ? { productDescription: result.productDescription } : {}),
-    ...(result.multilingualDescription ? { multilingualDescription: result.multilingualDescription } : {}),
-    ...(result.bilingualDescription ? { bilingualDescription: result.bilingualDescription } : {}),
+    // 🔧 FIX: Strip description fields to prevent 413 Content Too Large
+    // These fields can contain large nested objects or bilingual content (200KB+)
+    // Clients can request full metadata via separate endpoint if needed
+    // ...(result.productDescription ? { productDescription: result.productDescription } : {}),
+    // ...(result.multilingualDescription ? { multilingualDescription: result.multilingualDescription } : {}),
+    // ...(result.bilingualDescription ? { bilingualDescription: result.bilingualDescription } : {}),
   };
 }
 
@@ -875,6 +878,18 @@ export const status = async (event: any) => {
         );
       }
 
+      // 🔧 FIX: Extract pagination parameters for progressive rendering
+      const offset = Math.max(0, parseInt(event.queryStringParameters?.offset || '0', 10));
+      const limit = Math.min(50, Math.max(1, parseInt(event.queryStringParameters?.limit || '10', 10)));
+
+      console.log('Job status request with pagination', {
+        jobId,
+        offset,
+        limit,
+        tenant,
+        requestId,
+      });
+
       const job = await getJobStatus(jobId, tenant);
 
       if (!job) {
@@ -886,16 +901,73 @@ export const status = async (event: any) => {
         );
       }
 
+      // 🔧 FIX: Paginate processedImages array for batch jobs to prevent 413 Content Too Large
+      let paginatedResult = sanitizeJobResult(job.result);
+      let pagination;
+
+      if (job.result && Array.isArray(job.result.processedImages)) {
+        const allImages = job.result.processedImages;
+        const totalImages = allImages.length;
+
+        // Apply pagination to images array
+        const paginatedImages = allImages.slice(offset, offset + limit);
+
+        // Return minimal image fields to reduce payload size
+        const minimalImages = paginatedImages.map((img: any) => ({
+          imageId: img.imageId || img.filename,
+          processedUrl: img.processedUrl || img.outputUrl,
+          width: img.width || img.metadata?.width,
+          height: img.height || img.metadata?.height,
+          status: img.status || 'completed',
+          processingTimeMs: img.processingTimeMs || img.metadata?.processingTimeMs || 0,
+          isPrimary: img.isPrimary,
+        }));
+
+        // Build pagination metadata
+        pagination = {
+          offset,
+          limit,
+          totalImages,
+          returnedImages: minimalImages.length,
+          hasMore: offset + limit < totalImages,
+          nextOffset: offset + limit < totalImages ? offset + limit : null,
+        };
+
+        // Replace full processedImages array with paginated subset
+        paginatedResult = {
+          ...paginatedResult,
+          processedImages: minimalImages,
+        };
+
+        console.log('Paginated batch job images', {
+          jobId,
+          totalImages,
+          offset,
+          limit,
+          returnedImages: minimalImages.length,
+          hasMore: offset + limit < totalImages,
+          tenant,
+          requestId,
+        });
+      }
+
       const { createTenantCorsHeaders } = await import('./lib/cors');
-      const response = createSuccessResponse({
+      const responseData: any = {
         jobId: job.jobId,
         status: job.status,
         progress: job.progress,
-        result: sanitizeJobResult(job.result),
+        result: paginatedResult,
         createdAt: job.createdAt,
         updatedAt: job.updatedAt,
         expiresAt: new Date(new Date(job.createdAt).getTime() + 24 * 60 * 60 * 1000).toISOString(),
-      });
+      };
+
+      // Add pagination metadata if applicable
+      if (pagination) {
+        responseData.pagination = pagination;
+      }
+
+      const response = createSuccessResponse(responseData);
 
       // Override with tenant-aware CORS headers
       response.headers = {

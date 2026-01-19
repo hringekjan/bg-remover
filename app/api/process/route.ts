@@ -588,13 +588,60 @@ export async function POST(request: NextRequest): Promise<NextResponse<ProcessRe
   }
 }
 
+/**
+ * GET handler - Returns helpful error for wrong endpoint usage
+ *
+ * This endpoint only supports POST for image processing.
+ * If client is looking for job status, they should use /api/status/[jobId]
+ */
+export async function GET(request: NextRequest): Promise<NextResponse> {
+  const { searchParams } = new URL(request.url);
+  const jobId = searchParams.get('jobId');
+
+  // Log warning to help debug routing issues
+  console.warn('[BG-Remover] Wrong endpoint usage detected', {
+    method: 'GET',
+    url: request.url,
+    jobId,
+    correctEndpoint: jobId ? `/api/bg-remover/status/${jobId}` : '/api/bg-remover/status/[jobId]',
+    userAgent: request.headers.get('user-agent'),
+  });
+
+  // Return helpful error message
+  if (jobId) {
+    return NextResponse.json(
+      {
+        error: 'Wrong endpoint for job status',
+        message: `This endpoint (GET /api/process) does not support job status queries. To check job status, use GET /api/status/${jobId} instead.`,
+        correctUrl: `/api/bg-remover/status/${jobId}`,
+        jobId,
+      },
+      {
+        status: 404,
+        headers: {
+          'X-Correct-Endpoint': `/api/bg-remover/status/${jobId}`,
+        },
+      }
+    );
+  }
+
+  return NextResponse.json(
+    {
+      error: 'Method not allowed',
+      message: 'This endpoint only supports POST for image processing. For job status, use GET /api/status/[jobId]',
+      supportedMethods: ['POST', 'OPTIONS'],
+    },
+    { status: 405 }
+  );
+}
+
 // OPTIONS for CORS preflight
 export async function OPTIONS(): Promise<NextResponse> {
   return new NextResponse(null, {
     status: 200,
     headers: {
       'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'POST, OPTIONS',
+      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
       'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Tenant-Id',
     },
   });

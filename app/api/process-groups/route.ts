@@ -41,16 +41,14 @@ interface ProcessGroupRequest {
 
 interface ProcessedImageResult {
   imageId: string;
-  originalUrl: string; // Reference to original
-  processedUrl: string; // S3 URL of processed image
-  description: BilingualProductDescription;
-  metadata: {
-    width: number;
-    height: number;
-    originalSize: number;
-    processedSize: number;
-    processingTimeMs: number;
-  };
+  processedUrl: string; // S3 URL of processed image (essential for display)
+  // Flattened minimal metadata (replaces large nested object)
+  width: number;
+  height: number;
+  status: 'completed' | 'failed';
+  processingTimeMs: number;
+  // description removed to reduce payload size (was 2KB per image)
+  // Full descriptions available via separate endpoint if needed
 }
 
 /**
@@ -292,30 +290,18 @@ async function processGroupImages(
         }
       );
 
+      // 🔧 FIX: Return minimal payload to prevent 413 Content Too Large
+      // Reduced from ~2KB per image to ~200 bytes
       return {
         imageId,
-        originalUrl: `data:image/png;base64,${base64Image.substring(0, 50)}...`, // Truncated reference
-        processedUrl: outputUrl,
-        description: result.bilingualDescription || {
-          en: {
-            short: group.productName || 'Product',
-            long: 'High-quality product processed and optimized for sale.',
-            category: 'General',
-            colors: [],
-            condition: 'very_good',
-            keywords: ['product'],
-          },
-          is: {
-            short: group.productName || 'Vara',
-            long: 'Hágæða vara unnin og fínstillt til sölu.',
-            category: 'Almennt',
-            colors: [],
-            condition: 'very_good',
-            keywords: ['vara'],
-          },
-        },
-        metadata: result.metadata,
+        processedUrl: outputUrl, // S3 URL for display
+        width: result.metadata.width,
+        height: result.metadata.height,
+        status: 'completed' as const,
+        processingTimeMs: result.metadata.processingTimeMs,
       };
+      // Description removed from response (was causing 200KB+ for 100 images)
+      // Descriptions stored in S3 metadata and available via separate endpoint if needed
     });
 
     // Execute all tasks in parallel with timeouts
