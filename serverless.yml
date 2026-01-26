@@ -104,6 +104,10 @@ provider:
     EMBEDDINGS_MAX_CONCURRENT: '5'        # Max parallel batch requests
     EMBEDDINGS_RETRY_ATTEMPTS: '3'        # Retry failed S3 calls
     EMBEDDINGS_RETRY_DELAY_MS: '1000'     # Initial retry delay
+
+    # Event Tracking Table (observability metrics)
+    EVENT_TRACKING_TABLE: event-tracking-${sls:stage}
+
   iam:
     role:
       statements:
@@ -166,7 +170,7 @@ provider:
             - "arn:aws:bedrock:us-east-1::foundation-model/us.amazon.nova-pro-v1:0"
             - "arn:aws:bedrock:us-east-1::foundation-model/amazon.nova-canvas-v1:0"
         # Bedrock Titan Embeddings for product image embeddings
-        # Used by pricing calculator and smartgo exporter
+        # Used by pricing calculator
         - Effect: Allow
           Action:
             - bedrock:InvokeModel
@@ -255,6 +259,15 @@ provider:
           Resource:
             - "arn:aws:dynamodb:${aws:region}:${aws:accountId}:table/${self:service}-${self:provider.stage}-sales-intelligence"
             - "arn:aws:dynamodb:${aws:region}:${aws:accountId}:table/${self:service}-${self:provider.stage}-sales-intelligence/index/*"
+        # Event tracking metrics table permissions (observability)
+        - Effect: Allow
+          Action:
+            - dynamodb:PutItem
+            - dynamodb:Query
+            - dynamodb:GetItem
+          Resource:
+            - "arn:aws:dynamodb:${aws:region}:${aws:accountId}:table/event-tracking-${self:provider.stage}"
+            - "arn:aws:dynamodb:${aws:region}:${aws:accountId}:table/event-tracking-${self:provider.stage}/index/*"
         # Lambda Invoke permissions (for async job pattern)
         - Effect: Allow
           Action:
@@ -263,6 +276,7 @@ provider:
             - "arn:aws:lambda:${aws:region}:${aws:accountId}:function:${self:service}-${self:provider.stage}-processWorker"
             - "arn:aws:lambda:${aws:region}:${aws:accountId}:function:${self:service}-${self:provider.stage}-groupImagesWorker"
         # SQS permissions for async worker DLQ
+
         - Effect: Allow
           Action:
             - sqs:SendMessage
@@ -390,6 +404,19 @@ functions:
           path: /bg-remover/metrics
           method: OPTIONS
 
+  eventStats:
+    handler: src/handlers/event-stats.handler.handler
+    description: Event tracking statistics endpoint (observability)
+    memorySize: 256
+    timeout: 30
+    events:
+      - httpApi:
+          path: /bg-remover/stats
+          method: GET
+      - httpApi:
+          path: /bg-remover/stats
+          method: OPTIONS
+
   process:
     handler: src/handler.process
     description: Accept image processing jobs (async coordinator)
@@ -471,6 +498,19 @@ functions:
           path: /bg-remover/group-images
           method: OPTIONS
 
+  uploadUrls:
+    handler: src/handlers/upload-urls-handler.uploadUrls
+    description: Generate pre-signed S3 upload URLs for temp image storage
+    memorySize: 512
+    timeout: 30
+    events:
+      - httpApi:
+          path: /bg-remover/upload-urls
+          method: POST
+      - httpApi:
+          path: /bg-remover/upload-urls
+          method: OPTIONS
+
   groupImagesWorker:
     handler: src/handlers/group-images-worker-handler.groupImagesWorker
     description: Background worker for async image grouping using thumbnails
@@ -480,6 +520,7 @@ functions:
     environment:
       GROUPING_WORKER_FUNCTION_NAME: ${self:service}-${self:provider.stage}-groupImagesWorker
       MAX_CONCURRENT_THUMBNAILS: '5' # Limit concurrent thumbnail generation
+      BEDROCK_REGION: us-east-1  # Titan embeddings only available in us-east-1
 
   groupStatus:
     handler: src/handlers/group-status-handler.groupStatus
@@ -755,53 +796,6 @@ functions:
           - sns:Publish
         Resource:
           - !Ref DataValidationAlertTopic
-
-  smartgoToS3Exporter:
-    handler: src/handlers/smartgo-to-s3-exporter.handler
-    description: Daily batch export of SmartGo sales to S3 Tables with Titan embeddings
-    memorySize: 1024
-    timeout: 900  # 15 minutes for batch processing
-    environment:
-      STAGE: ${self:provider.stage}
-      TENANT: ${env:TENANT, 'carousel-labs'}
-      EXPORT_PROGRESS_TABLE_NAME: ${self:service}-${self:provider.stage}-smartgo-export-progress
-    events:
-      - schedule:
-          rate: cron(0 3 * * ? *)  # Daily at 3 AM UTC
-          description: Daily SmartGo sales export to S3 Tables
-          enabled: true
-    iamRoleStatements:
-      # SSM Parameter Store access for SmartGo database configuration
-      - Effect: Allow
-        Action:
-          - ssm:GetParameter
-          - ssm:GetParameters
-        Resource:
-          - "arn:aws:ssm:${aws:region}:${aws:accountId}:parameter/tf/${self:provider.stage}/smartgo/database/*"
-      # Bedrock Titan Embeddings (us-east-1 only)
-      - Effect: Allow
-        Action:
-          - bedrock:InvokeModel
-        Resource:
-          - "arn:aws:bedrock:us-east-1::foundation-model/amazon.titan-embed-image-v1"
-      # S3 access for analytics bucket
-      - Effect: Allow
-        Action:
-          - s3:PutObject
-          - s3:GetObject
-        Resource:
-          - "arn:aws:s3:::carousel-${self:provider.stage}-analytics/pricing-intelligence/smartgo_sales/*"
-          - "arn:aws:s3:::carousel-${self:provider.stage}-analytics/images/smartgo/*"
-      # DynamoDB access for progress tracking
-      - Effect: Allow
-        Action:
-          - dynamodb:PutItem
-          - dynamodb:GetItem
-          - dynamodb:UpdateItem
-          - dynamodb:Query
-        Resource:
-          - "arn:aws:dynamodb:${aws:region}:${aws:accountId}:table/${self:service}-${self:provider.stage}-smartgo-export-progress"
-          - "arn:aws:dynamodb:${aws:region}:${aws:accountId}:table/${self:service}-${self:provider.stage}-smartgo-export-progress/index/*"
 
   # Re-enabled: Using AWS Lambda Powertools layer to reduce package size
   # Minimal package: only classifier_handler.py + requests (~5MB total)
@@ -1160,34 +1154,6 @@ resources:
           - Key: Purpose
             Value: event-deduplication
 
-    # SmartGo Export Progress Table - tracks daily export progress
-    # Used by smartgoToS3Exporter for observability and monitoring
-    SmartGoExportProgressTable:
-      Type: AWS::DynamoDB::Table
-      Properties:
-        TableName: ${self:service}-${self:provider.stage}-smartgo-export-progress
-        BillingMode: PAY_PER_REQUEST
-        AttributeDefinitions:
-          - AttributeName: PK
-            AttributeType: S
-          - AttributeName: SK
-            AttributeType: S
-        KeySchema:
-          - AttributeName: PK
-            KeyType: HASH
-          - AttributeName: SK
-            KeyType: RANGE
-        TimeToLiveSpecification:
-          AttributeName: ttl
-          Enabled: true
-        Tags:
-          - Key: Service
-            Value: ${self:service}
-          - Key: Stage
-            Value: ${self:provider.stage}
-          - Key: Purpose
-            Value: smartgo-export-tracking
-
     # Dead Letter Queue for carousel sync failures
     CarouselSyncDLQ:
       Type: AWS::SQS::Queue
@@ -1247,5 +1213,3 @@ resources:
             Value: ${self:provider.stage}
           - Key: Purpose
             Value: analytics-data-lake
-
-  extensions: {} # From base.yml
