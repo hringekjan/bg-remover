@@ -1,4 +1,5 @@
-import { DynamoDBClient, UpdateItemCommand } from '@aws-sdk/client-dynamodb';
+import { DynamoDBClient, UpdateItemCommand, PutItemCommand } from '@aws-sdk/client-dynamodb';
+import { NodeHttpHandler } from '@smithy/node-http-handler';
 import { marshall } from '@aws-sdk/util-dynamodb';
 import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
 import { BaseHandler } from './base-handler';
@@ -21,9 +22,29 @@ import { EventBridgeClient, PutEventsCommand } from '@aws-sdk/client-eventbridge
 import { refundCredits } from '../lib/credits/client';
 import { multilingualDescriptionGenerator } from '../lib/multilingual-description';
 import { bgRemoverTelemetry, calculateBgRemoverCost } from '../lib/telemetry/bg-remover-telemetry';
+import { addProductsToBooking, createProductInCarouselApi, type CreateProductRequest } from '../../lib/carousel-api/client';
+import { EventTracker } from '../lib/event-tracking';
 
-const dynamoDB = new DynamoDBClient({});
-const s3Client = new S3Client({});
+const dynamoDB = new DynamoDBClient({
+  requestHandler: new NodeHttpHandler({
+    connectionTimeout: 5000,
+    requestTimeout: 10000,
+  }),
+});
+const eventTracker = new EventTracker(dynamoDB);
+const s3Client = new S3Client({
+  requestHandler: new NodeHttpHandler({
+    connectionTimeout: 10000,
+    requestTimeout: 30000,
+  }),
+});
+const eventBridgeClient = new EventBridgeClient({ 
+  region: process.env.AWS_REGION || 'eu-west-1',
+  requestHandler: new NodeHttpHandler({
+    connectionTimeout: 5000,
+    requestTimeout: 10000,
+  }),
+});
 const tableName = process.env.DYNAMODB_TABLE || `carousel-main-${process.env.STAGE || 'dev'}`;
 
 interface JobPayload {
@@ -39,6 +60,9 @@ interface GroupProcessingPayload {
   jobId: string;
   tenant: string;
   stage: string;
+  userId: string;
+  authToken?: string;
+  bookingId?: string;
   groupId: string;
   images: Array<{
     imageBase64?: string;      // Legacy: direct base64 data
@@ -394,7 +418,7 @@ export class ProcessWorkerHandler extends BaseHandler {
    * 4. Update job status with product creation result
    */
   private async handleGroupProcessing(payload: GroupProcessingPayload): Promise<any> {
-    const { jobId, tenant, groupId, images, productName, pipeline, processingOptions, stage, groupContext } = payload;
+    const { jobId, tenant, groupId, images, productName, pipeline, processingOptions, stage, groupContext, userId, bookingId, authToken } = payload;
 
     console.log('[Worker] Processing group', {
       jobId,
@@ -590,12 +614,15 @@ export class ProcessWorkerHandler extends BaseHandler {
       }
 
       // Separate processed images and descriptions
-      const processedImages = processedResults.map(result => ({
-        filename: result.filename,
-        outputUrl: result.outputUrl,
-        isPrimary: result.isPrimary,
-        metadata: result.metadata,
-      }));
+      // Filter out null results from failed images before mapping
+      const processedImages = processedResults
+        .filter(result => result !== null)
+        .map(result => ({
+          filename: result.filename,
+          outputUrl: result.outputUrl,
+          isPrimary: result.isPrimary,
+          metadata: result.metadata,
+        }));
 
       const imageResults = processedResults
         .filter(result => result.isPrimary && result.productDescription)
@@ -698,9 +725,49 @@ export class ProcessWorkerHandler extends BaseHandler {
         } : undefined,
       }));
 
-      // TODO: Create product in carousel-api with all processed images
-      // This would involve calling the carousel-api service to create the product
-      // For now, we'll just update the job status with the processed images
+      let createdProductId: string | undefined;
+      if (userId && processedImages.length > 0) {
+        const primaryDescription = multilingualDescription?.en || imageResults[0]?.productDescription;
+        const descriptionText = primaryDescription?.long || primaryDescription?.short;
+        const priceSuggestion = groupPricing?.suggested || primaryDescription?.priceSuggestion?.suggested;
+
+        const productData: CreateProductRequest = {
+          title: productName || `Product ${groupId}`,
+          description: descriptionText,
+          price: priceSuggestion,
+          category: groupContext?.category || primaryDescription?.category,
+          images: processedImages.map((img) => img.outputUrl).filter(Boolean),
+        };
+
+        const { product, error } = await createProductInCarouselApi(tenant, userId, productData, authToken);
+        if (error || !product) {
+          console.warn('[Worker] Failed to create product in carousel-api', {
+            jobId,
+            groupId,
+            error: error || 'Unknown error',
+          });
+        } else {
+          createdProductId = product.id;
+          console.info('[Worker] Created product in carousel-api', {
+            jobId,
+            groupId,
+            productId: createdProductId,
+          });
+        }
+      }
+
+      if (createdProductId && bookingId) {
+        const { error } = await addProductsToBooking(tenant, userId, bookingId, [createdProductId], authToken);
+        if (error) {
+          console.warn('[Worker] Failed to attach product to booking', {
+            jobId,
+            groupId,
+            bookingId,
+            productId: createdProductId,
+            error,
+          });
+        }
+      }
 
       // Calculate final progress
       const finalProgress = {
@@ -722,8 +789,17 @@ export class ProcessWorkerHandler extends BaseHandler {
         progress: finalProgress,
         resumable: true,
         imageCount: processedImages.length,
-        // Don't store large processedImages array in DynamoDB - client can reconstruct from S3
-        // Don't store full images array with potential base64 data
+        // Store minimal processedImages array (URLs only, no large metadata)
+        // Frontend needs this to display results after job completion
+        processedImages: processedImages.map(img => ({
+          imageId: img.imageId,
+          outputUrl: img.outputUrl,
+          outputKey: img.outputKey,
+          status: 'completed',
+          width: img.width || img.metadata?.width,
+          height: img.height || img.metadata?.height,
+          processingTimeMs: img.processingTimeMs || img.metadata?.processingTimeMs || 0,
+        })),
       });
 
       // Record batch telemetry with concurrency metrics
@@ -964,7 +1040,7 @@ export class ProcessWorkerHandler extends BaseHandler {
 
       // Emit CarouselImageProcessed event
       try {
-        const eventBridge = new EventBridgeClient({ region: this.context.region });
+        const eventBridge = eventBridgeClient;
         const eventDetail = {
           file_hash: jobId,
           original_filename: imageUrl ? imageUrl.split('/').pop() || 'input.png' : 'input.png',
@@ -1001,7 +1077,7 @@ export class ProcessWorkerHandler extends BaseHandler {
 
       if (generateRatingSuggestion && primaryDescription?.ratingSuggestion) {
         try {
-          const eventBridge = new EventBridgeClient({ region: this.context.region });
+          const eventBridge = eventBridgeClient;
           const ratingEventDetail = {
             ratingId: `ai-rating-${jobId}`,
             productId,
@@ -1084,6 +1160,7 @@ export class ProcessWorkerHandler extends BaseHandler {
           outputFormat: outputFormat || 'png',
         },
       });
+      await eventTracker.recordEvent(tenant, 'BACKGROUND_REMOVED', processingTimeMs);
 
       console.info('Job completed successfully', { jobId, tenant, processingTimeMs });
 
@@ -1111,6 +1188,7 @@ export class ProcessWorkerHandler extends BaseHandler {
           stack: error instanceof Error ? error.stack : undefined,
         },
       });
+      await eventTracker.recordEvent(tenant, 'PROCESSING_FAILED', processingTimeMs, errorMessage);
 
       // Update job status to failed
       await this.updateJobStatus(tenant, jobId, 'failed', {
@@ -1234,7 +1312,7 @@ export class ProcessWorkerHandler extends BaseHandler {
 
   /**
    * Update job status in DynamoDB
-   * Made more robust to prevent jobs getting stuck in processing
+   * Uses UpdateItem for atomic updates to prevent overwriting other metadata
    */
   private async updateJobStatus(
     tenant: string,
@@ -1246,50 +1324,45 @@ export class ProcessWorkerHandler extends BaseHandler {
     const sk = 'METADATA';
 
     try {
-      // Simplify the update to avoid complex expression issues
-      // Only update essential fields to prevent size/expression errors
-      const essentialFields: Record<string, any> = {
-        status,
-        updatedAt: new Date().toISOString(),
+      const updateExpressions: string[] = ['#status = :status', '#updatedAt = :updatedAt'];
+      const expressionAttributeNames: Record<string, string> = {
+        '#status': 'status',
+        '#updatedAt': 'updatedAt',
+      };
+      const expressionAttributeValues: Record<string, any> = {
+        ':status': status,
+        ':updatedAt': new Date().toISOString(),
       };
 
-      // Add only simple additional fields, skip complex/large ones
-      Object.entries(additionalFields).forEach(([key, value]) => {
+      // Map additional fields to update expression
+      Object.entries(additionalFields).forEach(([key, value], index) => {
         if (value === undefined || value === null) return;
 
-        // Skip large objects/arrays that could cause DynamoDB issues
-        if (typeof value === 'object' && value !== null) {
-          if (Array.isArray(value) && value.length > 10) return; // Skip large arrays
-          if (!Array.isArray(value) && Object.keys(value).length > 10) return; // Skip large objects
-        }
-
-        // Skip very long strings
-        if (typeof value === 'string' && value.length > 1000) return;
-
-        essentialFields[key] = value;
+        const attrName = `#field${index}`;
+        const valName = `:val${index}`;
+        
+        expressionAttributeNames[attrName] = key;
+        expressionAttributeValues[valName] = value;
+        updateExpressions.push(`${attrName} = ${valName}`);
       });
 
-      await dynamoDB.send(new PutItemCommand({
+      await dynamoDB.send(new UpdateItemCommand({
         TableName: tableName,
-        Item: marshall({
-          PK: pk,
-          SK: sk,
-          ...essentialFields,
-          ttl: Math.floor(Date.now() / 1000) + 86400 * 7, // 7 days retention
-        }),
+        Key: marshall({ PK: pk, SK: sk }),
+        UpdateExpression: `SET ${updateExpressions.join(', ')}`,
+        ExpressionAttributeNames: expressionAttributeNames,
+        ExpressionAttributeValues: marshall(expressionAttributeValues, { removeUndefinedValues: true }),
       }));
 
-      console.info('Job status updated', { tenant, jobId, status });
+      console.info('Job status updated atomically', { tenant, jobId, status });
       return true;
     } catch (error) {
-      console.error('Failed to update job status - job may be stuck', {
+      console.error('Failed to update job status atomically', {
         tenant,
         jobId,
         status,
         error: error instanceof Error ? error.message : String(error),
       });
-      // Don't throw - allow processing to continue even if status update fails
-      // This prevents jobs from getting stuck in processing
       return false;
     }
   }
