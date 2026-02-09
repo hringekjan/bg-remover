@@ -1,4 +1,5 @@
 import { DynamoDBClient, GetItemCommand } from '@aws-sdk/client-dynamodb';
+import { NodeHttpHandler } from '@smithy/node-http-handler';
 import { unmarshall } from '@aws-sdk/util-dynamodb';
 import { BaseHandler } from './base-handler';
 import { resolveTenantFromRequest } from '../lib/tenant/resolver';
@@ -7,8 +8,12 @@ import { loadTenantCognitoConfig } from '../lib/tenant/cognito-config';
 import { createTenantCorsHeaders } from '../lib/cors';
 import { extractRequestId } from '../lib/errors';
 import { logSecurityEvent } from '../lib/logger';
-
-const dynamoDB = new DynamoDBClient({});
+const dynamoDB = new DynamoDBClient({
+  requestHandler: new NodeHttpHandler({
+    connectionTimeout: 5000,
+    requestTimeout: 10000,
+  }),
+});
 const tableName = process.env.DYNAMODB_TABLE || `carousel-main-${process.env.STAGE || 'dev'}`;
 
 /**
@@ -29,7 +34,7 @@ export class GroupStatusHandler extends BaseHandler {
     }
   }
 
-  private createCorsHeaders(event: any, tenant: string): Record<string, string> {
+  private buildTenantCorsHeaders(event: any, tenant: string): Record<string, string> {
     const corsHeaders = createTenantCorsHeaders(event, tenant);
     return {
       ...corsHeaders,
@@ -75,7 +80,7 @@ export class GroupStatusHandler extends BaseHandler {
     const httpMethod = event.requestContext?.http?.method || event.httpMethod;
     const stage = this.context.stage;
     const corsTenant = await this.resolveCorsTenant(event, stage);
-    const corsHeaders = this.createCorsHeaders(event, corsTenant);
+    const corsHeaders = this.buildTenantCorsHeaders(event, corsTenant);
     const requestId = extractRequestId(event);
 
     if (httpMethod === 'OPTIONS') {
@@ -109,7 +114,7 @@ export class GroupStatusHandler extends BaseHandler {
       tenant = process.env.TENANT || 'carousel-labs';
     }
 
-    // JWT Authentication
+    // JWT Authentication (required for grouping status)
     const requireAuth = true;
     let cognitoConfig;
     try {
@@ -122,7 +127,11 @@ export class GroupStatusHandler extends BaseHandler {
       });
     }
 
-    authResult = await validateJWTFromEvent(event, cognitoConfig, { required: requireAuth });
+    authResult = await validateJWTFromEvent(event, cognitoConfig, {
+      required: requireAuth,
+      expectedTenant: tenant,
+      enforceTenantMatch: true,
+    });
 
     if (!authResult.isValid && requireAuth) {
       logSecurityEvent('auth_failure', {
@@ -207,6 +216,16 @@ export class GroupStatusHandler extends BaseHandler {
         imageCount: job.imageCount,
         similarityThreshold: job.similarityThreshold,
       };
+
+      // Add images array for per-product progress tracking (all statuses)
+      response.images = job.images?.map((img: any) => ({
+        imageId: img.imageId,
+        status: img.status,
+        progress: img.progress || 0,
+        currentStep: img.currentStep,
+        processedUrl: img.processedUrl,
+        processingTimeMs: img.processingTimeMs,
+      })) || [];
 
       // Add additional fields based on status
       if (job.status === 'completed') {
