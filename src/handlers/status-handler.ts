@@ -57,7 +57,7 @@ export class StatusHandler extends BaseHandler {
     }
   }
 
-  private createCorsHeaders(event: any, tenant: string): Record<string, string> {
+  private buildTenantCorsHeaders(event: any, tenant: string): Record<string, string> {
     const corsHeaders = createTenantCorsHeaders(event, tenant);
     return {
       ...corsHeaders,
@@ -103,7 +103,7 @@ export class StatusHandler extends BaseHandler {
     const httpMethod = event.requestContext?.http?.method || event.httpMethod;
     const stage = this.context.stage;
     const corsTenant = await this.resolveCorsTenant(event, stage);
-    const corsHeaders = this.createCorsHeaders(event, corsTenant);
+    const corsHeaders = this.buildTenantCorsHeaders(event, corsTenant);
     const requestId = extractRequestId(event);
 
     if (httpMethod === 'OPTIONS') {
@@ -120,7 +120,8 @@ export class StatusHandler extends BaseHandler {
 
     // 🔧 FIX: Extract pagination parameters for progressive rendering
     const offset = Math.max(0, parseInt(event.queryStringParameters?.offset || '0', 10));
-    const limit = Math.min(50, Math.max(1, parseInt(event.queryStringParameters?.limit || '10', 10)));
+    // Increase default limit to 50 (max) to return all images in most cases
+    const limit = Math.min(50, Math.max(1, parseInt(event.queryStringParameters?.limit || '50', 10)));
 
     // ===== TENANT RESOLUTION (BEFORE AUTH) =====
     let tenant: string;
@@ -192,7 +193,9 @@ export class StatusHandler extends BaseHandler {
       }
 
       authResult = await validateJWTFromEvent(event, cognitoConfig, {
-        required: requireAuth
+        required: requireAuth,
+        expectedTenant: tenant,
+        enforceTenantMatch: true,
       });
 
       if (!authResult.isValid && requireAuth) {
@@ -353,11 +356,11 @@ export class StatusHandler extends BaseHandler {
           // Slice images based on pagination params
           const paginatedImages = allImages.slice(offset, offset + limit);
 
-          // Return minimal fields for paginated subset
+          // Return essential fields including lightweight metadata
           response.processedImages = await Promise.all(
             paginatedImages.map(async (img: any) => {
               const resolvedUrl = await resolveOutputUrl(tenant, stage, img.outputKey, img.outputUrl);
-              // Return ONLY minimal fields - strip description to prevent 413 error
+              // Return image data + essential metadata (avoiding large description objects)
               return {
                 imageId: img.imageId,
                 processedUrl: resolvedUrl || img.outputUrl,
@@ -365,6 +368,31 @@ export class StatusHandler extends BaseHandler {
                 height: img.height || img.metadata?.height,
                 status: img.status,
                 processingTimeMs: img.processingTimeMs || img.metadata?.processingTimeMs || 0,
+                // Add essential metadata for display (lightweight version to avoid 413)
+                productName: img.productName,
+                bilingualDescription: img.bilingualDescription ? {
+                  en: {
+                    title: img.bilingualDescription.en?.title,
+                    short: img.bilingualDescription.en?.short,
+                  },
+                  is: {
+                    title: img.bilingualDescription.is?.title,
+                    short: img.bilingualDescription.is?.short,
+                  },
+                } : img.multilingualDescription ? {
+                  en: {
+                    title: img.productName,
+                    short: img.multilingualDescription.en?.short,
+                  },
+                  is: {
+                    title: img.productName,
+                    short: img.multilingualDescription.is?.short,
+                  },
+                } : undefined,
+                price: img.groupPricing?.suggested || img.metadata?.price,
+                keywords: img.seoKeywords?.slice(0, 5), // First 5 SEO keywords only
+                category: img.category || img.groupContext?.category,
+                rating: img.predictedRating,
               };
             })
           );
@@ -400,14 +428,30 @@ export class StatusHandler extends BaseHandler {
           response.groupId = job.groupId;
           response.productName = job.productName;
         }
-      } else if (job.status === 'processing') {
-        response.startedAt = job.startedAt;
+      } else if (job.status === 'processing' || job.status === 'pending') {
+        if (job.status === 'processing') {
+          response.startedAt = job.startedAt;
+        }
 
         // For batch jobs, include group information
         if (job.groupId) {
           response.groupId = job.groupId;
           response.productName = job.productName;
           response.pipeline = job.pipeline;
+        }
+
+        // Include detailed image processing status for progress tracking
+        if (job.images && Array.isArray(job.images)) {
+          const mappedImages = job.images.map((img: any) => ({
+            imageId: img.imageId || img.filename,
+            status: img.status,
+            currentStep: img.currentStep,
+            processingTimeMs: img.processingTimeMs,
+            filename: img.filename,
+          }));
+          response.images = mappedImages;
+          // Frontend expects processedImages for consistency with completed status
+          response.processedImages = mappedImages;
         }
       }
 
@@ -528,13 +572,13 @@ export class StatusHandler extends BaseHandler {
       }
 
       // Update job status to cancelled
-      await dynamoDB.send(new UpdateItemCommand({
-        TableName: tableName,
-        Key: {
-          PK: { S: pk },
-          SK: { S: sk },
-        },
-        UpdateExpression: 'SET #status = :status, updatedAt = :updatedAt, cancelledAt = :cancelledAt',
+    await dynamoDB.send(new UpdateItemCommand({
+      TableName: tableName,
+      Key: {
+        PK: { S: pk },
+        SK: { S: sk },
+      },
+      UpdateExpression: 'SET #status = :status, updatedAt = :updatedAt, cancelledAt = :cancelledAt',
         ExpressionAttributeNames: {
           '#status': 'status',
         },
