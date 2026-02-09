@@ -6,15 +6,32 @@ import { resolveTenantFromRequest } from '../lib/tenant/resolver';
 import { loadConfig } from '../lib/config/loader';
 import { getServiceEndpoint } from '../lib/tenant/config';
 import { getModelForTask, PIPELINES } from '../lib/bedrock/model-registry';
+import { createTenantCorsHeaders } from '../lib/cors';
+import { validateJWTFromEvent, getCognitoConfigForTenantAsync } from '../lib/auth/jwt-validator';
+import { issueJobToken } from '../lib/job-token';
 import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
 import { DynamoDBClient, PutItemCommand, UpdateItemCommand } from '@aws-sdk/client-dynamodb';
+import { NodeHttpHandler } from '@smithy/node-http-handler';
 import { marshall } from '@aws-sdk/util-dynamodb';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
-import { issueJobToken } from '../lib/job-token';
-
-const lambdaClient = new LambdaClient({});
-const dynamoDB = new DynamoDBClient({});
-const s3Client = new S3Client({});
+const lambdaClient = new LambdaClient({
+  requestHandler: new NodeHttpHandler({
+    connectionTimeout: 5000,
+    requestTimeout: 10000,
+  }),
+});
+const dynamoDB = new DynamoDBClient({
+  requestHandler: new NodeHttpHandler({
+    connectionTimeout: 5000,
+    requestTimeout: 10000,
+  }),
+});
+const s3Client = new S3Client({
+  requestHandler: new NodeHttpHandler({
+    connectionTimeout: 10000,
+    requestTimeout: 30000,
+  }),
+});
 const tableName = process.env.DYNAMODB_TABLE || `carousel-main-${process.env.STAGE || 'dev'}`;
 const workerFunctionName = process.env.WORKER_FUNCTION_NAME!;
 
@@ -75,16 +92,35 @@ export class ProcessGroupsHandler extends BaseHandler {
   /**
    * Helper methods for standard responses
    */
-  protected success(data: any, statusCode: number = 200): any {
-    return this.createJsonResponse(data, statusCode);
+  protected success(
+    data: any,
+    statusCode: number = 200,
+    headers: Record<string, string> = {}
+  ): any {
+    return this.createJsonResponse(data, statusCode, headers);
   }
 
-  protected badRequest(error: any): any {
-    return this.createErrorResponse(error.message || 'Bad Request', 400, error);
+  protected badRequest(
+    error: any,
+    headers: Record<string, string> = {}
+  ): any {
+    return this.createErrorResponse(error.message || 'Bad Request', 400, headers, error);
   }
 
-  protected internalError(error: any): any {
-    return this.createErrorResponse(error.message || 'Internal Server Error', 500, error);
+  protected internalError(
+    error: any,
+    headers: Record<string, string> = {}
+  ): any {
+    return this.createErrorResponse(error.message || 'Internal Server Error', 500, headers, error);
+  }
+
+  private resolveS3Bucket(bucket?: string): string {
+    const resolved = bucket || tempImagesBucket;
+    const allowedPattern = /^bg-remover-temp-images-(dev|prod)$/;
+    if (!allowedPattern.test(resolved)) {
+      throw new Error(`Invalid image bucket: ${resolved}`);
+    }
+    return resolved;
   }
 
   /**
@@ -115,14 +151,19 @@ export class ProcessGroupsHandler extends BaseHandler {
 
     // Handle CORS preflight
     if (httpMethod === 'OPTIONS') {
+      const corsHeaders = createTenantCorsHeaders(event, 'unknown');
       return this.createJsonResponse('', 200, {
+        ...corsHeaders,
         'Access-Control-Allow-Methods': 'POST, OPTIONS',
       });
     }
 
     if (httpMethod !== 'POST') {
-      return this.createErrorResponse('Method Not Allowed', 405);
+      const corsHeaders = createTenantCorsHeaders(event, 'unknown');
+      return this.createErrorResponse('Method Not Allowed', 405, corsHeaders);
     }
+
+    let corsHeaders = createTenantCorsHeaders(event, 'unknown');
 
     try {
       // Get stage first
@@ -130,12 +171,29 @@ export class ProcessGroupsHandler extends BaseHandler {
 
       // Extract tenant
       const tenant = await resolveTenantFromRequest(event, stage);
+      corsHeaders = createTenantCorsHeaders(event, tenant);
 
       console.log('[ProcessGroups] Processing approved groups', {
         tenant,
         stage,
         requestId,
       });
+
+      // Load tenant-specific Cognito config for JWT validation
+      const cognitoConfig = await getCognitoConfigForTenantAsync(tenant, stage);
+      const authResult = await validateJWTFromEvent(event, cognitoConfig, {
+        required: true,
+        expectedTenant: tenant,
+        enforceTenantMatch: true,
+      });
+      if (!authResult.isValid || !authResult.userId) {
+        return this.createErrorResponse(
+          'Valid JWT token required',
+          401,
+          corsHeaders,
+          { error: authResult.error }
+        );
+      }
 
       // Parse and validate request
       const body = JSON.parse(event.body || '{}');
@@ -146,11 +204,11 @@ export class ProcessGroupsHandler extends BaseHandler {
           error: 'VALIDATION_ERROR',
           message: 'Request validation failed',
           errors: validation.error?.details,
-        });
+        }, corsHeaders);
       }
 
       const request = validation.data as ProcessGroupsRequest;
-      const { groups, originalImages, processingOptions } = request;
+      const { groups, originalImages, originalImageKeys, processingOptions, bookingId } = request;
 
       // Set default processing options if not provided
       const options = processingOptions || {
@@ -161,9 +219,12 @@ export class ProcessGroupsHandler extends BaseHandler {
         generateRatingSuggestion: false,
       };
 
+      const base64ImageCount = originalImages ? Object.keys(originalImages).length : 0;
+      const s3ImageCount = originalImageKeys ? Object.keys(originalImageKeys).length : 0;
+
       console.log('[ProcessGroups] Request validated', {
         groupCount: groups.length,
-        imageCount: Object.keys(originalImages).length,
+        imageCount: base64ImageCount + s3ImageCount,
         outputFormat: options.outputFormat,
         tenant,
       });
@@ -176,7 +237,7 @@ export class ProcessGroupsHandler extends BaseHandler {
         return this.internalError({
           error: 'CONFIGURATION_ERROR',
           message: 'Service API key not configured for tenant',
-        });
+        }, corsHeaders);
       }
 
       // Determine which pipeline to use based on processing options
@@ -191,11 +252,30 @@ export class ProcessGroupsHandler extends BaseHandler {
       // Create jobs for each group with concurrent processing limited to 5 groups
       const groupTasks = groups.map(group => async (): Promise<any> => {
         const jobId = randomUUID();
-        const groupImages = group.imageIds
-          .map(imageId => originalImages[imageId])
-          .filter(Boolean);
+        const imageSources = group.imageIds
+          .map((imageId, index) => {
+            const s3Ref = originalImageKeys?.[imageId];
+            if (s3Ref?.s3Key) {
+              return {
+                imageId,
+                index,
+                s3Key: s3Ref.s3Key,
+                s3Bucket: s3Ref.s3Bucket,
+              };
+            }
+            const base64 = originalImages?.[imageId];
+            if (base64) {
+              return {
+                imageId,
+                index,
+                base64,
+              };
+            }
+            return null;
+          })
+          .filter((source): source is { imageId: string; index: number; base64?: string; s3Key?: string; s3Bucket?: string } => Boolean(source));
 
-        if (groupImages.length === 0) {
+        if (imageSources.length === 0) {
           console.warn('[ProcessGroups] Group has no valid images', {
             groupId: group.groupId,
             requestedImageIds: group.imageIds,
@@ -206,53 +286,86 @@ export class ProcessGroupsHandler extends BaseHandler {
         console.log('[ProcessGroups] Creating job for group', {
           jobId,
           groupId: group.groupId,
-          imageCount: groupImages.length,
+          imageCount: imageSources.length,
           productName: group.productName,
         });
 
-        // Upload images to S3 to avoid Lambda 1MB payload limit
-        console.log('[ProcessGroups] Uploading images to S3', {
-          jobId,
-          imageCount: groupImages.length,
-          groupId: group.groupId,
-        });
-
-        // Use Promise.allSettled for fault tolerance within group
-        const uploadResults = await Promise.allSettled(
-          groupImages.map((base64, index) =>
-            this.uploadImageToS3(
-              tenant,
-              jobId,
-              index,
-              base64,
-              `${group.productName || 'product'}_${index + 1}.jpg`
-            )
-          )
-        );
-
-        const s3ImageKeys: string[] = [];
+        const base64Sources = imageSources.filter((source) => source.base64);
+        const uploadedKeysByImageId = new Map<string, string>();
         const failedUploads: number[] = [];
 
-        uploadResults.forEach((result, index) => {
-          if (result.status === 'fulfilled') {
-            s3ImageKeys.push(result.value);
-          } else {
-            console.error('[ProcessGroups] Image upload failed', {
-              jobId,
-              groupId: group.groupId,
-              index,
-              error: result.reason instanceof Error ? result.reason.message : String(result.reason),
-            });
-            failedUploads.push(index);
-          }
-        });
+        if (base64Sources.length > 0) {
+          console.log('[ProcessGroups] Uploading images to S3', {
+            jobId,
+            imageCount: base64Sources.length,
+            groupId: group.groupId,
+          });
+
+          // Use Promise.allSettled for fault tolerance within group
+          const uploadResults = await Promise.allSettled(
+            base64Sources.map((source) =>
+              this.uploadImageToS3(
+                tenant,
+                jobId,
+                source.index,
+                source.base64 || '',
+                `${group.productName || 'product'}_${source.index + 1}.jpg`
+              )
+            )
+          );
+
+          uploadResults.forEach((result, index) => {
+            const source = base64Sources[index];
+            if (!source) {
+              return;
+            }
+            if (result.status === 'fulfilled') {
+              uploadedKeysByImageId.set(source.imageId, result.value);
+            } else {
+              const errorMsg = result.reason instanceof Error ? result.reason.message : String(result.reason);
+              console.error('[ProcessGroups] Image upload failed', {
+                jobId,
+                groupId: group.groupId,
+                imageId: source.imageId,
+                index: source.index,
+                filename: `${group.productName || 'product'}_${source.index + 1}.jpg`,
+                error: errorMsg,
+                suggestion: this.getUploadErrorSuggestion(errorMsg),
+              });
+              failedUploads.push(source.index);
+            }
+          });
+        }
+
+        const resolvedImages = imageSources
+          .map((source) => {
+            const filename = `${group.productName || 'product'}_${source.index + 1}`;
+            if (source.s3Key) {
+              return {
+                s3Bucket: this.resolveS3Bucket(source.s3Bucket),
+                s3Key: source.s3Key,
+                filename,
+              };
+            }
+            const uploadedKey = uploadedKeysByImageId.get(source.imageId);
+            if (!uploadedKey) {
+              return null;
+            }
+            return {
+              s3Bucket: tempImagesBucket,
+              s3Key: uploadedKey,
+              filename,
+            };
+          })
+          .filter((image): image is { s3Bucket: string; s3Key: string; filename: string } => Boolean(image));
 
         // If all uploads failed, update job status and skip this group
-        if (s3ImageKeys.length === 0) {
+        if (resolvedImages.length === 0) {
           console.error('[ProcessGroups] All images failed to upload for group', {
             jobId,
             groupId: group.groupId,
             failedCount: failedUploads.length,
+            failedImages: failedUploads,
           });
 
           await this.createJobRecord(tenant, jobId, {
@@ -263,7 +376,13 @@ export class ProcessGroupsHandler extends BaseHandler {
             status: 'failed',
             createdAt: new Date().toISOString(),
             requestId,
-            error: 'All image uploads failed',
+            error: `Upload failed for ${failedUploads.length} image(s). Please check the images are valid and retry.`,
+            errorDetails: {
+              failedCount: failedUploads.length,
+              failedIndices: failedUploads,
+              suggestion: 'Ensure all images are valid image files (PNG, JPEG, WebP) under 10MB. Try converting to PNG if issues persist.',
+              retryable: true,
+            },
             failedImages: failedUploads,
             images: [],
             progress: {
@@ -284,25 +403,29 @@ export class ProcessGroupsHandler extends BaseHandler {
           console.warn('[ProcessGroups] Partial upload success', {
             jobId,
             groupId: group.groupId,
-            successCount: s3ImageKeys.length,
+            successCount: resolvedImages.length,
             failedCount: failedUploads.length,
+            failedIndices: failedUploads,
+            suggestion: 'Some images failed to upload. The group will process with available images. You can retry the failed images separately if needed.',
           });
         }
 
         console.log('[ProcessGroups] Images uploaded to S3', {
           jobId,
           groupId: group.groupId,
-          successCount: s3ImageKeys.length,
+          successCount: resolvedImages.length,
           failedCount: failedUploads.length,
-          s3Keys: s3ImageKeys,
+          s3Keys: resolvedImages.map((image) => image.s3Key),
         });
 
         // Prepare resumable state for images once upload results are known
-        const imageStates = s3ImageKeys.map((s3Key, index) => ({
-          s3Key,
+        const imageStates = resolvedImages.map((image, index) => ({
+          s3Key: image.s3Key,
+          s3Bucket: image.s3Bucket,
           index,
           status: 'pending' as const,
-          filename: `${group.productName || 'product'}_${index + 1}`,
+          filename: image.filename,
+          isPrimary: index === 0, // First image is primary
           attempts: 0,
           lastAttemptAt: null,
           error: null,
@@ -311,7 +434,7 @@ export class ProcessGroupsHandler extends BaseHandler {
         // Store job metadata in DynamoDB with resumable state
         await this.createJobRecord(tenant, jobId, {
           groupId: group.groupId,
-          imageCount: s3ImageKeys.length,
+          imageCount: resolvedImages.length,
           productName: group.productName,
           pipeline: pipelineName,
           status: 'pending',
@@ -320,11 +443,11 @@ export class ProcessGroupsHandler extends BaseHandler {
           // Resumable state
           images: imageStates,
           progress: {
-            total: s3ImageKeys.length,
+            total: resolvedImages.length,
             completed: 0,
             failed: 0,
             processing: 0,
-            pending: s3ImageKeys.length,
+            pending: resolvedImages.length,
           },
           continuationToken: null, // For future resume functionality
           resumable: true,
@@ -340,16 +463,21 @@ export class ProcessGroupsHandler extends BaseHandler {
           avgSimilarity: 0.90, // Default similarity (would come from frontend metadata)
         };
 
+        const authToken = event.headers?.authorization || event.headers?.Authorization;
+
         // Prepare worker payload with S3 keys instead of base64 (solves 1MB limit)
         const workerPayload = {
           jobId,
           tenant,
           stage,
+          userId: authResult.userId,
+          authToken,
+          bookingId,
           groupId: group.groupId,
-          images: s3ImageKeys.map((s3Key, index) => ({
-            s3Bucket: tempImagesBucket,
-            s3Key: s3Key,
-            filename: `${group.productName || 'product'}_${index + 1}`,
+          images: resolvedImages.map((image, index) => ({
+            s3Bucket: image.s3Bucket,
+            s3Key: image.s3Key,
+            filename: image.filename,
             isPrimary: index === 0, // First image is primary
           })),
           productName: group.productName,
@@ -381,7 +509,7 @@ export class ProcessGroupsHandler extends BaseHandler {
             jobId,
             groupId: group.groupId,
             status: 'pending',
-            imageCount: groupImages.length,
+            imageCount: resolvedImages.length,
             productName: group.productName,
             jobToken: issueJobToken({
               jobId,
@@ -426,7 +554,7 @@ export class ProcessGroupsHandler extends BaseHandler {
         return this.badRequest({
           error: 'NO_VALID_GROUPS',
           message: 'No valid groups could be processed',
-        });
+        }, corsHeaders);
       }
 
       return this.createJsonResponse(
@@ -442,6 +570,7 @@ export class ProcessGroupsHandler extends BaseHandler {
         },
         200, // Status code
         {
+          ...corsHeaders,
           'Cache-Control': 'no-store, no-cache, must-revalidate',
         }
       );
@@ -456,12 +585,111 @@ export class ProcessGroupsHandler extends BaseHandler {
         error: 'PROCESSING_FAILED',
         message: error instanceof Error ? error.message : 'Unknown error occurred',
         requestId,
-      });
+      }, corsHeaders);
     }
   }
 
   /**
    * Upload image to S3 temporary bucket and return S3 key
+   * Solves Lambda 1MB payload limit by storing images in S3
+   */
+  private sanitizeS3KeyComponent(value: string, label: string): string {
+    const sanitized = value.replace(/[^a-zA-Z0-9._-]/g, '_').replace(/_+/g, '_').replace(/^_+|_+$/g, '');
+    if (!sanitized) {
+      throw new Error(`Invalid ${label} for S3 key`);
+    }
+    return sanitized;
+  }
+
+  private sanitizeFileName(fileName: string): string {
+    const lastDot = fileName.lastIndexOf('.');
+    const base = lastDot > 0 ? fileName.slice(0, lastDot) : fileName;
+    const ext = lastDot > 0 ? fileName.slice(lastDot + 1) : '';
+    const safeBase = this.sanitizeS3KeyComponent(base, 'filename');
+    const safeExt = ext ? this.sanitizeS3KeyComponent(ext, 'file extension') : '';
+    return safeExt ? `${safeBase}.${safeExt}` : safeBase;
+  }
+
+  /**
+   * Validate base64 image data before processing
+   * Returns { valid: true } or { valid: false, error: string }
+   */
+  private validateBase64Image(base64Data: string): { valid: boolean; error?: string } {
+    if (!base64Data || typeof base64Data !== 'string') {
+      return { valid: false, error: 'Image data is empty or not a string' };
+    }
+
+    // Check for valid data URL prefix
+    const dataUrlMatch = base64Data.match(/^data:image\/(\w+);base64,/);
+    if (!dataUrlMatch) {
+      // Allow raw base64 without prefix too
+      if (!/^[A-Za-z0-9+/=]+$/.test(base64Data.trim())) {
+        return { valid: false, error: 'Invalid base64 image format - expected data URL or base64 string' };
+      }
+    }
+
+    // Extract and validate the base64 content
+    const base64Content = dataUrlMatch ? base64Data.replace(/^data:image\/\w+;base64,/, '') : base64Data;
+    
+    // Check for common base64 issues
+    if (base64Content.length < 10) {
+      return { valid: false, error: 'Image data is too short (less than 10 characters)' };
+    }
+
+    // Validate base64 padding and characters
+    const base64Regex = /^[A-Za-z0-9+/]*={0,2}$/;
+    const cleanedBase64 = base64Content.replace(/\s/g, ''); // Remove whitespace
+    if (!base64Regex.test(cleanedBase64)) {
+      return { valid: false, error: 'Invalid base64 characters - only alphanumeric, +, /, and = are allowed' };
+    }
+
+    // Check if it's likely a valid image size (not too small, not too large)
+    const byteCount = Math.ceil((cleanedBase64.length * 3) / 4);
+    const maxSizeBytes = 10 * 1024 * 1024; // 10MB limit
+    if (byteCount < 100) {
+      return { valid: false, error: 'Image appears too small (less than 100 bytes) - may be invalid' };
+    }
+    if (byteCount > maxSizeBytes) {
+      return { valid: false, error: `Image exceeds maximum size of ${maxSizeBytes / 1024 / 1024}MB` };
+    }
+
+    return { valid: true };
+  }
+
+  /**
+   * Sleep utility for retry delays
+   */
+  private sleep(ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  /**
+   * Provide actionable suggestions based on upload error messages
+   */
+  private getUploadErrorSuggestion(error: string): string {
+    const lowerError = error.toLowerCase();
+    
+    if (lowerError.includes('validation') || lowerError.includes('invalid') || lowerError.includes('decode')) {
+      return 'The image file appears to be corrupted or in an unsupported format. Please try converting it to PNG or JPEG.';
+    }
+    if (lowerError.includes('too large') || lowerError.includes('size') || lowerError.includes('limit')) {
+      return 'The image exceeds the maximum file size. Please compress or resize the image before uploading.';
+    }
+    if (lowerError.includes('network') || lowerError.includes('timeout') || lowerError.includes('connection')) {
+      return 'Network issue detected. Please retry the upload or check your connection.';
+    }
+    if (lowerError.includes('access denied') || lowerError.includes('forbidden') || lowerError.includes('permission')) {
+      return 'Permission denied. Please contact support if this persists.';
+    }
+    if (lowerError.includes('bucket') || lowerError.includes('not found') || lowerError.includes('exist')) {
+      return 'Storage configuration error. Please contact support.';
+    }
+    
+    return 'Please retry the upload. If the problem persists, try a different image or contact support.';
+  }
+
+  /**
+   * Upload image to S3 with retry logic
    * Solves Lambda 1MB payload limit by storing images in S3
    */
   private async uploadImageToS3(
@@ -471,12 +699,38 @@ export class ProcessGroupsHandler extends BaseHandler {
     base64Data: string,
     filename: string
   ): Promise<string> {
+    // Validate base64 data before processing
+    const validation = this.validateBase64Image(base64Data);
+    if (!validation.valid) {
+      console.error('[ProcessGroups] Base64 validation failed', {
+        jobId,
+        imageIndex,
+        filename,
+        error: validation.error,
+      });
+      throw new Error(`Invalid image data: ${validation.error}`);
+    }
+
     // Remove data URL prefix if present
     const base64Image = base64Data.replace(/^data:image\/\w+;base64,/, '');
-    const imageBuffer = Buffer.from(base64Image, 'base64');
+    let imageBuffer: Buffer;
+    try {
+      imageBuffer = Buffer.from(base64Image, 'base64');
+    } catch (error) {
+      console.error('[ProcessGroups] Base64 decode failed', {
+        jobId,
+        imageIndex,
+        filename,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      throw new Error('Failed to decode base64 image data');
+    }
 
     // S3 key: temp/{tenant}/{jobId}/{index}_{filename}
-    const s3Key = `temp/${tenant}/${jobId}/${imageIndex}_${filename}`;
+    const safeTenant = this.sanitizeS3KeyComponent(tenant, 'tenant');
+    const safeJobId = this.sanitizeS3KeyComponent(jobId, 'jobId');
+    const safeFileName = this.sanitizeFileName(filename);
+    const s3Key = `temp/${safeTenant}/${safeJobId}/${imageIndex}_${safeFileName}`;
 
     // Detect actual image format from base64 data URL
     const formatMatch = base64Data.match(/^data:image\/(\w+);base64,/);
@@ -490,27 +744,63 @@ export class ProcessGroupsHandler extends BaseHandler {
     };
     const contentType = contentTypeMap[format.toLowerCase()] || 'application/octet-stream';
 
-    await s3Client.send(new PutObjectCommand({
-      Bucket: tempImagesBucket,
-      Key: s3Key,
-      Body: imageBuffer,
-      ContentType: contentType,
-      ServerSideEncryption: 'AES256', // Enable S3-managed encryption
-      Metadata: {
-        tenant,
-        jobId,
-        originalFilename: filename,
-      },
-      // Note: Lifecycle policy handles deletion after 24 hours
-    }));
+    // Retry configuration
+    const maxRetries = 3;
+    const baseDelayMs = 500;
+    let lastError: Error | undefined;
 
-    console.log('[ProcessGroups] Image uploaded to S3', {
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        await s3Client.send(new PutObjectCommand({
+          Bucket: tempImagesBucket,
+          Key: s3Key,
+          Body: imageBuffer,
+          ContentType: contentType,
+          ServerSideEncryption: 'AES256', // Enable S3-managed encryption
+          Metadata: {
+            tenant,
+            jobId,
+            originalFilename: filename,
+            uploadAttempt: String(attempt),
+          },
+          // Note: Lifecycle policy handles deletion after 24 hours
+        }));
+
+        console.log('[ProcessGroups] Image uploaded to S3', {
+          jobId,
+          s3Key,
+          sizeBytes: imageBuffer.length,
+          attempt,
+        });
+
+        return s3Key;
+      } catch (error) {
+        lastError = error instanceof Error ? error : new Error(String(error));
+        
+        console.warn('[ProcessGroups] S3 upload attempt failed', {
+          jobId,
+          s3Key,
+          attempt,
+          maxRetries,
+          error: lastError.message,
+        });
+
+        if (attempt < maxRetries) {
+          // Exponential backoff with jitter
+          const delayMs = baseDelayMs * Math.pow(2, attempt - 1) + Math.random() * 100;
+          await this.sleep(delayMs);
+        }
+      }
+    }
+
+    // All retries failed
+    console.error('[ProcessGroups] S3 upload failed after all retries', {
       jobId,
       s3Key,
-      sizeBytes: imageBuffer.length,
+      maxRetries,
+      error: lastError?.message,
     });
-
-    return s3Key;
+    throw lastError;
   }
 
   /**
@@ -659,11 +949,11 @@ export class ProcessGroupsHandler extends BaseHandler {
       });
 
       // Reconstruct image data for worker
-      const imagesForWorker = job.images.map((img: any, index: number) => ({
-        s3Bucket: tempImagesBucket,
+      const imagesForWorker = job.images.map((img: any) => ({
+        s3Bucket: img.s3Bucket || tempImagesBucket,
         s3Key: img.s3Key,
         filename: img.filename,
-        isPrimary: index === 0, // First image is primary
+        isPrimary: img.isPrimary !== undefined ? img.isPrimary : false, // Use stored value or default to false
       }));
 
       // Invoke worker with resume flag
