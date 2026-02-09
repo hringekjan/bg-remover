@@ -617,11 +617,15 @@ export class ProcessWorkerHandler extends BaseHandler {
       // Filter out null results from failed images before mapping
       const processedImages = processedResults
         .filter(result => result !== null)
-        .map(result => ({
+        .map((result, index) => ({
+          imageId: `img_${jobId}_${index}`, // Generate stable imageId for frontend matching
           filename: result.filename,
           outputUrl: result.outputUrl,
+          outputKey: result.outputKey,
           isPrimary: result.isPrimary,
           metadata: result.metadata,
+          width: result.metadata?.width,
+          height: result.metadata?.height,
         }));
 
       const imageResults = processedResults
