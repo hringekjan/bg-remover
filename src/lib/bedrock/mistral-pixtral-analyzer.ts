@@ -246,9 +246,9 @@ Return ONLY valid JSON (no markdown, no explanation, no code blocks):
   });
 
   return {
-    brand: result.brand || undefined,
-    size: result.size || undefined,
-    material: result.material || undefined,
+    brand: (result.brand === "null" || !result.brand) ? undefined : result.brand,
+    size: (result.size === "null" || !result.size) ? undefined : result.size,
+    material: (result.material === "null" || !result.material) ? undefined : result.material,
     condition: result.condition,
     category: result.category || 'general',
     colors: Array.isArray(result.colors) ? result.colors : ['various'],

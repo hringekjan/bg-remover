@@ -827,9 +827,8 @@ export class ProcessWorkerHandler extends BaseHandler {
             sourceImageKey: images[0]?.s3Key || '',
             processedImageKey: processedImages[0].outputKey || ''
           } : undefined,
-          status: 'DRAFT' as const,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString()
+          status: 'DRAFT' as const
+          // Note: createdAt and updatedAt are reserved fields set by carousel-api
         };
 
         const { product, error } = await createProductInCarouselApi(tenant, userId, productData, authToken);
