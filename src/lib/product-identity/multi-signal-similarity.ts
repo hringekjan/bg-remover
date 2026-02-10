@@ -10,6 +10,7 @@
  */
 
 import { RekognitionClient, DetectLabelsCommand, Label } from '@aws-sdk/client-rekognition';
+import { NodeHttpHandler } from '@smithy/node-http-handler';
 
 // Lazy load Sharp only when multi-signal features are enabled
 let sharp: any = null;
@@ -332,7 +333,13 @@ export async function batchExtractFeatures(
   settings: MultiSignalSettings = DEFAULT_SETTINGS
 ): Promise<ImageFeatures[]> {
   const rekognitionClient = settings.rekognition.enabled
-    ? new RekognitionClient({ region })
+    ? new RekognitionClient({ 
+        region,
+        requestHandler: new NodeHttpHandler({
+          connectionTimeout: 5000,
+          requestTimeout: 10000,
+        }),
+      })
     : undefined;
 
   const features: ImageFeatures[] = [];

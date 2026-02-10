@@ -20,6 +20,7 @@ import {
   DynamoDBClient,
   PutItemCommand,
 } from '@aws-sdk/client-dynamodb';
+import { NodeHttpHandler } from '@smithy/node-http-handler';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { marshall } from '@aws-sdk/util-dynamodb';
 import { z } from 'zod';
@@ -86,8 +87,20 @@ const CarouselProductSoldEventSchema = z.object({
 });
 
 // Initialize AWS clients
-const dynamodb = new DynamoDBClient({ region: process.env.AWS_REGION || 'eu-west-1' });
-const s3 = new S3Client({ region: process.env.AWS_REGION || 'eu-west-1' });
+const dynamodb = new DynamoDBClient({ 
+  region: process.env.AWS_REGION || 'eu-west-1',
+  requestHandler: new NodeHttpHandler({
+    connectionTimeout: 5000,
+    requestTimeout: 10000,
+  }),
+});
+const s3 = new S3Client({ 
+  region: process.env.AWS_REGION || 'eu-west-1',
+  requestHandler: new NodeHttpHandler({
+    connectionTimeout: 10000,
+    requestTimeout: 30000,
+  }),
+});
 
 const salesTableName = process.env.SALES_TABLE_NAME!;
 const idempotencyTableName = process.env.IDEMPOTENCY_TABLE_NAME!;
@@ -283,8 +296,8 @@ async function writeToDynamoDB(detail: CarouselProductSoldEvent): Promise<void> 
 
     console.log('[CarouselSync] DynamoDB write successful', {
       productId: detail.productId,
-      pk,
-      gsi2PK,
+      PK: pk,
+      GSI2PK: gsi2PK,
       salePrice: detail.salePrice,
     });
   } catch (error) {

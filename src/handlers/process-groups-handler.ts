@@ -342,6 +342,7 @@ export class ProcessGroupsHandler extends BaseHandler {
             const filename = `${group.productName || 'product'}_${source.index + 1}`;
             if (source.s3Key) {
               return {
+                imageId: source.imageId, // Preserve photoId from frontend for matching
                 s3Bucket: this.resolveS3Bucket(source.s3Bucket),
                 s3Key: source.s3Key,
                 filename,
@@ -352,12 +353,13 @@ export class ProcessGroupsHandler extends BaseHandler {
               return null;
             }
             return {
+              imageId: source.imageId, // Preserve photoId from frontend for matching
               s3Bucket: tempImagesBucket,
               s3Key: uploadedKey,
               filename,
             };
           })
-          .filter((image): image is { s3Bucket: string; s3Key: string; filename: string } => Boolean(image));
+          .filter((image): image is { imageId: string; s3Bucket: string; s3Key: string; filename: string } => Boolean(image));
 
         // If all uploads failed, update job status and skip this group
         if (resolvedImages.length === 0) {
@@ -420,6 +422,7 @@ export class ProcessGroupsHandler extends BaseHandler {
 
         // Prepare resumable state for images once upload results are known
         const imageStates = resolvedImages.map((image, index) => ({
+          imageId: image.imageId, // Preserve photoId for frontend matching
           s3Key: image.s3Key,
           s3Bucket: image.s3Bucket,
           index,
@@ -475,6 +478,7 @@ export class ProcessGroupsHandler extends BaseHandler {
           bookingId,
           groupId: group.groupId,
           images: resolvedImages.map((image, index) => ({
+            imageId: image.imageId, // Preserve photoId for frontend matching
             s3Bucket: image.s3Bucket,
             s3Key: image.s3Key,
             filename: image.filename,
@@ -879,11 +883,17 @@ export class ProcessGroupsHandler extends BaseHandler {
     const gsi1pk = `TENANT#${tenant}#BG_REMOVER_JOBS`;
     const gsi1sk = `${new Date().toISOString()}#JOB#${jobId}`;
 
+    // GSI2: For batch status queries by requestId
+    const gsi2pk = metadata.requestId ? `REQUEST#${metadata.requestId}` : undefined;
+    const gsi2sk = metadata.requestId ? `TENANT#${tenant}#JOB#${jobId}` : undefined;
+
     const item = marshall({
       PK: pk,
       SK: sk,
       GSI1PK: gsi1pk,
       GSI1SK: gsi1sk,
+      ...(gsi2pk && { GSI2PK: gsi2pk }),
+      ...(gsi2sk && { GSI2SK: gsi2sk }),
       jobId,
       tenant,
       entityType: 'BG_REMOVER_JOB',

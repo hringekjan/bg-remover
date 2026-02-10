@@ -5,8 +5,8 @@
  * Uses DynamoDB single-table design with TTL for automatic cleanup.
  *
  * Single-table key format:
- * - pk: TENANT#<tenant>#JOB
- * - sk: JOB#<jobId>
+ * - PK: TENANT#<tenant>#JOB
+ * - SK: JOB#<jobId>
  *
  * This enables efficient tenant queries and shared table with rate limits.
  */
@@ -62,12 +62,12 @@ const DEFAULT_TENANT = process.env.TENANT || 'default';
 // ============================================================================
 
 /**
- * Generate pk/sk for a job (single-table design)
+ * Generate PK/SK for a job (single-table design)
  */
-function generateJobKeys(jobId: string, tenant: string = DEFAULT_TENANT): { pk: string; sk: string } {
+function generateJobKeys(jobId: string, tenant: string = DEFAULT_TENANT): { PK: string; SK: string } {
   return {
-    pk: `TENANT#${tenant}#BG_REMOVER_JOB#${jobId}`,
-    sk: 'METADATA',
+    PK: `TENANT#${tenant}#BG_REMOVER_JOB#${jobId}`,
+    SK: 'METADATA',
   };
 }
 
@@ -95,15 +95,15 @@ function getClient(): DynamoDBClient {
  */
 export async function getJobStatus(jobId: string, tenant?: string): Promise<JobStatus | null> {
   const client = getClient();
-  const { pk, sk } = generateJobKeys(jobId, tenant || DEFAULT_TENANT);
+  const { PK, SK } = generateJobKeys(jobId, tenant || DEFAULT_TENANT);
 
   try {
     const result = await client.send(
       new GetItemCommand({
         TableName: TABLE_NAME,
         Key: {
-          PK: { S: pk },
-          SK: { S: sk },
+          PK: { S: PK },
+          SK: { S: SK },
         },
       })
     );
@@ -130,13 +130,13 @@ export async function getJobStatus(jobId: string, tenant?: string): Promise<JobS
 export async function setJobStatus(job: JobStatus): Promise<void> {
   const client = getClient();
   const tenant = job.tenant || DEFAULT_TENANT;
-  const { pk, sk } = generateJobKeys(job.jobId, tenant);
+  const { PK, SK } = generateJobKeys(job.jobId, tenant);
 
   // Set TTL if not already set
   const jobWithTTL: JobStatus & { PK: string; SK: string; entityType: string; GSI1PK: string; GSI1SK: string } = {
     ...job,
-    PK: pk,
-    SK: sk,
+    PK: PK,
+    SK: SK,
     GSI1PK: `TENANT#${tenant}#BG_REMOVER_JOBS`,
     GSI1SK: `${new Date().toISOString()}#JOB#${job.jobId}`,
     entityType: 'BG_REMOVER_JOB',
@@ -178,7 +178,7 @@ export async function updateJobStatus(
   tenant?: string
 ): Promise<JobStatus | null> {
   const client = getClient();
-  const { pk, sk } = generateJobKeys(jobId, tenant || DEFAULT_TENANT);
+  const { PK, SK } = generateJobKeys(jobId, tenant || DEFAULT_TENANT);
 
   // Build update expression
   const updateExpressions: string[] = ['#updatedAt = :updatedAt'];
@@ -212,8 +212,8 @@ export async function updateJobStatus(
       new UpdateItemCommand({
         TableName: TABLE_NAME,
         Key: {
-          PK: { S: pk },
-          SK: { S: sk },
+          PK: { S: PK },
+          SK: { S: SK },
         },
         UpdateExpression: `SET ${updateExpressions.join(', ')}`,
         ExpressionAttributeNames: expressionAttributeNames,
@@ -250,15 +250,15 @@ export async function updateJobStatus(
  */
 export async function deleteJob(jobId: string, tenant?: string): Promise<boolean> {
   const client = getClient();
-  const { pk, sk } = generateJobKeys(jobId, tenant || DEFAULT_TENANT);
+  const { PK, SK } = generateJobKeys(jobId, tenant || DEFAULT_TENANT);
 
   try {
     await client.send(
       new DeleteItemCommand({
         TableName: TABLE_NAME,
         Key: {
-          PK: { S: pk },
-          SK: { S: sk },
+          PK: { S: PK },
+          SK: { S: SK },
         },
         ConditionExpression: 'attribute_exists(PK)',
       })

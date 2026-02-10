@@ -192,7 +192,7 @@ describe('Image MIME Type Validation', () => {
 
       expect(result.success).toBe(false);
       if (!result.success) {
-        expect(result.error.issues[0].message).toContain('At least one image');
+        expect(result.error.issues[0].message).toContain('At least 1 image is required for grouping');
       }
     });
   });

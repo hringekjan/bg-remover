@@ -324,8 +324,8 @@ export interface BrandPricingResponse {
  * Utility type for DynamoDB operations
  */
 export interface DynamoDBItem {
-  pk: string;
-  sk: string;
+  PK: string;
+  SK: string;
   [key: string]: unknown;
 }
 

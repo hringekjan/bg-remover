@@ -474,7 +474,14 @@ export async function POST(request: NextRequest): Promise<NextResponse<ProcessRe
       {
         jobId,
         tenant,
-        productId: productId || ''
+        productId: productId || '',
+        // Include Rekognition analysis in S3 metadata
+        rekognitionLabels: result.rekognitionAnalysis?.labels?.join(',') || '',
+        rekognitionColors: result.rekognitionAnalysis?.colors?.join(',') || '',
+        rekognitionCategory: result.rekognitionAnalysis?.category || '',
+        rekognitionBrand: result.rekognitionAnalysis?.brand || '',
+        rekognitionSize: result.rekognitionAnalysis?.size || '',
+        rekognitionMaterial: result.rekognitionAnalysis?.material || ''
       }
     );
 
@@ -528,6 +535,8 @@ export async function POST(request: NextRequest): Promise<NextResponse<ProcessRe
       creditsUsed: creditsUsed > 0 ? creditsUsed : undefined,
       creditsRemaining,
       transactionId: creditTransactionId,
+      // Rekognition analysis data (small payload, safe to include)
+      rekognitionAnalysis: result.rekognitionAnalysis,
     });
 
   } catch (error) {

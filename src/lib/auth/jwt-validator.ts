@@ -26,6 +26,7 @@ export interface JWTValidationResult {
   userId?: string;
   email?: string;
   groups?: string[];
+  tenantId?: string;
 }
 
 export interface CognitoConfig {
@@ -46,6 +47,14 @@ const DEFAULT_COGNITO_CONFIG: CognitoConfig = {
   issuer: process.env.COGNITO_ISSUER_URL || 'https://cognito-idp.eu-west-1.amazonaws.com/eu-west-1_vLdYTnLGY',
   audience: process.env.COGNITO_AUDIENCE?.split(',') || undefined,
 };
+
+function readPositiveInt(value: string | undefined, fallback: number): number {
+  const parsed = Number.parseInt(value ?? '', 10);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
+}
+
+const JWT_CLOCK_TOLERANCE_SECONDS = readPositiveInt(process.env.JWT_CLOCK_TOLERANCE_SECONDS, 60);
+const JWT_MAX_TOKEN_AGE_SECONDS = readPositiveInt(process.env.JWT_MAX_TOKEN_AGE_SECONDS, 3600);
 
 /**
  * Get Cognito config for a specific tenant (loads from SSM at runtime)
@@ -115,6 +124,48 @@ export function extractTokenFromHeader(authHeader: string | undefined): string |
 }
 
 /**
+ * Sanitize a value for safe use in error messages and logs
+ * Prevents potential issues with special characters
+ */
+function sanitizeForLog(value: unknown): string {
+  if (value === null || value === undefined) {
+    return String(value);
+  }
+  const str = String(value);
+  // Remove or escape characters that could cause issues in template strings
+  return str.replace(/[\x00-\x1f\x7f-\x9f\$\{\}\\`"|]/g, (char) => {
+    // Escape potentially problematic characters
+    if (char === '\n') return '\\n';
+    if (char === '\r') return '\\r';
+    if (char === '\t') return '\\t';
+    if (char === '"') return '\\"';
+    if (char === '\\') return '\\\\';
+    if (char === '${') return '\\${';
+    if (char === '`') return '\\`';
+    return `\\x${char.charCodeAt(0).toString(16).padStart(2, '0')}`;
+  });
+}
+
+/**
+ * Extract tenant identifier from a verified JWT payload.
+ * Supports multiple claim names for compatibility.
+ */
+export function extractTenantFromPayload(payload: JWTPayload | undefined): string | null {
+  if (!payload) {
+    return null;
+  }
+  const tenant =
+    (payload['custom:tenant_id'] as string | undefined) ||
+    (payload['tenant_id'] as string | undefined) ||
+    (payload['tenant'] as string | undefined) ||
+    (payload['custom:tenant'] as string | undefined) ||
+    (payload['custom:tenantId'] as string | undefined) ||
+    (payload['tenantId'] as string | undefined);
+
+  return tenant && typeof tenant === 'string' ? tenant.toLowerCase() : null;
+}
+
+/**
  * Validate JWT token from AWS Cognito
  * Uses hybrid L1 (memory) + L2 (cache-service) caching for validation results
  *
@@ -146,26 +197,73 @@ export async function validateJWT(
   try {
     // Decode token without verification first to check token_use
     const tokenParts = token.split('.');
+    
+    // Validate token structure before attempting to decode
+    if (tokenParts.length !== 3) {
+      return {
+        isValid: false,
+        error: 'Invalid JWT token format: expected 3 parts',
+      };
+    }
+    
     const payloadBase64 = tokenParts[1];
-    const decodedPayload = JSON.parse(Buffer.from(payloadBase64, 'base64url').toString());
-    const tokenUse = decodedPayload.token_use as string;
-    const tokenIssuer = decodedPayload.iss as string;
+    
+    // Validate base64url encoding before parsing
+    if (!payloadBase64 || payloadBase64.length === 0) {
+      return {
+        isValid: false,
+        error: 'Invalid JWT payload: empty payload',
+      };
+    }
+    
+    let decodedPayload: Record<string, unknown>;
+    try {
+      decodedPayload = JSON.parse(Buffer.from(payloadBase64, 'base64url').toString('utf8'));
+    } catch (parseError) {
+      return {
+        isValid: false,
+        error: 'Invalid JWT payload: failed to parse JSON',
+      };
+    }
+    
+    const tokenUse = decodedPayload.token_use as string | undefined;
+    const tokenIssuer = decodedPayload.iss as string | undefined;
+    const tokenExp = decodedPayload.exp as number | undefined;
+    const tokenIat = decodedPayload.iat as number | undefined;
 
-    // Log validation context before verification
+    // Log validation context before verification (with sanitized values)
     console.log('[JWTValidator] Validating token:', {
       configUserPoolId: config.userPoolId,
       configIssuer: config.issuer,
-      tokenIssuer,
-      tokenUse,
+      tokenIssuer: sanitizeForLog(tokenIssuer),
+      tokenUse: sanitizeForLog(tokenUse),
       hasAudience: !!config.audience,
       timestamp: new Date().toISOString(),
     });
 
     // Validate token_use claim (must be 'id' or 'access')
-    if (!['id', 'access'].includes(tokenUse)) {
+    if (!tokenUse || !['id', 'access'].includes(tokenUse)) {
       return {
         isValid: false,
-        error: `Invalid token_use: ${tokenUse}`,
+        error: `Invalid token_use: ${sanitizeForLog(tokenUse)}`,
+      };
+    }
+    if (!tokenIssuer) {
+      return {
+        isValid: false,
+        error: 'Missing iss claim in JWT',
+      };
+    }
+    if (typeof tokenExp !== 'number') {
+      return {
+        isValid: false,
+        error: 'Missing or invalid exp claim in JWT',
+      };
+    }
+    if (typeof tokenIat !== 'number') {
+      return {
+        isValid: false,
+        error: 'Missing or invalid iat claim in JWT',
       };
     }
 
@@ -177,31 +275,33 @@ export async function validateJWT(
       issuer: config.issuer,
       // Only require audience for ID tokens, not access tokens (M2M)
       ...(tokenUse === 'id' && config.audience && { audience: config.audience }),
+      clockTolerance: JWT_CLOCK_TOLERANCE_SECONDS,
+      maxTokenAge: `${JWT_MAX_TOKEN_AGE_SECONDS}s`,
     };
 
     const { payload } = await jwtVerify(token, jwks, verifyOptions);
 
     // For access tokens (M2M), optionally validate client_id
     if (tokenUse === 'access') {
-      const clientId = payload.client_id as string;
+      const clientId = payload.client_id as string | undefined;
 
       // If audience is configured, validate client_id matches
       if (config.audience && config.audience.length > 0) {
-        const isKnownClient = config.audience.includes(clientId);
+        const isKnownClient = clientId && config.audience.includes(clientId);
         if (!isKnownClient) {
           console.log('[JWTValidator] ❌ Invalid client_id for access token', {
-            clientId,
+            clientId: sanitizeForLog(clientId),
             allowedAudiences: config.audience
           });
           return {
             isValid: false,
-            error: `Invalid client_id: ${clientId}`,
+            error: `Invalid client_id: ${sanitizeForLog(clientId)}`,
           };
         }
       }
 
       // Log M2M access for audit
-      console.log('[JWTValidator] M2M client access', { clientId, userPoolId: config.userPoolId });
+      console.log('[JWTValidator] M2M client access', { clientId: sanitizeForLog(clientId), userPoolId: config.userPoolId });
     }
 
     // Extract user information from token claims
@@ -210,10 +310,10 @@ export async function validateJWT(
     const groups = payload['cognito:groups'] as string[] | undefined;
 
     console.log('[JWTValidator] ✅ Token verified successfully:', {
-      userId: userId,
-      issuer: payload.iss,
-      audience: payload.aud,
-      clientId: payload.client_id,
+      userId: sanitizeForLog(userId),
+      issuer: sanitizeForLog(payload.iss),
+      audience: sanitizeForLog(payload.aud),
+      clientId: sanitizeForLog(payload.client_id),
       tokenUse,
       expiresAt: payload.exp ? new Date((payload.exp as number) * 1000).toISOString() : 'unknown',
     });
@@ -224,6 +324,7 @@ export async function validateJWT(
       userId,
       email,
       groups,
+      tenantId: extractTenantFromPayload(payload),
     };
 
     // Cache only successful validations (L1 + L2)
@@ -243,7 +344,7 @@ export async function validateJWT(
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
 
     console.error('[JWTValidator] ❌ Token validation failed:', {
-      error: errorMessage,
+      error: sanitizeForLog(errorMessage),
       errorType: error instanceof Error ? error.constructor.name : typeof error,
       configIssuer: config.issuer,
       configUserPoolId: config.userPoolId,
@@ -252,7 +353,7 @@ export async function validateJWT(
 
     return {
       isValid: false,
-      error: `JWT validation failed: ${errorMessage}`,
+      error: 'JWT validation failed',
     };
   }
 }
@@ -268,7 +369,7 @@ export async function validateJWT(
 export async function validateJWTFromEvent(
   event: any,
   config?: CognitoConfig,
-  options: { required?: boolean } = {}
+  options: { required?: boolean; expectedTenant?: string; enforceTenantMatch?: boolean } = {}
 ): Promise<JWTValidationResult> {
   const authHeader = event.headers?.Authorization || event.headers?.authorization;
 
@@ -294,7 +395,10 @@ export async function validateJWTFromEvent(
   let effectiveConfig = config;
   if (!effectiveConfig) {
     // Try to get tenant from header
-    const tenantId = event.headers?.['x-tenant-id'] || event.headers?.['X-Tenant-Id'];
+    const tenantId =
+      event.headers?.['x-tenant-id'] ||
+      event.headers?.['X-Tenant-ID'] ||
+      event.headers?.['X-Tenant-Id'];
     const stage = process.env.STAGE || 'dev';
 
     if (tenantId) {
@@ -312,7 +416,31 @@ export async function validateJWTFromEvent(
   }
 
   // Validate the token
-  return validateJWT(token, effectiveConfig);
+  const result = await validateJWT(token, effectiveConfig);
+
+  if (!result.isValid) {
+    return result;
+  }
+
+  const expectedTenant = options.expectedTenant?.toLowerCase();
+  const enforceTenantMatch = options.enforceTenantMatch ?? true;
+
+  if (expectedTenant && enforceTenantMatch) {
+    if (!result.tenantId) {
+      return {
+        isValid: false,
+        error: 'Missing tenant claim in JWT',
+      };
+    }
+    if (result.tenantId !== expectedTenant) {
+      return {
+        isValid: false,
+        error: 'Tenant claim mismatch',
+      };
+    }
+  }
+
+  return result;
 }
 
 /**

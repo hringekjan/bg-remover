@@ -1,8 +1,15 @@
 import { DynamoDBStreamHandler } from 'aws-lambda';
-import { SNS } from '@aws-sdk/client-sns';
+import { SNSClient, PublishCommand } from '@aws-sdk/client-sns';
+import { NodeHttpHandler } from '@smithy/node-http-handler';
 import { unmarshall } from '@aws-sdk/util-dynamodb';
 
-const sns = new SNS({ region: process.env.AWS_REGION || 'eu-west-1' });
+const sns = new SNSClient({ 
+  region: process.env.AWS_REGION || 'eu-west-1',
+  requestHandler: new NodeHttpHandler({
+    connectionTimeout: 5000,
+    requestTimeout: 10000,
+  }),
+});
 const SNS_TOPIC_ARN = process.env.JOB_UPDATES_SNS_TOPIC_ARN;
 const TENANT = process.env.TENANT || 'default';
 
@@ -34,9 +41,9 @@ function filterJobRecord(record: any): boolean {
     return false;
   }
 
-  // Only process job records (PK starts with 'JOB#')
-  const pk = record.dynamodb?.Keys?.PK?.S;
-  if (!pk || !pk.startsWith('JOB#')) {
+  // Only process job records (PK contains '#BG_REMOVER_JOB#' or '#BG_REMOVER_GROUPING_JOB#')
+  const pk = record.dynamodb?.Keys?.pk?.S || record.dynamodb?.Keys?.PK?.S;
+  if (!pk || (!pk.includes('#BG_REMOVER_JOB#') && !pk.includes('#BG_REMOVER_GROUPING_JOB#'))) {
     return false;
   }
 
@@ -89,7 +96,7 @@ async function publishJobUpdate(jobUpdate: JobUpdate): Promise<void> {
       imageCount: limitedUpdate.processedImages.length,
     });
 
-    const result = await sns.publish({
+    const result = await sns.send(new PublishCommand({
       TopicArn: SNS_TOPIC_ARN,
       Message: JSON.stringify(limitedUpdate),
       MessageAttributes: {
@@ -106,7 +113,7 @@ async function publishJobUpdate(jobUpdate: JobUpdate): Promise<void> {
           StringValue: 'job-update',
         },
       },
-    });
+    }));
 
     console.log('[SNS] Successfully published job update to SNS', {
       jobId: jobUpdate.jobId,

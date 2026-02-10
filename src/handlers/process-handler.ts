@@ -6,13 +6,16 @@ import { marshall } from '@aws-sdk/util-dynamodb';
 import { ProcessRequestSchema } from '../lib/types';
 import { validateRequest } from '../lib/validation';
 import { resolveTenantFromRequest } from '../lib/tenant/resolver';
-import { validateJWTFromEvent } from '../lib/auth/jwt-validator';
 import { loadTenantCognitoConfig } from '../lib/tenant/cognito-config';
+import { extractAuthContext, authorize } from '@carousellabs/rbac-access-kit';
 import { validateAndDebitCredits } from '../lib/credits/client';
 import { bgRemoverTelemetry, calculateBgRemoverCost } from '../lib/telemetry/bg-remover-telemetry';
 import { issueJobToken } from '../lib/job-token';
+import { EventTracker } from '../lib/event-tracking';
+import { createTenantCorsHeaders } from '../lib/cors';
 
 const dynamoDB = new DynamoDBClient({});
+const eventTracker = new EventTracker(dynamoDB);
 const lambda = new LambdaClient({});
 const tableName = global.process.env.DYNAMODB_TABLE || `carousel-main-${global.process.env.STAGE || 'dev'}`;
 const workerFunctionName = global.process.env.WORKER_FUNCTION_NAME!;
@@ -44,17 +47,30 @@ export class ProcessHandler extends BaseHandler {
     const httpMethod = event.requestContext?.http?.method || event.httpMethod;
 
     if (httpMethod === 'OPTIONS') {
+      const stage = this.context.stage;
+      let tenant = 'unknown';
+      try {
+        tenant = await resolveTenantFromRequest(event, stage);
+      } catch (error) {
+        console.warn('[ProcessHandler] Failed to resolve tenant for OPTIONS', {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+      const corsHeaders = createTenantCorsHeaders(event, tenant);
       return this.createJsonResponse('', 200, {
+        ...corsHeaders,
         'Access-Control-Allow-Methods': 'POST, OPTIONS',
       });
     }
 
     if (httpMethod !== 'POST') {
-      return this.createErrorResponse('Method Not Allowed', 405);
+      const corsHeaders = createTenantCorsHeaders(event, 'unknown');
+      return this.createErrorResponse('Method Not Allowed', 405, corsHeaders);
     }
 
     const stage = this.context.stage;
     const jobId = randomUUID();
+    let corsHeaders = createTenantCorsHeaders(event, 'unknown');
 
     // Record task start
     // Temporarily disabled due to build issues
@@ -65,8 +81,9 @@ export class ProcessHandler extends BaseHandler {
     // });
 
     // ===== TENANT RESOLUTION (BEFORE AUTH) =====
-    // Resolve tenant from request (header, domain, JWT claims, or default)
+    // Resolve tenant from request (header, domain, or default)
     const tenant = await resolveTenantFromRequest(event, stage);
+    corsHeaders = createTenantCorsHeaders(event, tenant);
 
     // Log request context for debugging
     console.log('[ProcessHandler] 📋 Request context:', {
@@ -80,71 +97,56 @@ export class ProcessHandler extends BaseHandler {
       timestamp: new Date().toISOString(),
     });
 
-    // ===== JWT AUTHENTICATION (WITH TENANT-SPECIFIC CONFIG) =====
-    // Always validate JWT token (API Gateway authorizer provides primary auth, this is defense in depth)
-    const requireAuth = true;
-
+    // GALACTIC STANDARD RBAC: Extract and verify auth context
     // Load tenant-specific Cognito configuration for JWT validation
-    let cognitoConfig;
+    let authContext;
     try {
-      cognitoConfig = await loadTenantCognitoConfig(tenant, stage);
+      authContext = extractAuthContext(event, { defaultTenantId: tenant });
 
-      console.log('[ProcessHandler] 🔐 Cognito config loaded:', {
+      // Enforce tenant isolation
+      if (authContext.tenantId !== tenant) {
+        return this.createErrorResponse('Tenant access mismatch', 403, corsHeaders);
+      }
+
+      // Perform RBAC check - Background removal requires staff or specific user roles
+      const decision = await authorize(authContext, {
+        action: 'remove_background',
+        resource: 'image',
+        isStaff: true // Staff/Admin always allowed, others checked via groups
+      });
+
+      if (!decision.allow) {
+        console.warn('[ProcessHandler] ❌ Authorization denied', {
+          reason: decision.reason,
+          userId: authContext.userId,
+          tenant,
+          jobId,
+        });
+        return this.createErrorResponse(decision.reason || 'Forbidden', 403, corsHeaders);
+      }
+
+      console.info('[ProcessHandler] ✅ Authorized request', {
+        userId: authContext.userId,
+        email: authContext.email,
+        groups: authContext.roles,
         tenant,
-        userPoolId: cognitoConfig.userPoolId,
-        issuer: cognitoConfig.issuer,
         jobId,
       });
-    } catch (error) {
-      console.error('[ProcessHandler] ❌ Failed to load tenant Cognito config:', {
+    } catch (authError: any) {
+      console.warn('[ProcessHandler] ❌ Authentication failed', {
+        error: authError.message,
         tenant,
-        error: error instanceof Error ? error.message : String(error),
-        jobId,
-      });
-      // Re-throw the error - loadTenantCognitoConfig now fails fast in prod
-      throw error;
-    }
-
-    const authResult = await validateJWTFromEvent(event, cognitoConfig, {
-      required: requireAuth
-    });
-
-    console.log('[ProcessHandler] Authentication result:', {
-      isValid: authResult.isValid,
-      hasUserId: !!authResult.userId,
-      userId: authResult.userId,
-      error: authResult.error,
-      requireAuth,
-      tenant,
-      jobId,
-    });
-
-    if (!authResult.isValid && requireAuth) {
-      console.warn('Authentication failed', {
-        error: authResult.error,
-        tenant,
-        stage,
-        path: event.requestContext?.http?.path,
         jobId,
       });
 
-      return this.createErrorResponse('Valid JWT token required', 401, {
+      return this.createErrorResponse(authError.message || 'Unauthorized', 401, {
+        ...corsHeaders,
         'WWW-Authenticate': 'Bearer realm="bg-remover", error="invalid_token"',
       });
     }
+    // ===== END GALACTIC STANDARD RBAC =====
 
-    if (authResult.isValid && authResult.userId) {
-      console.info('Authenticated request', {
-        userId: authResult.userId,
-        email: authResult.email,
-        groups: authResult.groups,
-        tenant,
-        jobId,
-      });
-    }
-    // ===== END JWT AUTHENTICATION =====
-
-    const userId = authResult.userId || 'anonymous';
+    const userId = authContext.userId;
 
     try {
       // Parse and validate request body
@@ -187,17 +189,17 @@ export class ProcessHandler extends BaseHandler {
       const creditsRequired = stage === 'prod' || global.process.env.REQUIRE_CREDITS === 'true';
       let creditTransactionId: string | undefined;
 
-      if (creditsRequired && authResult.isValid && authResult.userId) {
+      if (creditsRequired && authContext && authContext.userId) {
         console.info('Validating credits', {
           jobId,
           tenant,
-          userId: authResult.userId,
+          userId: authContext.userId,
           imageCount: 1,
         });
 
         const creditResult = await validateAndDebitCredits(
           tenant,
-          authResult.userId,
+          authContext.userId,
           1, // 1 credit per image
           jobId,
           productId
@@ -207,7 +209,7 @@ export class ProcessHandler extends BaseHandler {
           console.warn('Insufficient credits', {
             jobId,
             tenant,
-            userId: authResult.userId,
+            userId: authContext.userId,
             error: creditResult.error,
             errorCode: creditResult.errorCode,
           });
@@ -224,7 +226,7 @@ export class ProcessHandler extends BaseHandler {
         console.info('Credits debited successfully', {
           jobId,
           tenant,
-          userId: authResult.userId,
+          userId: authContext.userId,
           creditsUsed: creditResult.creditsUsed,
           newBalance: creditResult.newBalance,
           transactionId: creditResult.transactionId,
@@ -233,11 +235,11 @@ export class ProcessHandler extends BaseHandler {
       // ===== END CREDITS VALIDATION =====
 
       // Create job record in DynamoDB
+      const now = new Date().toISOString();
       const pk = `TENANT#${tenant}#BG_REMOVER_JOB#${jobId}`;
       const sk = 'METADATA';
       const gsi1pk = `TENANT#${tenant}#BG_REMOVER_JOBS`;
       const gsi1sk = `${now}#JOB#${jobId}`;
-      const now = new Date().toISOString();
       const ttl = Math.floor(Date.now() / 1000) + (7 * 24 * 60 * 60); // 7 days
 
       await dynamoDB.send(new PutItemCommand({
@@ -304,6 +306,7 @@ export class ProcessHandler extends BaseHandler {
           pipelineType: productId ? 'product-processing' : 'image-processing',
         },
       });
+      await eventTracker.recordEvent(tenant, 'IMAGE_UPLOADED', processingTime);
 
       const jobToken = issueJobToken({
         jobId,
@@ -319,7 +322,7 @@ export class ProcessHandler extends BaseHandler {
         message: 'Job accepted and queued for processing',
         statusUrl: `/bg-remover/status/${jobId}`,
         jobToken,
-      }, 202);
+      }, 202, corsHeaders);
 
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
@@ -344,8 +347,9 @@ export class ProcessHandler extends BaseHandler {
           stack: error instanceof Error ? error.stack : undefined,
         },
       });
+      await eventTracker.recordEvent(tenant, 'PROCESSING_FAILED', processingTime, errorMessage);
 
-      return this.createErrorResponse(errorMessage, 500);
+      return this.createErrorResponse(errorMessage, 500, corsHeaders);
     }
   }
 }

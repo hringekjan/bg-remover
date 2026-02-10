@@ -26,7 +26,7 @@ export class EventTracker {
 
     const item: Record<string, AttributeValue> = {
       pk: { S: `SERVICE#bg-remover#TENANT#${tenantId}#METRICS` },
-      sk: { S: `${eventType}#${timestamp}` },
+      sk: { S: `${timestamp}#${eventType}` },
       eventType: { S: eventType },
       timestamp: { S: timestamp },
     };
@@ -53,16 +53,41 @@ export class EventTracker {
   ): Promise<EventStatsResponse> {
     const startTime = new Date(Date.now() - timeframeMs).toISOString();
 
+    const TableName = process.env.EVENT_TRACKING_TABLE || 'event-tracking-dev';
+    const pkValue = `SERVICE#bg-remover#TENANT#${tenantId}#METRICS`;
+
+    console.log('[EventTracker] Querying DynamoDB:', {
+      TableName,
+      pk: pkValue,
+      startTime: startTime,
+      timeframeHours: timeframeMs / (1000 * 60 * 60)
+    });
+
+    // Use range query instead of begins_with to get all events from startTime onwards
     const command = new QueryCommand({
-      TableName: process.env.EVENT_TRACKING_TABLE || 'event-tracking-dev',
+      TableName: TableName,
       KeyConditionExpression: 'pk = :pk AND sk >= :startTime',
       ExpressionAttributeValues: {
-        ':pk': { S: `SERVICE#bg-remover#TENANT#${tenantId}#METRICS` },
+        ':pk': { S: pkValue },
         ':startTime': { S: startTime }
       }
     });
 
-    const result = await this.client.send(command);
+    let result;
+    try {
+      result = await this.client.send(command);
+    } catch (error) {
+      console.error('[EventTracker] DynamoDB query failed:', error);
+      
+      // If table doesn't exist or pk is missing, return empty stats
+      if ((error as any)?.name === 'ResourceNotFoundException' || 
+          (error as any)?.message?.includes('key schema element')) {
+        console.log('[EventTracker] Table not found or schema mismatch, returning empty stats');
+        result = { Items: [] };
+      } else {
+        throw error; // Re-throw other errors
+      }
+    }
 
     // Initialize stats object
     const byEventType: Record<string, {

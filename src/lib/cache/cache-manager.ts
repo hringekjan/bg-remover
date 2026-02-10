@@ -69,6 +69,7 @@ export class CacheManager {
 
   private startCleanupInterval(): void {
     if (!this.config.enableMemoryCache) return;
+    if (process.env.NODE_ENV === 'test' || process.env.JEST_WORKER_ID) return;
 
     // Clean up expired entries every 5 minutes
     this.cleanupInterval = setInterval(() => {

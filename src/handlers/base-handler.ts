@@ -110,7 +110,18 @@ export class BaseHandler {
 
     if (headersOrDetails) {
       // If third param looks like HTTP headers (has common header keys), treat as headers
-      const headerKeys = ['WWW-Authenticate', 'Content-Type', 'Cache-Control', 'Location'];
+      const headerKeys = [
+        'WWW-Authenticate',
+        'Content-Type',
+        'Cache-Control',
+        'Location',
+        'Access-Control-Allow-Origin',
+        'Access-Control-Allow-Methods',
+        'Access-Control-Allow-Headers',
+        'Access-Control-Allow-Credentials',
+        'Access-Control-Max-Age',
+        'Vary',
+      ];
       const isHeaders = typeof headersOrDetails === 'object' &&
         Object.keys(headersOrDetails).some(key => headerKeys.includes(key));
 

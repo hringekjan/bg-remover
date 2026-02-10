@@ -12,7 +12,7 @@ export type ModelTask =
   | 'embedding'           // Generate embeddings for similarity
   | 'image_generation';   // Generate/modify images
 
-export type ModelFamily = 'mistral' | 'amazon' | 'stability' | 'meta' | 'cohere';
+export type ModelFamily = 'mistral' | 'amazon' | 'stability' | 'meta' | 'cohere' | 'openai';
 
 export interface ModelConfig {
   id: string;
@@ -26,6 +26,9 @@ export interface ModelConfig {
 }
 
 // Available Bedrock Foundational Models
+const NOVA_PRO_MODEL_ID = process.env.BEDROCK_NOVA_PRO_PROFILE_ARN || 'amazon.nova-pro-v1:0';
+const NOVA_PRO_ENABLED = Boolean(process.env.BEDROCK_NOVA_PRO_PROFILE_ARN);
+
 export const BEDROCK_MODELS: Record<string, ModelConfig> = {
   // ============================================================================
   // Amazon Nova Models (Primary - Cost-Effective AWS Native)
@@ -33,7 +36,7 @@ export const BEDROCK_MODELS: Record<string, ModelConfig> = {
 
   // Nova Pro - Best quality for complex tasks
   'amazon.nova-pro-v1:0': {
-    id: 'amazon.nova-pro-v1:0',
+    id: NOVA_PRO_MODEL_ID,
     name: 'Amazon Nova Pro',
     family: 'amazon',
     tasks: ['image_analysis', 'text_generation', 'translation'],
@@ -65,6 +68,18 @@ export const BEDROCK_MODELS: Record<string, ModelConfig> = {
     maxTokens: 5120,
     costPer1kTokens: 0.000035,
     priority: 1, // Cheapest for text-only
+  },
+
+  // Nova Canvas - Image generation / background removal
+  'amazon.nova-canvas-v1:0': {
+    id: 'amazon.nova-canvas-v1:0',
+    name: 'Amazon Nova Canvas',
+    family: 'amazon',
+    tasks: ['image_generation'],
+    supportsImages: true,
+    maxTokens: 2048,
+    costPer1kTokens: 0.0008,
+    priority: 1,
   },
 
   // ============================================================================
@@ -151,6 +166,18 @@ export const BEDROCK_MODELS: Record<string, ModelConfig> = {
   // Mistral Models (High Quality Text Generation)
   // ============================================================================
 
+  // Pixtral Large - Vision analysis + descriptions
+  'us.mistral.pixtral-large-2502-v1:0': {
+    id: 'us.mistral.pixtral-large-2502-v1:0',
+    name: 'Mistral Pixtral Large',
+    family: 'mistral',
+    tasks: ['image_analysis', 'text_generation'],
+    supportsImages: true,
+    maxTokens: 8192,
+    costPer1kTokens: 0.004,
+    priority: 1,
+  },
+
   'mistral.mistral-large-2402-v1:0': {
     id: 'mistral.mistral-large-2402-v1:0',
     name: 'Mistral Large',
@@ -186,6 +213,21 @@ export const BEDROCK_MODELS: Record<string, ModelConfig> = {
     maxTokens: 512,
     costPer1kTokens: 0.0001,
     priority: 3, // Fallback for multilingual embeddings
+  },
+
+  // =========================================================================
+  // OpenAI GPT-OSS (Translation)
+  // =========================================================================
+
+  'openai.gpt-oss-120b-1:0': {
+    id: 'openai.gpt-oss-120b-1:0',
+    name: 'OpenAI GPT-OSS 120B',
+    family: 'openai',
+    tasks: ['translation'],
+    supportsImages: false,
+    maxTokens: 8192,
+    costPer1kTokens: 0.004,
+    priority: 1,
   },
 
   // ============================================================================
@@ -236,11 +278,11 @@ export function getModelById(modelId: string): ModelConfig | null {
  * Uses Amazon Nova as primary for cost optimization
  */
 export const DEFAULT_MODELS = {
-  image_analysis: 'amazon.nova-lite-v1:0',       // Nova Lite - cost-effective with vision
-  text_generation: 'amazon.nova-lite-v1:0',     // Nova Lite - 90% of tasks
-  translation: 'amazon.nova-lite-v1:0',         // Nova Lite - good multilingual support
+  image_analysis: 'us.mistral.pixtral-large-2502-v1:0', // Pixtral - vision analysis (cross-region)
+  text_generation: 'us.mistral.pixtral-large-2502-v1:0', // Pixtral - descriptions (cross-region)
+  translation: 'amazon.nova-lite-v1:0',         // Nova Lite - translation
   embedding: 'amazon.titan-embed-image-v1',     // Titan - best for image embeddings
-  image_generation: null, // Not currently supported
+  image_generation: 'amazon.nova-canvas-v1:0',  // Nova Canvas - image generation
 };
 
 /**
@@ -249,11 +291,11 @@ export const DEFAULT_MODELS = {
  */
 export const TIERED_MODELS = {
   // 90% of tasks - routine operations
-  default: 'amazon.nova-lite-v1:0',
+  default: 'us.mistral.pixtral-large-2502-v1:0',
   // 8% of tasks - multi-step reasoning
-  complex: 'amazon.nova-pro-v1:0',
-  // 2% of tasks - critical decisions (Nova Pro + more tokens)
-  expert: 'amazon.nova-pro-v1:0',
+  complex: 'us.mistral.pixtral-large-2502-v1:0',
+  // 2% of tasks - critical decisions
+  expert: 'us.mistral.pixtral-large-2502-v1:0',
   // Embeddings (image + text)
   embedding_image: 'amazon.titan-embed-image-v1',
   embedding_text: 'amazon.titan-embed-text-v2:0',

@@ -8,9 +8,10 @@ const TABLE_NAME = process.env.DYNAMODB_TABLE_NAME || 'carousel-main-dev';
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { jobId: string } }
+  { params }: { params: Promise<{ jobId: string }> }
 ) {
-  const jobId = params.jobId;
+  const resolvedParams = await params;
+  const jobId = resolvedParams.jobId;
 
   // Set up SSE response headers
   const responseStream = new TransformStream();

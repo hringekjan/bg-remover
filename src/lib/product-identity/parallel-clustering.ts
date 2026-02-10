@@ -83,14 +83,13 @@ export async function processParallel<TIn, TOut>(
 
   const tasks = items.map((item, index) => async () => {
     const itemStartTime = Date.now();
+    let timeoutId: NodeJS.Timeout | undefined;
     try {
       // Add timeout to prevent hanging operations
-      const result = await Promise.race([
-        processor(item),
-        new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error('Operation timeout')), timeout)
-        ),
-      ]);
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        timeoutId = setTimeout(() => reject(new Error('Operation timeout')), timeout);
+      });
+      const result = await Promise.race([processor(item), timeoutPromise]);
 
       const itemTime = Date.now() - itemStartTime;
       console.log(`[ParallelProcessing] Item ${index + 1}/${items.length} completed in ${itemTime}ms`);
@@ -105,6 +104,10 @@ export async function processParallel<TIn, TOut>(
         id: `item-${index}`,
         error: errorMessage,
       };
+    } finally {
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
     }
   });
 

@@ -36,7 +36,7 @@ class SalesDataGenerator:
     CATEGORIES = ['coats', 'handbags', 'shoes', 'dresses', 'jackets', 'accessories', 'pants', 'sweaters']
     BRANDS = ['Gucci', 'Prada', 'Louis Vuitton', 'Chanel', 'Dior', 'Hermes', 'Versace', 'Coach']
     CONDITIONS = ['new_with_tags', 'new_without_tags', 'like_new', 'very_good', 'good', 'fair']
-    SOURCES = ['smartgo', 'carousel']
+    SOURCES = ['carousel']
     SEASONS = ['Q1', 'Q2', 'Q3', 'Q4']
 
     # Price ranges by category (in dollars)
@@ -84,7 +84,7 @@ class SalesDataGenerator:
                 'image_s3_key': f's3://carousel-images/product-{i:06d}/main.jpg',
                 'embedding': embedding,
                 'description': f'{category.title()} from {random.choice(self.BRANDS)}',
-                'source': random.choice(self.SOURCES),
+                'source': 'carousel',
                 'year': sold_date.year,
                 'month': sold_date.month,
             }

@@ -22,10 +22,14 @@ jest.mock('@aws-sdk/client-ssm', () => ({
   GetParameterCommand: jest.fn(),
 }));
 
-// Mock crypto (only for non-DynamoDB tests)
-jest.mock('crypto', () => ({
-  randomUUID: jest.fn(() => 'test-uuid-123'),
-}));
+// Mock crypto (only override randomUUID; keep real crypto for hashing/HMAC)
+jest.mock('crypto', () => {
+  const actual = jest.requireActual('crypto');
+  return {
+    ...actual,
+    randomUUID: jest.fn(() => 'test-uuid-123'),
+  };
+});
 
 // Mock fetch for image-optimizer calls
 global.fetch = jest.fn() as jest.MockedFunction<typeof fetch>;

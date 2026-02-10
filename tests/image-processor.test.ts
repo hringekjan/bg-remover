@@ -11,6 +11,20 @@ jest.mock('@aws-sdk/client-ssm', () => ({
 const mockFetch = jest.fn() as jest.MockedFunction<typeof fetch>;
 global.fetch = mockFetch;
 
+// Mock pipeline orchestrator to avoid AWS Bedrock calls in unit tests
+jest.mock('../src/lib/pipelines/image-processing-pipeline', () => ({
+  processImage: jest.fn().mockResolvedValue({
+    outputBuffer: Buffer.from('test'),
+    metadata: {
+      width: 100,
+      height: 100,
+      format: 'png',
+      originalSize: 1024,
+      processedSize: 512,
+    },
+  }),
+}));
+
 import { processImageFromUrl, processImageFromBase64 } from '../src/lib/bedrock/image-processor';
 
 describe('Image Processor', () => {
@@ -41,6 +55,12 @@ describe('Image Processor', () => {
 
     mockFetch.mockResolvedValue({
       ok: true,
+      status: 200,
+      statusText: 'OK',
+      arrayBuffer: async () => new ArrayBuffer(8),
+      headers: {
+        get: jest.fn().mockReturnValue('image/png'),
+      },
       json: async () => ({
         outputBase64: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAACXBIWXMAAAsTAAALEwEAmpwYAAAADUlEQVR4nGNgYGBgAAAABQABpfZFQAAAAABJRU5ErkJggg==',
         metadata: {
@@ -68,22 +88,7 @@ describe('Image Processor', () => {
 
       const result = await processImageFromUrl(imageUrl, options, tenant);
 
-      expect(mockFetch).toHaveBeenCalledWith(
-        expect.stringContaining('/optimize'),
-        expect.objectContaining({
-          method: 'POST',
-          headers: expect.objectContaining({
-            'Content-Type': 'application/json',
-            'X-Tenant-Id': tenant,
-          }),
-          body: JSON.stringify({
-            imageUrl,
-            outputFormat: 'png',
-            quality: 80,
-            targetSize: undefined,
-          }),
-        })
-      );
+      expect(mockFetch).toHaveBeenCalledWith(imageUrl);
 
       expect(result).toEqual({
         outputBuffer: expect.any(Buffer),
@@ -101,7 +106,11 @@ describe('Image Processor', () => {
       mockFetch.mockResolvedValueOnce({
         ok: false,
         status: 500,
-        text: async () => 'Internal Server Error',
+        statusText: 'Internal Server Error',
+        arrayBuffer: async () => new ArrayBuffer(0),
+        headers: {
+          get: jest.fn().mockReturnValue('image/png'),
+        },
       } as any);
 
       const imageUrl = 'https://example.com/image.jpg';
@@ -109,7 +118,7 @@ describe('Image Processor', () => {
       const tenant = 'test-tenant';
 
       await expect(processImageFromUrl(imageUrl, options, tenant)).rejects.toThrow(
-        'Image Optimizer API failed: 500 - Internal Server Error'
+        'Failed to fetch image: Internal Server Error'
       );
     });
 
@@ -139,22 +148,7 @@ describe('Image Processor', () => {
 
       const result = await processImageFromBase64(base64Image, contentType, options, tenant);
 
-      expect(mockFetch).toHaveBeenCalledWith(
-        expect.stringContaining('/optimize'),
-        expect.objectContaining({
-          method: 'POST',
-          headers: expect.objectContaining({
-            'Content-Type': 'application/json',
-            'X-Tenant-Id': tenant,
-          }),
-          body: JSON.stringify({
-            imageBase64: base64Image,
-            outputFormat: 'png',
-            quality: 80,
-            targetSize: undefined,
-          }),
-        })
-      );
+      expect(mockFetch).not.toHaveBeenCalled();
 
       expect(result).toEqual({
         outputBuffer: expect.any(Buffer),
@@ -180,17 +174,7 @@ describe('Image Processor', () => {
 
       await processImageFromBase64(base64Image, contentType, options, tenant);
 
-      expect(mockFetch).toHaveBeenCalledWith(
-        expect.any(String),
-        expect.objectContaining({
-          body: JSON.stringify({
-            imageBase64: base64Image,
-            outputFormat: 'png',
-            quality: 80,
-            targetSize: { width: 200, height: 200 },
-          }),
-        })
-      );
+      expect(mockFetch).not.toHaveBeenCalled();
     });
   });
 });

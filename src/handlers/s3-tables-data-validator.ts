@@ -783,8 +783,8 @@ async function getAthenaQueryResults(executionId: string): Promise<string[][]> {
  * Implements pagination to handle large result sets.
  *
  * DynamoDB table structure:
- * - PK: TENANT#{tenant}
- * - SK: SALE#{dateStr}#{id}
+ * - pk: TENANT#{tenant}
+ * - sk: SALE#{dateStr}#{id}
  */
 async function countDynamoDBRows(
   tableName: string,

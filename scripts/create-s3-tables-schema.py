@@ -114,7 +114,7 @@ def create_iceberg_table(
                     {'Name': 'image_s3_key', 'Type': 'string', 'Comment': 'S3 key for product image'},
                     {'Name': 'embedding', 'Type': 'array<double>', 'Comment': '1024-dimensional Titan embedding vector'},
                     {'Name': 'description', 'Type': 'string', 'Comment': 'Product description'},
-                    {'Name': 'source', 'Type': 'string', 'Comment': 'Data source (smartgo | carousel)'},
+                    {'Name': 'source', 'Type': 'string', 'Comment': 'Data source (carousel)'},
                 ],
                 'Location': s3_location,
                 'InputFormat': 'org.apache.iceberg.mr.mapreduce.IcebergInputFormat',

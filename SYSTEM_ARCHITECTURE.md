@@ -13,7 +13,6 @@ The bg-remover service implements vision-enhanced pricing intelligence using AWS
 ```mermaid
 graph TB
     subgraph "Data Sources"
-        SmartGo[SmartGo Database<br/>Historical Sales]
         Carousel[Carousel Products<br/>Real-time Events]
     end
 
@@ -24,7 +23,6 @@ graph TB
     end
 
     subgraph "bg-remover Service"
-        L1[smartgoToS3Exporter<br/>Daily Batch]
         L2[carouselToS3TablesSync<br/>Real-time]
         L3[s3TablesDataValidator<br/>Daily Validation]
         L4[pricingSuggestionEngine<br/>On-demand]
@@ -40,11 +38,6 @@ graph TB
     subgraph "AI/ML Services"
         Bedrock[AWS Bedrock<br/>Titan Embeddings<br/>Nova Lite/Pro]
     end
-
-    SmartGo -->|Daily Export| L1
-    L1 -->|Write JSONL| S3Tables
-    L1 -->|Store Embeddings| DDB1
-    L1 -->|Upload Images| S3Images
 
     Carousel -->|product.sold Events| EB
     EB -->|Trigger| L2
@@ -69,28 +62,15 @@ graph TB
 
 ```mermaid
 sequenceDiagram
-    participant Scheduler as EventBridge<br/>Cron Schedule
-    participant SmartGo as SmartGo<br/>Database
-    participant Exporter as smartgoToS3Exporter<br/>Lambda
-    participant Bedrock as AWS Bedrock<br/>Titan
+    participant EB as EventBridge
+    participant Sync as carouselToS3TablesSync<br/>Lambda
     participant S3 as S3 Tables<br/>Iceberg
     participant DDB as DynamoDB<br/>sales-intelligence
 
-    Scheduler->>Exporter: Daily Trigger (2 AM UTC)
-    Exporter->>SmartGo: Query Sales (last 24h)
-    SmartGo-->>Exporter: Sales Records (JSON)
-
-    loop For Each Sale
-        Exporter->>S3: Fetch Product Image
-        S3-->>Exporter: Image Data (base64)
-        Exporter->>Bedrock: Generate Titan Embedding
-        Bedrock-->>Exporter: 1024-dim Vector
-        Exporter->>S3: Write JSONL Row (sale + embedding)
-        Exporter->>DDB: PutItem (sales-intelligence)
-    end
-
-    Exporter->>DDB: Update Export Progress
-    Exporter-->>Scheduler: Success
+    EB->>Sync: product.sold Event
+    Sync->>S3: Write JSONL Row
+    Sync->>DDB: PutItem (sales-intelligence)
+    Sync-->>EB: Success
 ```
 
 ---
@@ -275,7 +255,7 @@ sequenceDiagram
 - image_s3_key (STRING)
 - embedding (ARRAY<DOUBLE> - 1024 dimensions)
 - description (STRING)
-- source (STRING: smartgo | carousel)
+- source (STRING: carousel)
 
 **Partitioning:**
 - BY (tenant_id, year(sold_date), month(sold_date))

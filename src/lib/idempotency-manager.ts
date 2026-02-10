@@ -19,8 +19,8 @@ import {
 import { marshall } from '@aws-sdk/util-dynamodb';
 
 export interface IdempotencyRecord {
-  pk: string;
-  sk: string;
+  PK: string;
+  SK: string;
   tenantId: string;
   eventType: string;
   eventId: string;
@@ -75,8 +75,8 @@ export class IdempotencyManager {
     eventId: string,
     ttlSeconds: number
   ): Promise<boolean> {
-    const pk = `IDEMPOTENCY#${tenantId}#${eventType}#${eventId}`;
-    const sk = `IDEMPOTENCY#${eventId}`;
+    const PK = `IDEMPOTENCY#${tenantId}#${eventType}#${eventId}`;
+    const SK = `IDEMPOTENCY#${eventId}`;
     const now = new Date().toISOString();
     const ttl = Math.floor(Date.now() / 1000) + ttlSeconds;
 
@@ -88,15 +88,15 @@ export class IdempotencyManager {
         new PutItemCommand({
           TableName: this.tableName,
           Item: marshall({
-            pk,
-            sk,
+            PK,
+            SK,
             tenantId,
             eventType,
             eventId,
             processedAt: now,
             ttl,
           }),
-          ConditionExpression: 'attribute_not_exists(pk)', // Fail if already exists
+          ConditionExpression: 'attribute_not_exists(PK)', // Fail if already exists
         })
       );
 

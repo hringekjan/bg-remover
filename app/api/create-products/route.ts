@@ -147,7 +147,8 @@ async function processProductGroup(
   userId: string,
   options: NonNullable<CreateProductsRequest['options']>,
   index: number,
-  timeoutMs?: number
+  timeoutMs?: number,
+  authToken?: string
 ): Promise<ProductCreationResult> {
   const productGroupId = group.productId || `group-${index}-${randomUUID().substring(0, 8)}`;
   const startTime = Date.now();
@@ -177,10 +178,18 @@ async function processProductGroup(
     // Apply timeout if specified
     let imageProcessingResults;
     if (timeoutMs && timeoutMs > 0) {
-      const timeoutPromise = new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error('Group processing timeout')), timeoutMs)
-      );
-      imageProcessingResults = await Promise.race([processingPromise, timeoutPromise]);
+      let timeoutId: NodeJS.Timeout | null = null;
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        timeoutId = setTimeout(() => reject(new Error('Group processing timeout')), timeoutMs);
+      });
+
+      try {
+        imageProcessingResults = await Promise.race([processingPromise, timeoutPromise]);
+      } finally {
+        if (timeoutId) {
+          clearTimeout(timeoutId);
+        }
+      }
     } else {
       imageProcessingResults = await processingPromise;
     }
@@ -228,7 +237,8 @@ async function processProductGroup(
     const { product, error } = await createProductInCarouselApi(
       tenant,
       userId,
-      productData
+      productData,
+      authToken || undefined
     );
 
     if (error || !product) {
@@ -399,6 +409,7 @@ export async function POST(request: NextRequest) {
 
     // Extract tenant and user from authenticated context
     const requestedTenant = request.headers.get('x-tenant-id') || 'carousel-labs';
+    const authToken = request.headers.get('authorization') || request.headers.get('Authorization') || undefined;
     const userId = authResult.userId || 'system';
 
     // ===== TENANT AUTHORIZATION - PREVENT CROSS-TENANT ACCESS =====
@@ -569,7 +580,8 @@ export async function POST(request: NextRequest) {
         userId,
         options,
         index,
-        perGroupTimeoutMs
+        perGroupTimeoutMs,
+        authToken
       )
     );
 

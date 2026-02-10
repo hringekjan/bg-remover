@@ -93,7 +93,7 @@ The project has AWS Lambda Powertools installed (`@aws-lambda-powertools/logger`
 ### Recommendations for Future Optimization
 1. **Add @aws-lambda-powertools/parameters dependency**: Provides better SSM integration
 2. **Replace custom config loader**: Use Powertools Parameters for more reliable and faster configuration loading
-3. **Consistent with other services**: Follow the pattern used in smartgo-connector
+3. **Consistent with other services**: Follow the pattern used in carousel services
 
 ## Lessons Learned
 

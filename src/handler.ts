@@ -24,7 +24,7 @@ import {
 } from './lib/bedrock/image-processor';
 import { uploadProcessedImage, generateOutputKey, getOutputBucket } from '../lib/s3/client';
 import { EventBridgeClient, PutEventsCommand } from '@aws-sdk/client-eventbridge';
-import { validateJWTFromEvent } from './lib/auth/jwt-validator';
+import { validateJWTFromEvent, getCognitoConfigForTenantAsync } from './lib/auth/jwt-validator';
 import { SSMClient, GetParameterCommand, PutParameterCommand } from '@aws-sdk/client-ssm';
 import { validateAndDebitCredits, refundCredits } from './lib/credits/client';
 import {
@@ -342,12 +342,19 @@ export const process = async (event: any) => {
     return createErrorResponse(ErrorCode.METHOD_NOT_ALLOWED, 'Only POST method is allowed', undefined, requestId);
   }
 
+  // Resolve tenant from request (header, domain, or default) - MUST happen before JWT validation
+  const tenant = await resolveTenantFromRequest(event, stage);
+
   // ===== JWT AUTHENTICATION =====
   // Always validate JWT token (API Gateway authorizer provides primary auth, this is defense in depth)
   const requireAuth = true;
 
-  const authResult = await validateJWTFromEvent(event, undefined, {
-    required: requireAuth
+  // Load tenant-specific Cognito config for JWT validation
+  const cognitoConfig = await getCognitoConfigForTenantAsync(tenant, stage);
+  const authResult = await validateJWTFromEvent(event, cognitoConfig, {
+    required: requireAuth,
+    expectedTenant: tenant,
+    enforceTenantMatch: true,
   });
 
   if (!authResult.isValid && requireAuth) {
@@ -391,8 +398,7 @@ export const process = async (event: any) => {
   const processingStartTime = Date.now();
   const jobId = randomUUID();
 
-  // Resolve tenant from request (header, domain, or default)
-  const tenant = await resolveTenantFromRequest(event, stage);
+  // Tenant already resolved before JWT validation (line 345)
 
   // Track credit transaction for potential refund on failure
   let creditTransactionId: string | undefined;
@@ -831,7 +837,9 @@ export const status = async (event: any) => {
   const cognitoConfig = await loadTenantCognitoConfig(tenant, stage);
 
   const authResult = await validateJWTFromEvent(event, cognitoConfig, {
-    required: requireAuth
+    required: requireAuth,
+    expectedTenant: tenant,
+    enforceTenantMatch: true,
   });
 
   if (!authResult.isValid && requireAuth) {
@@ -1024,9 +1032,9 @@ export const status = async (event: any) => {
         );
       }
 
-      // Update job status to cancelled/failed
+      // Update job status to cancelled
       await updateJobStatus(jobId, {
-        status: 'failed',
+        status: 'cancelled',
         result: {
           success: false,
           error: 'Job cancelled by user',
@@ -1116,7 +1124,9 @@ export const settings = async (event: any) => {
   });
 
   const authResult = await validateJWTFromEvent(event, cognitoConfig, {
-    required: requireAuth
+    required: requireAuth,
+    expectedTenant: tenant,
+    enforceTenantMatch: true,
   });
 
   if (!authResult.isValid && requireAuth) {

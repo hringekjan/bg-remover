@@ -442,3 +442,105 @@ fields @timestamp, message, operation, key, tenant, layer
 # Example: jwt-validation-abc123def456... (valid)
 #          jwt-validation-abc.123 (invalid - contains dot)
 ```
+
+---
+
+## Testing
+
+The **bg-remover** service ships with three layers of automated tests:
+
+| Type          | Location                              | Runner                     |
+|---------------|---------------------------------------|----------------------------|
+| Unit          | `src/**/*.ts` & `lib/**/*.ts`        | **Jest** (`npm run test`) |
+| Integration   | `integration/**/*.test.ts`            | **Jest** (`npm run test`) |
+| End-to-End    | `e2e/**/*.e2e.test.ts`               | **Playwright** (`npm run test:e2e`) |
+
+All tests are written in **TypeScript** and run under strict mode.
+
+### Test Scripts
+
+| Script            | Description |
+|-------------------|-------------|
+| `npm run test` | Runs unit + integration tests (Jest). |
+| `npm run test:e2e` | Executes Playwright E2E suite against the local API. |
+| `npm run test:all` | Runs *all* tests in the monorepo (root, bg-remover, carousel-frontend). |
+| `npm run test:ci` | Parallel CI-friendly entry point (requires `npm-run-all`). |
+
+### Test Prerequisites
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `BG_REMOVER_API_URL` | Base URL for the API when running Playwright tests. | `http://localhost:3000` |
+| `SERVERLESS_OFFLINE_PORT` | Port used by `serverless offline` (integration test). | `3000` |
+| `TEST_USER_EMAIL` / `TEST_USER_PASSWORD` | Credentials for the token-refresh UI test in `carousel-frontend`. | *none* (set locally) |
+
+### Running Tests
+
+```bash
+# Unit + integration (Jest)
+cd services/bg-remover
+npm run test
+
+# End-to-end (Playwright)
+npm run test:e2e
+```
+
+The Playwright configuration (`playwright.config.ts`) points to `./e2e` and uses the **API** project only – no browsers are launched.
+
+### CI Integration
+
+The root script `npm run test:ci` runs the unit tests and the two service-specific suites in parallel.
+Add the following step to your CI pipeline:
+
+```yaml
+- name: Install dependencies
+  run: npm ci
+
+- name: Run all tests
+  run: npm run test:ci
+```
+
+### Test Descriptions
+
+**Unit Tests** (`src/**/*.test.ts`):
+* Validate pure functions, request validation, and utility helpers.
+
+**Integration Tests** (`integration/serverless-offline.integration.test.ts`):
+* Spins up `serverless offline` and hits the real Lambda handler (`/dev/api/remove-bg`).
+* Confirms end-to-end request/response flow, including error handling.
+
+**E2E Tests** (`e2e/*.e2e.test.ts`):
+
+| Test | Goal |
+|------|------|
+| `corrupted-image.e2e.test.ts` | Verify the service returns **400** for a corrupted JPEG. |
+| `png-with-alpha.e2e.test.ts` | Ensure PNGs with an alpha channel are processed correctly and the response contains a new image URL. |
+| `burst-rate-limit.e2e.test.ts` | Confirm that a burst of concurrent requests triggers **429** rate-limit responses. |
+
+### Adding New Tests
+
+1. **Create the file** under the appropriate folder (`__tests__`, `integration`, or `e2e`).
+2. **Follow import ordering** (external → internal → relative).
+3. **Use explicit return types** and avoid `any`.
+4. **Run the suite locally** before committing.
+
+### Test Coverage
+
+Jest is configured with **80% coverage thresholds** for:
+- Branches
+- Functions
+- Lines
+- Statements
+
+Coverage reports are generated in `coverage/` directory.
+
+### Test Troubleshooting
+
+**Playwright cannot reach the API**:
+- Ensure `BG_REMOVER_API_URL` points to a running instance (e.g., `npm run start` or `serverless offline`).
+
+**Rate-limit test flakiness**:
+- Adjust `REQUESTS_IN_BURST` or the server's configured limits in `src/config/rateLimit.ts`.
+
+**Integration test hangs**:
+- Verify that the `serverless offline` binary is installed (`npm i -g serverless`).

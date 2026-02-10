@@ -25,13 +25,20 @@ export async function timeout<T>(
   promise: Promise<T>,
   errorMessage = 'Operation timed out'
 ): Promise<T> {
+  let timeoutId: NodeJS.Timeout | null = null;
   const timeoutPromise = new Promise<never>((_, reject) => {
-    setTimeout(() => {
+    timeoutId = setTimeout(() => {
       reject(new TimeoutError(`${errorMessage} after ${ms}ms`, ms));
     }, ms);
   });
 
-  return Promise.race([promise, timeoutPromise]);
+  try {
+    return await Promise.race([promise, timeoutPromise]);
+  } finally {
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+    }
+  }
 }
 
 /**

@@ -99,7 +99,6 @@ functions:
   pricingInsightAggregator: bg-remover-dev-pricingInsightAggregator (105 kB)
   rotateKeys: bg-remover-dev-rotateKeys (11 kB)
   s3TablesDataValidator: bg-remover-dev-s3TablesDataValidator (93 kB)
-  smartgoToS3Exporter: bg-remover-dev-smartgoToS3Exporter (21 kB)
   carouselToS3TablesSync: bg-remover-dev-carouselToS3TablesSync (84 kB)
 ```
 

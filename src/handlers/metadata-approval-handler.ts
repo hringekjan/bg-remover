@@ -16,10 +16,11 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
   // 1. Authenticate and Extract Tenant Context using bg-remover's validator
   let authContext;
   try {
-    const authResult = await validateJWTFromEvent(event);
-    
+    const authResult = await validateJWTFromEvent(event, undefined, { required: true });
+
     // Extract from result or fallback to requestContext (for mock testing)
-    const tenantId = authResult.payload?.['custom:tenantId'] as string || 
+    const tenantId = authResult.tenantId ||
+                     (authResult.payload?.['custom:tenantId'] as string | undefined) ||
                      event.requestContext?.authorizer?.jwt?.claims?.['custom:tenantId'];
     const userId = authResult.userId || 
                    event.requestContext?.authorizer?.jwt?.claims?.sub;
@@ -30,20 +31,20 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
     
     authContext = { tenantId, userId };
   } catch (error) {
-    return createErrorResponse(ErrorCode.UNAUTHORIZED, 'Unauthorized', requestId);
+    return createErrorResponse(ErrorCode.AUTH_ERROR, 'Unauthorized', requestId);
   }
 
   const { tenantId, userId } = authContext;
   
   if (!event.body) {
-    return createErrorResponse(ErrorCode.BAD_REQUEST, 'Request body required', requestId);
+    return createErrorResponse(ErrorCode.VALIDATION_ERROR, 'Request body required', requestId);
   }
 
   try {
     const { productId, status, metadata } = JSON.parse(event.body);
 
     if (!productId || !status) {
-      return createErrorResponse(ErrorCode.BAD_REQUEST, 'productId and status are required', requestId);
+      return createErrorResponse(ErrorCode.VALIDATION_ERROR, 'productId and status are required', requestId);
     }
 
     const pkValue = `TENANT#${tenantId}#PRODUCT#${productId}`;

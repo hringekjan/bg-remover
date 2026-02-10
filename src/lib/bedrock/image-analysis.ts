@@ -1,6 +1,10 @@
 import { BedrockRuntimeClient, InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime';
 
-const bedrockClient = new BedrockRuntimeClient({ region: process.env.AWS_REGION || 'eu-west-1' });
+const VISION_REGION = process.env.BEDROCK_VISION_REGION || process.env.BEDROCK_REGION || 'us-east-1';
+const TRANSLATION_REGION = process.env.BEDROCK_TRANSLATION_REGION || process.env.BEDROCK_REGION || process.env.AWS_REGION || 'eu-west-1';
+
+const visionClient = new BedrockRuntimeClient({ region: VISION_REGION });
+const translationClient = new BedrockRuntimeClient({ region: TRANSLATION_REGION });
 
 import { type ProductDescription, type ProductCondition, type BilingualProductDescription } from '../types';
 import { routeToModel, type ImageMetadata, type ProcessingOptions } from '../routing/model-router';
@@ -41,7 +45,7 @@ export async function analyzeImageForDescription(
     });
   } else {
     // Fallback to default tier if no metadata provided
-    selectedModelId = 'amazon.nova-lite-v1:0';
+    selectedModelId = 'us.mistral.pixtral-large-2502-v1:0';
     console.warn('No metadata provided for routing, using default tier');
   }
 
@@ -70,9 +74,7 @@ Format your response as JSON with keys: short, long, category, colors, condition
   for (const modelId of modelsToTry) {
     try {
       // Prioritize Nova Pro for elegant fashion runs if available or requested
-      const actualModelId = (selectedModelId.includes('nova-lite') && routingTier === 'premium') 
-        ? 'amazon.nova-pro-v1:0' 
-        : modelId;
+      const actualModelId = modelId;
 
       console.log(`Trying model: ${actualModelId}`, {
         tier: routingTier,
@@ -80,7 +82,7 @@ Format your response as JSON with keys: short, long, category, colors, condition
         hasMetadata: !!metadata,
       });
 
-      // Nova models use Messages API with native image support
+      // Pixtral uses Messages API with native image support
       const requestBody = {
         max_tokens: 1000,
         temperature: 0.7,
@@ -106,7 +108,7 @@ Format your response as JSON with keys: short, long, category, colors, condition
         ]
       };
 
-      const response = await bedrockClient.send(new InvokeModelCommand({
+      const response = await visionClient.send(new InvokeModelCommand({
         modelId: actualModelId,
         contentType: 'application/json',
         accept: 'application/json',
@@ -300,8 +302,8 @@ Format your response as JSON with keys: short, long, category, colors, condition
 
 export async function translateToIcelandic(description: ProductDescription): Promise<ProductDescription> {
   try {
-    // Try GPT OSS model for Icelandic translation
-    const translationResponse = await bedrockClient.send(new InvokeModelCommand({
+    // Use GPT OSS model for Icelandic translation
+    const translationResponse = await translationClient.send(new InvokeModelCommand({
       modelId: 'openai.gpt-oss-120b-1:0',
       contentType: 'application/json',
       accept: 'application/json',

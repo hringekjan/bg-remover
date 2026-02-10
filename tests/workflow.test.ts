@@ -1,8 +1,58 @@
 // services/bg-remover/tests/workflow.test.ts
-import { handler as metadataApprovalHandler } from '../src/handlers/metadata-approval-handler';
 import { APIGatewayProxyEventV2 } from 'aws-lambda';
 
+var mockDdbSend = jest.fn();
+jest.mock('@aws-sdk/client-dynamodb', () => ({
+  DynamoDBClient: jest.fn(() => ({
+    send: mockDdbSend,
+  })),
+}));
+
+jest.mock('@aws-sdk/lib-dynamodb', () => ({
+  DynamoDBDocumentClient: {
+    from: jest.fn(() => ({
+      send: mockDdbSend,
+    })),
+  },
+  GetCommand: jest.fn((input: unknown) => ({ input, __type: 'GetCommand' })),
+  UpdateCommand: jest.fn((input: unknown) => ({ input, __type: 'UpdateCommand' })),
+}));
+
+jest.mock('../src/lib/auth/jwt-validator', () => ({
+  validateJWTFromEvent: jest.fn((event: APIGatewayProxyEventV2) => {
+    const tenantId = event.requestContext?.authorizer?.jwt?.claims?.['custom:tenantId'];
+    const userId = event.requestContext?.authorizer?.jwt?.claims?.sub;
+    if (!tenantId || !userId) {
+      throw new Error('Unauthorized');
+    }
+    return Promise.resolve({
+      isValid: true,
+      payload: {
+        'custom:tenantId': tenantId,
+        sub: userId,
+      },
+      userId,
+    });
+  }),
+}));
+
+import { handler as metadataApprovalHandler } from '../src/handlers/metadata-approval-handler';
+
 describe('BG Remover Workflow Integration Tests', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    process.env.DYNAMODB_TABLE = 'carousel-main-test';
+    process.env.STAGE = 'test';
+    mockDdbSend.mockImplementation(async (input: any) => {
+      if (input?.__type === 'GetCommand') {
+        return { Item: { pk: 'TENANT#test-tenant-id#PRODUCT#test-product-id', sk: 'METADATA', enrichment: {} } };
+      }
+      if (input?.__type === 'UpdateCommand') {
+        return {};
+      }
+      return {};
+    });
+  });
   
   test('Metadata Approval Handler should process valid approval', async () => {
     const mockEvent: Partial<APIGatewayProxyEventV2> = {

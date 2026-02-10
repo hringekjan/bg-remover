@@ -64,6 +64,19 @@ describe('JWT Validator Security Fix', () => {
       // Verify HMAC secret management
       expect(sourceFile).toContain('CACHE_KEY_SECRET');
     });
+
+    it('should enforce JWT clock tolerance and max token age', () => {
+      expect(sourceFile).toContain('JWT_CLOCK_TOLERANCE_SECONDS');
+      expect(sourceFile).toContain('JWT_MAX_TOKEN_AGE_SECONDS');
+      expect(sourceFile).toContain('clockTolerance');
+      expect(sourceFile).toContain('maxTokenAge');
+    });
+
+    it('should require iss, exp, and iat claims', () => {
+      expect(sourceFile).toContain('Missing iss claim in JWT');
+      expect(sourceFile).toContain('Missing or invalid exp claim in JWT');
+      expect(sourceFile).toContain('Missing or invalid iat claim in JWT');
+    });
   });
 
   describe('Cache Key Generation', () => {

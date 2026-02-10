@@ -113,7 +113,6 @@ description STRING
 source STRING
   - Data source origin
   - Enum values:
-    * smartgo: SmartGo API
     * carousel: Carousel platform
   - Important for data quality analysis
   - Required field

@@ -24,6 +24,7 @@ import {
   GetItemCommand,
   ConditionalCheckFailedException,
 } from '@aws-sdk/client-dynamodb';
+import { NodeHttpHandler } from '@smithy/node-http-handler';
 import { marshall, unmarshall } from '@aws-sdk/util-dynamodb';
 import { getModelForTask } from '../bedrock/model-registry';
 import {
@@ -38,8 +39,20 @@ import {
 import { loadSettings } from './settings-loader';
 import { generateBatchImageEmbeddings, type ImageInput } from './batch-embeddings';
 
-const bedrockClient = new BedrockRuntimeClient({ region: process.env.AWS_REGION || 'eu-west-1' });
-const dynamoClient = new DynamoDBClient({ region: process.env.AWS_REGION || 'eu-west-1' });
+const bedrockClient = new BedrockRuntimeClient({ 
+  region: process.env.BEDROCK_REGION || process.env.AWS_REGION || 'eu-west-1',
+  requestHandler: new NodeHttpHandler({
+    connectionTimeout: 10000,
+    requestTimeout: 15000,
+  }),
+});
+const dynamoClient = new DynamoDBClient({ 
+  region: process.env.AWS_REGION || 'eu-west-1',
+  requestHandler: new NodeHttpHandler({
+    connectionTimeout: 5000,
+    requestTimeout: 10000,
+  }),
+});
 
 const TABLE_NAME = process.env.DYNAMODB_TABLE || `carousel-main-${process.env.STAGE || 'dev'}`;
 const DEFAULT_TENANT = process.env.TENANT || 'carousel-labs';

@@ -56,6 +56,12 @@ jest.mock('../src/lib/auth/jwt-validator', () => ({
     email: 'test@carousellabs.co',
     groups: ['admin'],
   }),
+  getCognitoConfigForTenantAsync: jest.fn().mockResolvedValue({
+    userPoolId: 'test-pool',
+    region: 'eu-west-1',
+    issuer: 'https://cognito-idp.eu-west-1.amazonaws.com/test-pool',
+    audience: ['test-client'],
+  }),
   extractTokenFromHeader: jest.fn((header: string | undefined) =>
     header?.replace('Bearer ', '') || null
   ),
@@ -114,9 +120,40 @@ jest.mock('../lib/s3/client', () => ({
   getOutputBucket: jest.fn().mockResolvedValue('bg-remover-test'),
 }));
 
+// Mock image processing pipeline to avoid dynamic imports and network calls
+jest.mock('../src/lib/bedrock/image-processor', () => ({
+  processImageFromUrl: jest.fn().mockResolvedValue({
+    outputBuffer: Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAACXBIWXMAAAsTAAALEwEAmpwYAAAADUlEQVR4nGNgYGBgAAAABQABpfZFQAAAAABJRU5ErkJggg==',
+      'base64'
+    ),
+    metadata: {
+      width: 100,
+      height: 100,
+      format: 'png',
+      originalSize: 1024,
+      processedSize: 512,
+    },
+  }),
+  processImageFromBase64: jest.fn().mockResolvedValue({
+    outputBuffer: Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAACXBIWXMAAAsTAAALEwEAmpwYAAAADUlEQVR4nGNgYGBgAAAABQABpfZFQAAAAABJRU5ErkJggg==',
+      'base64'
+    ),
+    metadata: {
+      width: 100,
+      height: 100,
+      format: 'png',
+      originalSize: 1024,
+      processedSize: 512,
+    },
+  }),
+}));
+
 import { health, process as processHandler } from '../src/handler';
 import * as jobStore from '../src/lib/job-store';
 import * as s3Client from '../lib/s3/client';
+import * as imageProcessor from '../src/lib/bedrock/image-processor';
 
 describe('Handler Functions', () => {
   beforeEach(() => {
@@ -206,6 +243,7 @@ describe('Handler Functions', () => {
         httpMethod: 'OPTIONS',
         headers: {
           origin: 'https://carousel.dev.carousellabs.co',
+          'x-tenant-id': 'carousel-labs',
         },
       };
 
@@ -305,11 +343,9 @@ describe('Handler Functions', () => {
     });
 
     it('should handle image processing errors', async () => {
-      mockFetch.mockResolvedValueOnce({
-        ok: false,
-        status: 500,
-        text: async () => 'Image processing failed',
-      } as any);
+      (imageProcessor.processImageFromBase64 as jest.Mock).mockRejectedValueOnce(
+        new Error('Image processing failed')
+      );
 
       const event = {
         httpMethod: 'POST',

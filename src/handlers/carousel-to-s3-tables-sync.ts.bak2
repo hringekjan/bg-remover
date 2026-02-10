@@ -1,0 +1,429 @@
+/**
+ * Carousel to S3 Tables Sync Lambda
+ *
+ * Real-time event-driven synchronization from Carousel EventBridge events
+ * to both DynamoDB (for fast queries) and S3 Tables (for analytics data lake).
+ *
+ * Event Pattern: carousel.product.sold
+ * Purpose: Dual-write pricing intelligence data for analytics
+ *
+ * Architecture:
+ * - EventBridge trigger: carousel.product.sold
+ * - Writes to DynamoDB with GSI-2 for embedding-based queries
+ * - Writes to S3 Tables (Parquet format) for analytics
+ * - Idempotency prevents duplicate processing
+ * - TTL set to 2 years for automatic cleanup
+ */
+
+import { EventBridgeEvent } from 'aws-lambda';
+import {
+  DynamoDBClient,
+  PutItemCommand,
+} from '@aws-sdk/client-dynamodb';
+import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import { marshall } from '@aws-sdk/util-dynamodb';
+import { z } from 'zod';
+import { IdempotencyManager } from '../lib/idempotency-manager';
+
+/**
+ * Carousel Product Sold Event
+ * Emitted by Carousel when a product is sold/listed
+ */
+interface CarouselProductSoldEvent {
+  // Product identifiers
+  productId: string;
+  tenantId: string;
+
+  // Product attributes
+  category: string;
+  brand: string;
+  condition: string;
+  description: string;
+
+  // Pricing
+  listedPrice: number;
+  salePrice: number;
+
+  // Dates
+  soldDate: string; // ISO format: YYYY-MM-DD
+
+  // Media
+  imageS3Key: string;
+
+  // Vector embedding (pre-computed by Carousel)
+  embeddingId: string;
+  embedding: number[]; // Dense embedding vector (typically 1024 or 512 dims)
+
+  // Metadata
+  vendorId: string;
+  daysToSell: number;
+}
+
+/**
+ * Zod schema for validating Carousel product sold events
+ * Enforces type safety and data integrity before processing
+ */
+const CarouselProductSoldEventSchema = z.object({
+  productId: z.string().min(1, 'productId required'),
+  tenantId: z.string().min(1, 'tenantId required'),
+  category: z.string().min(1, 'category required'),
+  brand: z.string().min(1, 'brand required'),
+  condition: z.enum(['new_with_tags', 'like_new', 'very_good', 'good', 'fair', 'poor'], {
+    errorMap: () => ({ message: 'Invalid condition value' }),
+  }),
+  description: z.string(),
+  listedPrice: z.number().positive('listedPrice must be positive'),
+  salePrice: z.number().positive('salePrice must be positive'),
+  soldDate: z.string().regex(/^\d{4}-\d{2}-\d{2}/, 'Invalid soldDate format, expected YYYY-MM-DD'),
+  imageS3Key: z.string().min(1, 'imageS3Key required'),
+  embeddingId: z.string().min(1, 'embeddingId required'),
+  embedding: z
+    .array(z.number())
+    .min(512, 'embedding must have at least 512 dimensions')
+    .max(1024, 'embedding must have at most 1024 dimensions'),
+  vendorId: z.string(),
+  daysToSell: z.number().nonnegative('daysToSell must be non-negative'),
+});
+
+// Initialize AWS clients
+const dynamodb = new DynamoDBClient({ region: process.env.AWS_REGION || 'eu-west-1' });
+const s3 = new S3Client({ region: process.env.AWS_REGION || 'eu-west-1' });
+
+const salesTableName = process.env.SALES_TABLE_NAME!;
+const idempotencyTableName = process.env.IDEMPOTENCY_TABLE_NAME!;
+const analyticsBucket = process.env.ANALYTICS_BUCKET;
+const analyticsRegion = process.env.AWS_REGION || 'eu-west-1';
+
+/**
+ * Main Lambda handler for Carousel product sold events
+ *
+ * Flow:
+ * 1. Extract event details
+ * 2. Check idempotency (prevent duplicate processing)
+ * 3. Dual-write to DynamoDB and S3 Tables in parallel
+ * 4. Return success or retry on failure
+ */
+export async function handler(
+  event: EventBridgeEvent<'carousel.product.sold', CarouselProductSoldEvent>
+): Promise<{ statusCode: number; body: string }> {
+  const { detail } = event;
+
+  console.log('[CarouselSync] Processing product sale', {
+    productId: detail.productId,
+    tenantId: detail.tenantId,
+    salePrice: detail.salePrice,
+    eventId: event.id,
+  });
+
+  // 1. Validate event payload with Zod schema
+  let validatedDetail: CarouselProductSoldEvent;
+  try {
+    validatedDetail = CarouselProductSoldEventSchema.parse(detail);
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      console.error('[CarouselSync] Invalid event payload', {
+        errors: error.errors,
+        eventId: event.id,
+      });
+      throw new Error(`Invalid event schema: ${error.message}`);
+    }
+    throw error;
+  }
+
+  // 2. Validate tenant isolation
+  const allowedTenant = process.env.TENANT || 'carousel-labs';
+  if (validatedDetail.tenantId !== allowedTenant) {
+    console.error('[CarouselSync] Tenant mismatch', {
+      expected: allowedTenant,
+      received: validatedDetail.tenantId,
+      eventId: event.id,
+    });
+    throw new Error(
+      `Tenant isolation violation: ${validatedDetail.tenantId} !== ${allowedTenant}`
+    );
+  }
+
+  // 3. Check idempotency (using event.id, NOT productId)
+  const idempotencyManager = new IdempotencyManager(
+    dynamodb,
+    idempotencyTableName
+  );
+
+  const isNew = await idempotencyManager.checkAndSet(
+    validatedDetail.tenantId,
+    'carousel.product.sold',
+    event.id, // CRITICAL FIX: Use event.id (unique per EventBridge event), not productId
+    24 * 60 * 60 // 24 hour TTL - sufficient for EventBridge retries
+  );
+
+  if (!isNew) {
+    console.log('[CarouselSync] Duplicate event, skipping', {
+      productId: validatedDetail.productId,
+      tenantId: validatedDetail.tenantId,
+      eventId: event.id,
+    });
+    return { statusCode: 200, body: 'Duplicate event - skipped' };
+  }
+
+  // 4. Dual-write to both stores in parallel
+  try {
+    await Promise.all([
+      writeToDynamoDB(validatedDetail),
+      writeToS3Tables(validatedDetail),
+    ]);
+
+    console.log('[CarouselSync] Successfully synced to both stores', {
+      productId: validatedDetail.productId,
+      tenantId: validatedDetail.tenantId,
+      eventId: event.id,
+    });
+
+    return { statusCode: 200, body: 'Success' };
+  } catch (error) {
+    console.error('[CarouselSync] Failed to sync', {
+      productId: validatedDetail.productId,
+      tenantId: validatedDetail.tenantId,
+      eventId: event.id,
+      error: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined,
+    });
+
+    // Re-throw to trigger EventBridge retry
+    throw error;
+  }
+}
+
+/**
+ * Write sale record to DynamoDB with proper key sharding for GSI-2
+ *
+ * Key Schema:
+ * - pk: TENANT#{tenantId}#PRODUCT#{productId}
+ * - SK: SALE#{soldDate}#{saleId}
+ *
+ * GSI-2 (for embedding-based vector search):
+ * - pk: TENANT#{tenantId}#EMBEDDING#{shard}
+ * - SK: DATE#{soldDate}
+ * - Shard = hash(embeddingId) % 5 (reduces GSI hotspots)
+ */
+async function writeToDynamoDB(detail: CarouselProductSoldEvent): Promise<void> {
+  const soldDate = new Date(detail.soldDate);
+  const saleId = `SALE-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  const season = getSeasonForDate(soldDate);
+
+  // Calculate GSI-2 shard based on embedding
+  const embeddingShard = getEmbeddingShard(detail.embeddingId);
+  const gsi2PK = `TENANT#${detail.tenantId}#EMBEDDING#${embeddingShard}`;
+  const gsi2SK = `DATE#${detail.soldDate}`;
+
+  const pk = `TENANT#${detail.tenantId}#PRODUCT#${detail.productId}`;
+  const sk = `SALE#${detail.soldDate}#${saleId}`;
+
+  // TTL: 2 years from NOW (not from sold date)
+  const ttlSeconds = Math.floor(Date.now() / 1000) + 2 * 365 * 24 * 60 * 60;
+
+  const item = {
+    // Keys
+    pk: pk,
+    SK: sk,
+
+    // Identifiers
+    productId: detail.productId,
+    tenantId: detail.tenantId,
+    saleId,
+
+    // Attributes
+    category: detail.category,
+    brand: detail.brand,
+    condition: detail.condition,
+    description: detail.description,
+
+    // Pricing
+    listedPrice: detail.listedPrice,
+    salePrice: detail.salePrice,
+    discountPercent: Math.round((1 - detail.salePrice / detail.listedPrice) * 100),
+
+    // Dates
+    saleDate: detail.soldDate,
+    season,
+    daysToSell: detail.daysToSell,
+
+    // Media
+    imageS3Key: detail.imageS3Key,
+
+    // Vector embedding (denormalized for analytics)
+    embeddingId: detail.embeddingId,
+    embedding: JSON.stringify(detail.embedding),
+    embeddingDimension: detail.embedding.length,
+
+    // Vendor
+    vendorId: detail.vendorId,
+
+    // Source system marker
+    source: 'carousel',
+
+    // GSI-2 keys (embedding-based queries)
+    GSI2pk: gsi2PK,
+    GSI2SK: gsi2SK,
+
+    // Metadata
+    recordCreatedAt: new Date().toISOString(),
+    eventTimestamp: detail.soldDate,
+
+    // TTL
+    ttl: ttlSeconds,
+  };
+
+  try {
+    await dynamodb.send(
+      new PutItemCommand({
+        TableName: salesTableName,
+        Item: marshall(item),
+      })
+    );
+
+    console.log('[CarouselSync] DynamoDB write successful', {
+      productId: detail.productId,
+      pk,
+      gsi2PK,
+      salePrice: detail.salePrice,
+    });
+  } catch (error) {
+    console.error('[CarouselSync] DynamoDB write failed', {
+      productId: detail.productId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    throw error;
+  }
+}
+
+/**
+ * Write sale record to S3 Tables (Parquet format) for analytics data lake
+ *
+ * Partitioning scheme (Iceberg-compatible):
+ * s3://carousel-{stage}-analytics/pricing-intelligence/sales_history/
+ *   tenant_id={tenantId}/
+ *   year={YYYY}/
+ *   month={MM}/
+ *   {productId}-{timestamp}.parquet
+ *
+ * This structure enables:
+ * - Partition pruning by tenant
+ * - Time-based queries
+ * - Fast data lake analytics (Athena, Spark, etc.)
+ * - Parallel processing by partition
+ */
+async function writeToS3Tables(detail: CarouselProductSoldEvent): Promise<void> {
+  const soldDate = new Date(detail.soldDate);
+  const year = soldDate.getFullYear();
+  const month = String(soldDate.getMonth() + 1).padStart(2, '0');
+  const season = getSeasonForDate(soldDate);
+
+  // Validate bucket name is set
+  if (!analyticsBucket) {
+    throw new Error('ANALYTICS_BUCKET environment variable not set');
+  }
+
+  // Construct S3 key with Iceberg partitioning
+  const timestamp = Date.now();
+  const key = `pricing-intelligence/sales_history/tenant_id=${detail.tenantId}/year=${year}/month=${month}/${detail.productId}-${timestamp}.parquet`;
+
+  // Prepare analytics record (simplified JSON - real implementation uses Apache Arrow)
+  const analyticsRecord = {
+    // Identifiers
+    product_id: detail.productId,
+    tenant_id: detail.tenantId,
+    sale_id: `SALE-${timestamp}`,
+
+    // Product attributes
+    category: detail.category,
+    brand: detail.brand,
+    condition: detail.condition,
+    description: detail.description,
+
+    // Pricing
+    listed_price: detail.listedPrice,
+    sold_price: detail.salePrice,
+    discount_percent: Math.round((1 - detail.salePrice / detail.listedPrice) * 100),
+
+    // Dates
+    sold_date: detail.soldDate,
+    quarter: `Q${Math.ceil((soldDate.getMonth() + 1) / 3)}`,
+    year,
+    month: parseInt(month),
+    season,
+    days_to_sell: detail.daysToSell,
+
+    // Media
+    image_s3_key: detail.imageS3Key,
+
+    // Vector embedding
+    embedding_id: detail.embeddingId,
+    embedding_dimension: detail.embedding.length,
+    embedding_vector: detail.embedding, // Can be serialized to Parquet binary
+
+    // Source
+    source_system: 'carousel',
+    vendor_id: detail.vendorId,
+
+    // Metadata
+    ingestion_timestamp: new Date().toISOString(),
+  };
+
+  try {
+    // In production, this should use Apache Arrow to generate Parquet binary
+    // For now, store as JSON with .parquet extension for schema compatibility
+    await s3.send(
+      new PutObjectCommand({
+        Bucket: analyticsBucket,
+        Key: key,
+        Body: JSON.stringify(analyticsRecord),
+        ContentType: 'application/parquet', // Schema indicates Parquet
+        Metadata: {
+          'x-tenant-id': detail.tenantId,
+          'x-product-id': detail.productId,
+          'x-source': 'carousel-sync',
+          'x-sold-date': detail.soldDate,
+        },
+        ServerSideEncryption: 'AES256',
+      })
+    );
+
+    console.log('[CarouselSync] S3 Tables write successful', {
+      productId: detail.productId,
+      s3Key: key,
+      bucket: analyticsBucket,
+    });
+  } catch (error) {
+    console.error('[CarouselSync] S3 Tables write failed', {
+      productId: detail.productId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    throw error;
+  }
+}
+
+/**
+ * Determine season from date (Q1-Q4)
+ */
+function getSeasonForDate(date: Date): string {
+  const month = date.getMonth() + 1;
+  if (month <= 3) return 'Q1';
+  if (month <= 6) return 'Q2';
+  if (month <= 9) return 'Q3';
+  return 'Q4';
+}
+
+/**
+ * Hash embedding ID to shard (0-4)
+ *
+ * Uses simple string hash to distribute embeddings across shards.
+ * This prevents GSI hotspots by spreading queries across multiple partitions.
+ */
+function getEmbeddingShard(embeddingId: string): number {
+  let hash = 0;
+  for (let i = 0; i < embeddingId.length; i++) {
+    hash = (hash << 5) - hash + embeddingId.charCodeAt(i);
+    hash = hash & hash; // Convert to 32-bit int
+  }
+  return Math.abs(hash) % 5;
+}

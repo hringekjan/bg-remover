@@ -14,6 +14,7 @@
 import { describe, it, expect, jest, beforeEach, afterEach } from '@jest/globals';
 import { NextRequest } from 'next/server';
 import { POST, OPTIONS } from '../route';
+import { randomUUID } from 'crypto';
 
 // Mock dependencies
 jest.mock('@/lib/bedrock/image-processor');
@@ -197,6 +198,14 @@ describe('/api/process-groups', () => {
       });
 
       it('should generate unique job IDs and tokens', async () => {
+        const mockRandomUUID = randomUUID as jest.MockedFunction<typeof randomUUID>;
+        mockRandomUUID
+          .mockReturnValueOnce('request-1')
+          .mockReturnValueOnce('job-1')
+          .mockReturnValueOnce('token-1')
+          .mockReturnValueOnce('job-2')
+          .mockReturnValueOnce('token-2');
+
         const request = createMockRequest({
           groups: [
             { groupId: 'group-1', imageIds: ['img-1'] },
@@ -287,6 +296,7 @@ describe('/api/process-groups', () => {
             'image-id': 'img-1',
             'tenant': 'test-tenant',
             'user-id': 'user-123',
+            'original-index': '0',
           })
         );
       });

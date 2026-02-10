@@ -1,0 +1,308 @@
+/**
+ * Test Artifacts Cleanup Lambda Handler
+ *
+ * Scheduled cleanup of test jobs and images from DynamoDB and S3.
+ * Runs daily at 2 AM UTC to remove test artifacts older than 1 hour.
+ *
+ * SAFETY:
+ * - Only runs in dev/stage environments (production check enforced)
+ * - Uses test prefix filter (test-)
+ * - Emits CloudWatch metrics for monitoring
+ *
+ * SCHEDULE: cron(0 2 * * ? *) - Daily at 2 AM UTC
+ */
+
+import { DynamoDBClient, ScanCommand, DeleteItemCommand } from '@aws-sdk/client-dynamodb';
+import { S3Client, ListObjectsV2Command, DeleteObjectCommand } from '@aws-sdk/client-s3';
+import { CloudWatchClient, PutMetricDataCommand } from '@aws-sdk/client-cloudwatch';
+
+const dynamodb = new DynamoDBClient({ region: process.env.AWS_REGION || 'eu-west-1' });
+const s3 = new S3Client({ region: process.env.AWS_REGION || 'eu-west-1' });
+const cloudwatch = new CloudWatchClient({ region: process.env.AWS_REGION || 'eu-west-1' });
+
+interface CleanupStats {
+  dynamodbItemsDeleted: number;
+  s3ObjectsDeleted: number;
+  errors: number;
+  durationMs: number;
+}
+
+interface CleanupConfig {
+  stage: string;
+  tenant: string;
+  tableName: string;
+  bucketName: string;
+  testPrefix: string;
+  retentionHours: number;
+}
+
+/**
+ * Get cleanup configuration from environment variables
+ */
+function getConfig(): CleanupConfig {
+  const stage = process.env.STAGE || 'dev';
+  const tenant = process.env.TENANT || 'carousel-labs';
+  const tableName = process.env.DYNAMODB_TABLE || `carousel-main-${stage}`;
+  const bucketName = process.env.TEMP_IMAGES_BUCKET || `bg-remover-temp-images-${stage}`;
+
+  return {
+    stage,
+    tenant,
+    tableName,
+    bucketName,
+    testPrefix: 'test-',
+    retentionHours: 1,
+  };
+}
+
+/**
+ * Calculate cutoff timestamp for retention
+ */
+function getCutoffTimestamp(retentionHours: number): string {
+  const cutoffDate = new Date();
+  cutoffDate.setHours(cutoffDate.getHours() - retentionHours);
+  return cutoffDate.toISOString();
+}
+
+/**
+ * Clean up test jobs from DynamoDB
+ *
+ * Table schema:
+ * - pk: TENANT#<tenant>#JOB
+ * - sk: JOB#<jobId>
+ * - jobId: <jobId> (attribute)
+ * - createdAt: <ISO timestamp>
+ */
+async function cleanupDynamoDBJobs(
+  tableName: string,
+  testPrefix: string,
+  cutoffTimestamp: string
+): Promise<{ deleted: number; errors: number }> {
+  let deleted = 0;
+  let errors = 0;
+
+  try {
+    console.log(`Scanning DynamoDB table: ${tableName}`);
+
+    // Scan for test jobs older than cutoff
+    // Filter: jobId starts with test prefix AND createdAt is older than cutoff
+    const scanResult = await dynamodb.send(
+      new ScanCommand({
+        TableName: tableName,
+        FilterExpression: 'begins_with(jobId, :prefix) AND createdAt < :cutoff AND entityType = :entityType',
+        ExpressionAttributeValues: {
+          ':prefix': { S: testPrefix },
+          ':cutoff': { S: cutoffTimestamp },
+          ':entityType': { S: 'BG_REMOVER_JOB' },
+        },
+        ProjectionExpression: 'PK,SK,jobId,createdAt,#status',
+        ExpressionAttributeNames: {
+          '#status': 'status',
+        },
+      })
+    );
+
+    const items = scanResult.Items || [];
+    console.log(`Found ${items.length} test job(s) to delete`);
+
+    // Delete each item using pk/sk composite key
+    for (const item of items) {
+      const pk = item.PK?.S;
+      const sk = item.SK?.S;
+      const jobId = item.jobId?.S;
+
+      if (!pk || !sk) {
+        console.error('Missing PK/SK for item:', item);
+        errors++;
+        continue;
+      }
+
+      try {
+        await dynamodb.send(
+          new DeleteItemCommand({
+            TableName: tableName,
+            Key: {
+              pk: { S: pk },
+              SK: { S: sk },
+            },
+          })
+        );
+        deleted++;
+        console.log(`Deleted job: ${jobId} (pk: ${pk}, SK: ${sk})`);
+      } catch (err) {
+        console.error(`Failed to delete job ${jobId}:`, err);
+        errors++;
+      }
+    }
+  } catch (err) {
+    console.error('DynamoDB scan failed:', err);
+    errors++;
+  }
+
+  return { deleted, errors };
+}
+
+/**
+ * Clean up test images from S3
+ */
+async function cleanupS3Images(
+  bucketName: string,
+  testPrefix: string,
+  cutoffTimestamp: string
+): Promise<{ deleted: number; errors: number }> {
+  let deleted = 0;
+  let errors = 0;
+
+  try {
+    console.log(`Listing S3 objects in bucket: ${bucketName}`);
+
+    // List objects with test prefix
+    const listResult = await s3.send(
+      new ListObjectsV2Command({
+        Bucket: bucketName,
+        Prefix: testPrefix,
+      })
+    );
+
+    const objects = (listResult.Contents || []).filter((obj) => {
+      const lastModified = obj.LastModified?.toISOString() || '';
+      return lastModified < cutoffTimestamp;
+    });
+
+    console.log(`Found ${objects.length} test image(s) to delete`);
+
+    // Delete each object
+    for (const obj of objects) {
+      const key = obj.Key;
+      if (!key) continue;
+
+      try {
+        await s3.send(
+          new DeleteObjectCommand({
+            Bucket: bucketName,
+            Key: key,
+          })
+        );
+        deleted++;
+        console.log(`Deleted S3 object: ${key}`);
+      } catch (err) {
+        console.error(`Failed to delete S3 object ${key}:`, err);
+        errors++;
+      }
+    }
+  } catch (err) {
+    console.error('S3 list/delete failed:', err);
+    errors++;
+  }
+
+  return { deleted, errors };
+}
+
+/**
+ * Send CloudWatch metrics
+ */
+async function sendMetrics(config: CleanupConfig, stats: CleanupStats): Promise<void> {
+  try {
+    await cloudwatch.send(
+      new PutMetricDataCommand({
+        Namespace: 'CarouselLabs/Testing',
+        MetricData: [
+          {
+            MetricName: 'TestArtifactsCleanedUp',
+            Value: stats.dynamodbItemsDeleted + stats.s3ObjectsDeleted,
+            Unit: 'Count',
+            Timestamp: new Date(),
+            Dimensions: [
+              { Name: 'Stage', Value: config.stage },
+              { Name: 'Type', Value: 'TestCleanup' },
+            ],
+          },
+          {
+            MetricName: 'CleanupErrors',
+            Value: stats.errors,
+            Unit: 'Count',
+            Timestamp: new Date(),
+            Dimensions: [
+              { Name: 'Stage', Value: config.stage },
+              { Name: 'Type', Value: 'TestCleanup' },
+            ],
+          },
+          {
+            MetricName: 'CleanupDuration',
+            Value: stats.durationMs,
+            Unit: 'Milliseconds',
+            Timestamp: new Date(),
+            Dimensions: [
+              { Name: 'Stage', Value: config.stage },
+              { Name: 'Type', Value: 'TestCleanup' },
+            ],
+          },
+        ],
+      })
+    );
+    console.log('CloudWatch metrics sent successfully');
+  } catch (err) {
+    console.error('Failed to send CloudWatch metrics:', err);
+  }
+}
+
+/**
+ * Lambda handler for scheduled cleanup
+ */
+export async function handler(event: any): Promise<{ statusCode: number; body: string }> {
+  const startTime = Date.now();
+  const config = getConfig();
+
+  console.log('Starting test artifacts cleanup', {
+    stage: config.stage,
+    tenant: config.tenant,
+    tableName: config.tableName,
+    bucketName: config.bucketName,
+    testPrefix: config.testPrefix,
+    retentionHours: config.retentionHours,
+  });
+
+  // Safety check: Only run in dev/stage
+  if (config.stage === 'prod') {
+    console.error('CRITICAL: Cleanup cannot run in production environment!');
+    return {
+      statusCode: 400,
+      body: JSON.stringify({ error: 'Cannot run cleanup in production' }),
+    };
+  }
+
+  const cutoffTimestamp = getCutoffTimestamp(config.retentionHours);
+  console.log(`Cutoff timestamp: ${cutoffTimestamp}`);
+
+  const stats: CleanupStats = {
+    dynamodbItemsDeleted: 0,
+    s3ObjectsDeleted: 0,
+    errors: 0,
+    durationMs: 0,
+  };
+
+  // Cleanup DynamoDB jobs
+  const dynamoResult = await cleanupDynamoDBJobs(config.tableName, config.testPrefix, cutoffTimestamp);
+  stats.dynamodbItemsDeleted = dynamoResult.deleted;
+  stats.errors += dynamoResult.errors;
+
+  // Cleanup S3 images
+  const s3Result = await cleanupS3Images(config.bucketName, config.testPrefix, cutoffTimestamp);
+  stats.s3ObjectsDeleted = s3Result.deleted;
+  stats.errors += s3Result.errors;
+
+  stats.durationMs = Date.now() - startTime;
+
+  // Send metrics to CloudWatch
+  await sendMetrics(config, stats);
+
+  console.log('Cleanup completed', stats);
+
+  return {
+    statusCode: 200,
+    body: JSON.stringify({
+      message: 'Test artifacts cleanup completed',
+      stats,
+    }),
+  };
+}

@@ -65,6 +65,7 @@ interface GroupProcessingPayload {
   bookingId?: string;
   groupId: string;
   images: Array<{
+    imageId: string;           // Frontend photoId for matching
     imageBase64?: string;      // Legacy: direct base64 data
     s3Bucket?: string;         // NEW: S3 bucket name
     s3Key?: string;            // NEW: S3 object key
@@ -427,6 +428,7 @@ export class ProcessWorkerHandler extends BaseHandler {
       imageCount: images.length,
       pipeline,
       productName,
+      processingOptions,
     });
 
     const processingStartTime = Date.now();
@@ -497,8 +499,8 @@ export class ProcessWorkerHandler extends BaseHandler {
         }
 
         try {
-          // Update image status to processing
-          this.updateImageStatusInMemory(imageStates, index, 'processing');
+          // Update image status to processing - starting
+          this.updateImageStatusInMemory(imageStates, index, 'processing', undefined, 'starting');
 
           console.log(`[Worker] Starting processing for image ${index + 1}/${images.length}`, {
             jobId,
@@ -521,6 +523,9 @@ export class ProcessWorkerHandler extends BaseHandler {
           // Download from S3 if S3 keys provided, otherwise use legacy base64
           let imageBase64 = image.imageBase64;
           if (image.s3Bucket && image.s3Key) {
+            // Update step: downloading
+            this.updateImageStatusInMemory(imageStates, index, 'processing', undefined, 'downloading');
+
             console.log('[Worker] Using S3 image source', {
               jobId,
               s3Bucket: image.s3Bucket,
@@ -532,6 +537,9 @@ export class ProcessWorkerHandler extends BaseHandler {
             throw new Error(`Image data missing: neither imageBase64 nor S3 location provided for ${image.filename}`);
           }
 
+          // Update step: removing background
+          this.updateImageStatusInMemory(imageStates, index, 'processing', undefined, 'removing_background');
+
           const result = await processImageFromBase64(
             imageBase64,
             'image/png',
@@ -539,6 +547,9 @@ export class ProcessWorkerHandler extends BaseHandler {
             tenant,
             stage
           );
+
+          // Update step: uploading
+          this.updateImageStatusInMemory(imageStates, index, 'processing', undefined, 'uploading');
 
           // Store processed image
           const contentType = (processingOptions.outputFormat || 'png') === 'png' ? 'image/png' :
@@ -611,6 +622,28 @@ export class ProcessWorkerHandler extends BaseHandler {
         const batch = imagePromises.slice(i, i + concurrencyLimit);
         const batchResults = await Promise.all(batch);
         processedResults.push(...batchResults);
+
+        // Update progress after each batch for real-time tracking
+        const currentProgress = {
+          total: images.length,
+          completed: imageStates.filter(img => img.status === 'completed').length,
+          failed: imageStates.filter(img => img.status === 'failed').length,
+          processing: imageStates.filter(img => img.status === 'processing').length,
+          pending: imageStates.filter(img => img.status === 'pending').length,
+        };
+
+        // Save progress and image states to DynamoDB for status endpoint
+        await this.updateJobStatus(tenant, jobId, 'processing', {
+          progress: currentProgress,
+          images: imageStates.map(img => ({
+            imageId: img.imageId || img.filename,
+            filename: img.filename,
+            status: img.status,
+            currentStep: img.currentStep,
+            processingTimeMs: img.processingTimeMs,
+            attempts: img.attempts,
+          })),
+        });
       }
 
       // Separate processed images and descriptions
@@ -618,7 +651,7 @@ export class ProcessWorkerHandler extends BaseHandler {
       const processedImages = processedResults
         .filter(result => result !== null)
         .map((result, index) => ({
-          imageId: `img_${jobId}_${index}`, // Generate stable imageId for frontend matching
+          imageId: images[index]?.imageId || `img_${jobId}_${index}`, // Use frontend photoId for matching
           filename: result.filename,
           outputUrl: result.outputUrl,
           outputKey: result.outputKey,
@@ -629,6 +662,7 @@ export class ProcessWorkerHandler extends BaseHandler {
         }));
 
       const imageResults = processedResults
+        .filter(result => result !== null) // Filter out null results from failed images FIRST
         .filter(result => result.isPrimary && result.productDescription)
         .map(result => ({
           productDescription: result.productDescription!,
@@ -646,6 +680,15 @@ export class ProcessWorkerHandler extends BaseHandler {
       let groupPricing: { min: number; max: number; suggested: number } | undefined;
       let predictedRating: number | undefined;
       let seoKeywords: string[] = [];
+
+      console.log('[Worker] Checking description generation condition', {
+        jobId,
+        groupId,
+        generateDescription: processingOptions?.generateDescription,
+        imageResultsLength: imageResults.length,
+        willGenerate: !!(processingOptions?.generateDescription && imageResults.length > 0),
+        processingOptionsKeys: Object.keys(processingOptions || {}),
+      });
 
       if (processingOptions.generateDescription && imageResults.length > 0) {
         const primaryResult = imageResults[0];
@@ -735,12 +778,58 @@ export class ProcessWorkerHandler extends BaseHandler {
         const descriptionText = primaryDescription?.long || primaryDescription?.short;
         const priceSuggestion = groupPricing?.suggested || primaryDescription?.priceSuggestion?.suggested;
 
+        // Build complete product metadata matching CarouselProductRegistration schema
         const productData: CreateProductRequest = {
-          title: productName || `Product ${groupId}`,
-          description: descriptionText,
-          price: priceSuggestion,
-          category: groupContext?.category || primaryDescription?.category,
-          images: processedImages.map((img) => img.outputUrl).filter(Boolean),
+          productId: randomUUID(),
+          sku: `${groupId}-${Date.now()}`,
+          content: {
+            en: {
+              name: productName || `Product ${groupId}`,
+              description: primaryDescription?.long || descriptionText || '',
+              shortDescription: primaryDescription?.short
+            },
+            is: {
+              name: productName || `Product ${groupId}`,
+              description: multilingualDescription?.is?.long || '',
+              shortDescription: multilingualDescription?.is?.short
+            },
+            defaultLocale: 'en' as const
+          },
+          pricing: {
+            basePrice: Math.round((priceSuggestion || 0) * 100), // Convert to cents
+            currency: 'ISK'
+          },
+          seo: {
+            metaTitle: productName || `Product ${groupId}`,
+            metaDescription: primaryDescription?.short || descriptionText || '',
+            keywords: seoKeywords || [],
+            slug: (productName || `product-${groupId}`).toLowerCase().replace(/\s+/g, '-')
+          },
+          qualityMetrics: {
+            confidenceScore: 0.85,
+            processingTimeMs: processingTimeMs || 0,
+            carouselRating: {
+              averageScore: predictedRating || 0,
+              totalReviews: 0,
+              userReputationWeight: 1.0
+            }
+          },
+          categorization: {
+            category: groupContext?.category || primaryDescription?.category || 'uncategorized',
+            subcategory: '',
+            tags: seoKeywords || []
+          },
+          imageMetadata: processedImages[0] ? {
+            width: processedImages[0].width || processedImages[0].metadata?.width || 1024,
+            height: processedImages[0].height || processedImages[0].metadata?.height || 1024,
+            format: 'png' as const,
+            fileSize: processedImages[0].metadata?.processedSize || 0,
+            sourceImageKey: images[0]?.s3Key || '',
+            processedImageKey: processedImages[0].outputKey || ''
+          } : undefined,
+          status: 'DRAFT' as const,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
         };
 
         const { product, error } = await createProductInCarouselApi(tenant, userId, productData, authToken);
@@ -793,8 +882,14 @@ export class ProcessWorkerHandler extends BaseHandler {
         progress: finalProgress,
         resumable: true,
         imageCount: processedImages.length,
-        // Store minimal processedImages array (URLs only, no large metadata)
-        // Frontend needs this to display results after job completion
+        // Store group-level metadata for frontend display
+        productName,
+        multilingualDescription,
+        groupPricing,
+        seoKeywords,
+        predictedRating,
+        category: groupContext?.category,
+        // Store processedImages array with full metadata for frontend display
         processedImages: processedImages.map(img => ({
           imageId: img.imageId,
           outputUrl: img.outputUrl,
@@ -803,6 +898,28 @@ export class ProcessWorkerHandler extends BaseHandler {
           width: img.width || img.metadata?.width,
           height: img.height || img.metadata?.height,
           processingTimeMs: img.processingTimeMs || img.metadata?.processingTimeMs || 0,
+          // Add rich metadata for frontend display
+          productName,
+          bilingualDescription: multilingualDescription ? {
+            en: {
+              title: productName,
+              short: multilingualDescription.en?.short,
+              description: multilingualDescription.en?.long,
+            },
+            is: {
+              title: productName,
+              short: multilingualDescription.is?.short,
+              description: multilingualDescription.is?.long,
+            },
+          } : undefined,
+          price: groupPricing?.suggested,
+          priceRange: groupPricing ? {
+            min: groupPricing.min,
+            max: groupPricing.max,
+          } : undefined,
+          keywords: seoKeywords,
+          category: groupContext?.category,
+          rating: predictedRating,
         })),
       });
 
@@ -1296,13 +1413,23 @@ export class ProcessWorkerHandler extends BaseHandler {
     images: any[],
     imageIndex: number,
     status: 'pending' | 'processing' | 'completed' | 'failed',
-    result?: Record<string, any>
+    result?: Record<string, any>,
+    currentStep?: string
   ): void {
     if (images[imageIndex]) {
       images[imageIndex].status = status;
       images[imageIndex].updatedAt = new Date().toISOString();
       images[imageIndex].lastAttemptAt = new Date().toISOString();
       images[imageIndex].attempts = (images[imageIndex].attempts || 0) + 1;
+
+      // Track current processing step for progress UI
+      if (currentStep) {
+        images[imageIndex].currentStep = currentStep;
+      } else if (status === 'completed') {
+        images[imageIndex].currentStep = 'completed';
+      } else if (status === 'failed') {
+        images[imageIndex].currentStep = 'failed';
+      }
 
       if (result) {
         Object.assign(images[imageIndex], result);

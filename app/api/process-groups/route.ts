@@ -124,13 +124,14 @@ export async function POST(request: NextRequest) {
         jobId,
         userId,
         tenant,
-        groupId: group.groupId,
-        productName: group.productName || `Product Group ${group.groupId}`,
         status: 'processing',
         progress: 0,
         createdAt: new Date().toISOString(),
-        imageCount: group.imageIds.length,
-        processedImages: [],
+        metadata: {
+          groupId: group.groupId,
+          productName: group.productName || `Product Group ${group.groupId}`,
+          imageCount: group.imageIds.length,
+        },
       });
 
       jobs.push({
@@ -266,13 +267,14 @@ async function processGroupImages(
       );
 
       // Upload processed image to S3
+      const resolvedOutputFormat = options?.outputFormat || 'png';
       const outputKey = generateOutputKey(
         tenant,
         group.productName || `product-${group.groupId}`,
-        options?.outputFormat || 'png'
+        resolvedOutputFormat
       );
-      const contentType = options?.outputFormat === 'png' ? 'image/png' :
-                         options?.outputFormat === 'webp' ? 'image/webp' : 'image/jpeg';
+      const contentType = resolvedOutputFormat === 'png' ? 'image/png' :
+                         resolvedOutputFormat === 'webp' ? 'image/webp' : 'image/jpeg';
 
       const outputBucket = await getOutputBucket(tenant);
       const outputUrl = await uploadProcessedImage(

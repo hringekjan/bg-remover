@@ -56,7 +56,7 @@ s3://carousel-{stage}-analytics/pricing-intelligence/sales_history/
 | `image_s3_key` | STRING | S3 key for product image |
 | `embedding` | ARRAY<DOUBLE> | 1024-dimensional Titan embedding vector |
 | `description` | STRING | Product description |
-| `source` | STRING | Data source (smartgo \| carousel) |
+| `source` | STRING | Data source (carousel) |
 
 ### Partitioning
 

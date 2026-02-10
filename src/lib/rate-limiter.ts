@@ -9,10 +9,9 @@
  * - GSI for tenant-level admin queries
  *
  * Multi-Tenant DynamoDB Design:
- * - pk: Composite key for rate limit window (TENANT#tenant:ACTION#action:WINDOW#timestamp)
+ * - PK: Composite key for rate limit window (TENANT#tenant:ACTION#action:WINDOW#timestamp)
+ * - SK: ACTION#<action>#WINDOW#<timestamp> (secondary key for window uniqueness)
  * - tenant: Stored as separate attribute for GSI queries
- * - action: Stored as separate attribute for filtering
- * - userId: Stored as separate attribute when applicable
  *
  * @module lib/rate-limiter
  */
@@ -129,23 +128,23 @@ const TABLE_NAME = process.env.DYNAMODB_TABLE || `carousel-main-${process.env.ST
 /**
  * Generate rate limit keys for DynamoDB single-table design
  *
- * Single-table key format (pk/sk pattern):
- * - pk: TENANT#<tenant>#RATELIMIT (tenant-level) or TENANT#<tenant>#RATELIMIT#USER#<userId> (user-level)
- * - sk: ACTION#<action>#WINDOW#<timestamp>
+ * Single-table key format (PK/SK pattern):
+ * - PK: TENANT#<tenant>#RATELIMIT (tenant-level) or TENANT#<tenant>#RATELIMIT#USER#<userId> (user-level)
+ * - SK: ACTION#<action>#WINDOW#<timestamp>
  *
  * This format enables:
  * - Efficient tenant isolation via partition key prefix
- * - Query all rate limits for a tenant with begins_with on pk
- * - Query specific action/window with sk
+ * - Query all rate limits for a tenant with begins_with on PK
+ * - Query specific action/window with SK
  * - GSI on tenant attribute for admin dashboards
  * - Single table shared with job store (cost optimization)
  */
-function generateKeys(key: RateLimitKey, windowStart: number): { pk: string; sk: string } {
-  const pk = key.userId
+function generateKeys(key: RateLimitKey, windowStart: number): { PK: string; SK: string } {
+  const PK = key.userId
     ? `TENANT#${key.tenant}#RATELIMIT#USER#${key.userId}`
     : `TENANT#${key.tenant}#RATELIMIT`;
-  const sk = `ACTION#${key.action}#WINDOW#${windowStart}`;
-  return { pk, sk };
+  const SK = `ACTION#${key.action}#WINDOW#${windowStart}`;
+  return { PK, SK };
 }
 
 /**
@@ -153,8 +152,8 @@ function generateKeys(key: RateLimitKey, windowStart: number): { pk: string; sk:
  * @deprecated Use generateKeys() for new implementations
  */
 function generateKey(key: RateLimitKey, windowStart: number): string {
-  const { pk, sk } = generateKeys(key, windowStart);
-  return `${pk}#${sk}`;
+  const { PK, SK } = generateKeys(key, windowStart);
+  return `${PK}#${SK}`;
 }
 
 /**
@@ -179,11 +178,11 @@ export async function checkRateLimit(
   );
 
   const windowStart = getWindowStart(config.windowSeconds);
-  const { pk, sk } = generateKeys(key, windowStart);
+  const { PK, SK } = generateKeys(key, windowStart);
   const ttl = windowStart + config.windowSeconds + 60; // Add 60s buffer for TTL
 
   try {
-    // Atomic increment using DynamoDB UpdateItem (single-table design with pk/sk)
+    // Atomic increment using DynamoDB UpdateItem (single-table design with PK/SK)
     // Stores tenant, action, userId as separate attributes for multi-tenant queries/GSI
     const updateExpression = key.userId
       ? 'SET #count = if_not_exists(#count, :zero) + :inc, #ttl = :ttl, #window = :window, #tenant = :tenant, #action = :action, #userId = :userId, #type = :type, #entityType = :entityType'
@@ -218,8 +217,8 @@ export async function checkRateLimit(
     const result = await dynamoClient.send(new UpdateItemCommand({
       TableName: TABLE_NAME,
       Key: {
-        PK: { S: pk },
-        SK: { S: sk },
+        PK: { S: PK },
+        SK: { S: SK },
       },
       UpdateExpression: updateExpression,
       ExpressionAttributeNames: expressionAttributeNames,
@@ -291,19 +290,19 @@ async function checkBurstLimit(
   }
 
   const windowStart = getWindowStart(config.burstWindowSeconds);
-  // Burst limits use same pk pattern but with BURST prefix in sk
-  const pk = key.userId
+  // Burst limits use same PK pattern but with BURST prefix in SK
+  const PK = key.userId
     ? `TENANT#${key.tenant}#RATELIMIT#USER#${key.userId}`
     : `TENANT#${key.tenant}#RATELIMIT`;
-  const sk = `BURST#ACTION#${key.action}#WINDOW#${windowStart}`;
+  const SK = `BURST#ACTION#${key.action}#WINDOW#${windowStart}`;
   const ttl = windowStart + config.burstWindowSeconds + 10;
 
   try {
     const result = await dynamoClient.send(new UpdateItemCommand({
       TableName: TABLE_NAME,
       Key: {
-        PK: { S: pk },
-        SK: { S: sk },
+        PK: { S: PK },
+        SK: { S: SK },
       },
       UpdateExpression: 'SET #count = if_not_exists(#count, :zero) + :inc, #ttl = :ttl, #tenant = :tenant, #entityType = :entityType',
       ExpressionAttributeNames: {
@@ -348,14 +347,14 @@ export async function getRateLimitStatus(
   );
 
   const windowStart = getWindowStart(config.windowSeconds);
-  const { pk, sk } = generateKeys(key, windowStart);
+  const { PK, SK } = generateKeys(key, windowStart);
 
   try {
     const result = await dynamoClient.send(new GetItemCommand({
       TableName: TABLE_NAME,
       Key: {
-        PK: { S: pk },
-        SK: { S: sk },
+        PK: { S: PK },
+        SK: { S: SK },
       },
     }));
 
@@ -479,8 +478,8 @@ export async function getTenantRateLimits(
   limitType: 'tenant' | 'user';
 }>> {
   try {
-    // Query using pk prefix - no GSI needed (saves ~50% on writes + storage)
-    const pk = `TENANT#${tenant}#RATELIMIT`;
+    // Query using PK prefix - no GSI needed (saves ~50% on writes + storage)
+    const PK = `TENANT#${tenant}#RATELIMIT`;
     const queryParams: any = {
       TableName: TABLE_NAME,
       KeyConditionExpression: '#pk = :pk',
@@ -488,7 +487,7 @@ export async function getTenantRateLimits(
         '#pk': 'PK',
       },
       ExpressionAttributeValues: {
-        ':pk': { S: pk },
+        ':pk': { S: PK },
       },
       Limit: options?.limit || 100,
     };

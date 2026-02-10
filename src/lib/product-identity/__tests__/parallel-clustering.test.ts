@@ -71,6 +71,7 @@ describe('Parallel Clustering', () => {
     });
 
     it('should handle timeout', async () => {
+      jest.useFakeTimers();
       const items = [1, 2, 3];
       const processor = async (item: number) => {
         if (item === 2) {
@@ -80,11 +81,14 @@ describe('Parallel Clustering', () => {
         return item;
       };
 
-      const result = await processParallel(items, processor, { timeout: 100 });
+      const resultPromise = processParallel(items, processor, { timeout: 100 });
+      await jest.runAllTimersAsync();
+      const result = await resultPromise;
 
       expect(result.success).toHaveLength(2); // Items 1 and 3
       expect(result.failures).toHaveLength(1); // Item 2 timeout
       expect(result.failures[0].error).toContain('timeout');
+      jest.useRealTimers();
     });
 
     it('should calculate average time correctly', async () => {

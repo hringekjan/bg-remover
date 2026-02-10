@@ -454,7 +454,10 @@ export const GroupImagesRequestSchema = z.object({
     imageBase64: z.string()
       .refine((val) => val.length <= MAX_BASE64_SIZE, 'Base64 image too large (max 10MB)')
       .refine(isValidBase64, 'Invalid base64 format')
-      .refine(isValidImageBase64, 'Invalid image format - must be PNG, JPEG, WebP, or HEIC'),
+      .refine(isValidImageBase64, 'Invalid image format - must be PNG, JPEG, WebP, or HEIC')
+      .optional(),
+    s3Key: z.string().min(1).optional(),
+    s3Bucket: z.string().min(1).optional(),
     filename: z.string()
       .max(255, 'Filename too long')
       .optional(),
@@ -462,8 +465,10 @@ export const GroupImagesRequestSchema = z.object({
       uploadedAt: z.string().optional(),
       originalSize: z.number().optional(),
     }).optional(),
+  }).refine((value) => Boolean(value.imageBase64 || value.s3Key), {
+    message: 'Each image must include imageBase64 or s3Key',
   }))
-  .min(1, 'At least one image is required')
+  .min(1, 'At least 1 image is required for grouping')
   .max(100, 'Maximum 100 images per batch'),
   thumbnailSize: z.object({
     width: z.number().int().min(64).max(512).default(256),
@@ -484,6 +489,7 @@ export type GroupImagesRequest = z.infer<typeof GroupImagesRequestSchema>;
  * Processes full-quality images for approved product groups
  */
 export const ProcessGroupsRequestSchema = z.object({
+  bookingId: z.string().min(1).optional(),
   groups: z.array(z.object({
     groupId: z.string()
       .regex(/^pg_[a-f0-9-]+$/, 'Invalid group ID format'),
@@ -492,8 +498,11 @@ export const ProcessGroupsRequestSchema = z.object({
   }))
   .min(1, 'At least one group is required')
   .max(50, 'Maximum 50 groups per batch'),
-  originalImages: z.record(z.string(), z.string()) // imageId -> base64
-    .refine((images) => Object.keys(images).length > 0, 'At least one original image required'),
+  originalImages: z.record(z.string(), z.string()).optional(), // imageId -> base64
+  originalImageKeys: z.record(z.string(), z.object({
+    s3Key: z.string().min(1),
+    s3Bucket: z.string().min(1).optional(),
+  })).optional(),
   processingOptions: z.object({
     outputFormat: z.enum(['png', 'jpeg', 'webp']).default('png'),
     quality: z.number().int().min(1).max(100).optional(),
@@ -505,7 +514,26 @@ export const ProcessGroupsRequestSchema = z.object({
     generatePriceSuggestion: z.boolean().default(false),
     generateRatingSuggestion: z.boolean().default(false),
   }).optional(),
+}).refine((value) => {
+  const hasBase64 = value.originalImages && Object.keys(value.originalImages).length > 0;
+  const hasS3Keys = value.originalImageKeys && Object.keys(value.originalImageKeys).length > 0;
+  return Boolean(hasBase64 || hasS3Keys);
+}, {
+  message: 'At least one original image source is required',
 });
+
+export const UploadUrlsRequestSchema = z.object({
+  files: z.array(z.object({
+    photoId: z.string().min(1),
+    filename: z.string().max(255),
+    contentType: z.string().min(1),
+    size: z.number().int().positive().optional(),
+  }))
+  .min(1, 'At least one file is required')
+  .max(100, 'Maximum 100 files per batch'),
+});
+
+export type UploadUrlsRequest = z.infer<typeof UploadUrlsRequestSchema>;
 
 export type ProcessGroupsRequest = z.infer<typeof ProcessGroupsRequestSchema>;
 

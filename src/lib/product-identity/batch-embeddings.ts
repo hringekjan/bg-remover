@@ -14,9 +14,16 @@
  */
 
 import { BedrockRuntimeClient, InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime';
+import { NodeHttpHandler } from '@smithy/node-http-handler';
 import { getModelForTask } from '../bedrock/model-registry';
 
-const bedrockClient = new BedrockRuntimeClient({ region: process.env.AWS_REGION || 'eu-west-1' });
+const bedrockClient = new BedrockRuntimeClient({ 
+  region: process.env.BEDROCK_REGION || process.env.AWS_REGION || 'eu-west-1',
+  requestHandler: new NodeHttpHandler({
+    connectionTimeout: 10000,
+    requestTimeout: 20000, // Slightly longer for batch
+  }),
+});
 
 // AWS Titan batch inference limits
 const MAX_BATCH_SIZE = 25;
@@ -104,32 +111,42 @@ async function invokeTitanBatchEmbedding(
         contentType: 'application/json',
         accept: 'application/json',
         body: JSON.stringify({
-          inputImages: base64Images,
-          embeddingConfig: {
-            outputEmbeddingLength: 1024,
-          },
+          requests: base64Images.map((image) => ({
+            inputImage: image,
+            embeddingConfig: {
+              outputEmbeddingLength: 1024,
+            },
+          })),
         }),
       })
     );
 
     const responseBody = JSON.parse(new TextDecoder().decode(response.body));
 
+    const responseEmbeddings = Array.isArray(responseBody.embeddings)
+      ? responseBody.embeddings
+      : Array.isArray(responseBody.responses)
+        ? responseBody.responses.map((entry: any) =>
+            entry?.embedding || entry?.output?.embedding || entry?.result?.embedding || entry?.embeddings?.[0]
+          )
+        : null;
+
     // Validate response structure
-    if (!responseBody.embeddings || !Array.isArray(responseBody.embeddings)) {
+    if (!responseEmbeddings || !Array.isArray(responseEmbeddings)) {
       throw new Error(
-        `Invalid Bedrock batch response: missing or invalid embeddings field. Response: ${JSON.stringify(responseBody).substring(0, 200)}`
+        `Invalid Bedrock batch response: missing embeddings. Response: ${JSON.stringify(responseBody).substring(0, 200)}`
       );
     }
 
-    if (responseBody.embeddings.length !== batch.length) {
+    if (responseEmbeddings.length !== batch.length) {
       throw new Error(
-        `Bedrock returned ${responseBody.embeddings.length} embeddings for ${batch.length} images`
+        `Bedrock returned ${responseEmbeddings.length} embeddings for ${batch.length} images`
       );
     }
 
     // Validate each embedding
-    for (let i = 0; i < responseBody.embeddings.length; i++) {
-      const embedding = responseBody.embeddings[i];
+    for (let i = 0; i < responseEmbeddings.length; i++) {
+      const embedding = responseEmbeddings[i];
       if (!Array.isArray(embedding) || embedding.length === 0) {
         throw new Error(
           `Invalid embedding at index ${i} for image ${batch[i].imageId}: ${JSON.stringify(embedding).substring(0, 100)}`
@@ -137,7 +154,7 @@ async function invokeTitanBatchEmbedding(
       }
     }
 
-    return responseBody.embeddings;
+    return responseEmbeddings;
   } catch (error) {
     console.error('[BatchEmbedding] Bedrock batch request failed:', {
       batchSize: batch.length,
@@ -146,6 +163,43 @@ async function invokeTitanBatchEmbedding(
     });
     throw error;
   }
+}
+
+/**
+ * Generate embedding for a single image (fallback for models without batch support).
+ */
+async function invokeTitanSingleEmbedding(
+  image: ImageInput,
+  model: string
+): Promise<number[]> {
+  validateImageBuffer(image.imageId, image.buffer);
+  const base64Image = image.buffer.toString('base64');
+
+  const response = await bedrockClient.send(
+    new InvokeModelCommand({
+      modelId: model,
+      contentType: 'application/json',
+      accept: 'application/json',
+      body: JSON.stringify({
+        inputImage: base64Image,
+        embeddingConfig: {
+          outputEmbeddingLength: 1024,
+        },
+      }),
+    })
+  );
+
+  const responseBody = JSON.parse(new TextDecoder().decode(response.body));
+  if (!responseBody.embedding || !Array.isArray(responseBody.embedding)) {
+    throw new Error(
+      `Invalid Bedrock response: missing or invalid embedding field. Response: ${JSON.stringify(responseBody).substring(0, 200)}`
+    );
+  }
+  if (responseBody.embedding.length === 0) {
+    throw new Error('Invalid Bedrock response: embedding array is empty');
+  }
+
+  return responseBody.embedding;
 }
 
 /**
@@ -234,13 +288,26 @@ export async function generateBatchImageEmbeddings(
       const errorMessage = error instanceof Error ? error.message : String(error);
       console.error(`[BatchEmbedding] Batch ${batchIndex + 1} failed:`, errorMessage);
 
-      // Record error for each image in failed batch
-      batch.forEach(img => {
-        errors.push({
-          imageId: img.imageId,
-          error: `Batch processing failed: ${errorMessage}`,
-        });
-      });
+      // Fallback: attempt single-image embeddings so partial success is possible.
+      for (const image of batch) {
+        try {
+          const embedding = await invokeTitanSingleEmbedding(image, model);
+          embeddings.set(image.imageId, {
+            imageId: image.imageId,
+            embedding,
+            model,
+            timestamp: Date.now(),
+            generationTimeMs: (Date.now() - batchStartTime),
+          });
+        } catch (singleError) {
+          errors.push({
+            imageId: image.imageId,
+            error: `Batch processing failed: ${errorMessage}; single-image fallback failed: ${
+              singleError instanceof Error ? singleError.message : String(singleError)
+            }`,
+          });
+        }
+      }
     }
   });
 
@@ -253,7 +320,7 @@ export async function generateBatchImageEmbeddings(
     batchResults.push(...results);
   }
 
-  const totalTimeMs = Date.now() - startTime;
+  const totalTimeMs = Math.max(1, Date.now() - startTime);
   const successCount = embeddings.size;
   const failureCount = errors.length;
 

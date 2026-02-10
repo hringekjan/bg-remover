@@ -6,7 +6,7 @@
 
 import { removeBackground, type RemoveBackgroundOptions } from '../bedrock/background-remover';
 import { analyzeWithRekognition } from '../rekognition/analyzer';
-import { analyzeWithNovaPro } from '../bedrock/nova-pro-analyzer';
+import { analyzeWithMistralPixtral } from '../bedrock/mistral-pixtral-analyzer';
 import { type ProductDescription, type BilingualProductDescription } from '../types';
 
 export interface ProcessImageInput {
@@ -37,6 +37,16 @@ export interface ProcessImageResult {
   };
   productDescription?: ProductDescription;
   bilingualDescription?: BilingualProductDescription;
+  rekognitionAnalysis?: {
+    labels: string[];
+    colors: string[];
+    category: string;
+    brand?: string;
+    size?: string;
+    material?: string;
+    careInstructions?: string[];
+    moderationLabels: Array<{ name: string; confidence: number }>;
+  };
 }
 
 /**
@@ -89,10 +99,10 @@ export async function processImage(input: ProcessImageInput): Promise<ProcessIma
 
   if (generateDescription) {
     try {
-      console.log('Generating bilingual description with Nova Pro + Rekognition context');
+      console.log('Generating bilingual description with Mistral Pixtral Large + Rekognition context');
 
-      // Single Nova Pro call with Rekognition context (faster, cheaper, better)
-      const novaProResult = await analyzeWithNovaPro(
+      // Single Mistral Pixtral Large call with Rekognition context (faster, cheaper, better)
+      const mistralResult = await analyzeWithMistralPixtral(
         bgResult.outputBuffer,
         productName,
         {
@@ -107,34 +117,40 @@ export async function processImage(input: ProcessImageInput): Promise<ProcessIma
       // Build bilingual description
       bilingualDescription = {
         en: {
-          short: novaProResult.short_en,
-          long: novaProResult.long_en,
-          category: novaProResult.category,
-          colors: novaProResult.colors,
-          condition: novaProResult.condition,
-          keywords: novaProResult.keywords,
-          stylingTip: novaProResult.stylingTip_en
+          short: mistralResult.short_en,
+          long: mistralResult.long_en,
+          category: mistralResult.category,
+          colors: mistralResult.colors,
+          condition: mistralResult.condition,
+          keywords: mistralResult.keywords,
+          stylingTip: mistralResult.stylingTip_en
         },
         is: {
-          short: novaProResult.short_is,
-          long: novaProResult.long_is,
-          category: novaProResult.category,
-          colors: novaProResult.colors,
-          condition: novaProResult.condition,
-          keywords: novaProResult.keywords,
-          stylingTip: novaProResult.stylingTip_is
+          short: mistralResult.short_is,
+          long: mistralResult.long_is,
+          category: mistralResult.category,
+          colors: mistralResult.colors,
+          condition: mistralResult.condition,
+          keywords: mistralResult.keywords,
+          stylingTip: mistralResult.stylingTip_is
         }
       };
 
       console.log('✅ Auto-detected from image:', {
-        brand: novaProResult.brand || rekResult.brand,
-        size: novaProResult.size || rekResult.size,
-        material: novaProResult.material
+        brand: mistralResult.brand || rekResult.brand,
+        size: mistralResult.size || rekResult.size,
+        material: mistralResult.material
       });
 
       productDescription = bilingualDescription.en;
     } catch (error) {
-      console.error('Failed to generate description:', error);
+      console.error('❌ Failed to generate description:', error);
+      console.error('❌ Error name:', error instanceof Error ? error.name : typeof error);
+      console.error('❌ Error message:', error instanceof Error ? error.message : String(error));
+      console.error('❌ Error stack:', error instanceof Error ? error.stack : 'No stack trace');
+      if (error && typeof error === 'object') {
+        console.error('❌ Error details:', JSON.stringify(error, Object.getOwnPropertyNames(error), 2));
+      }
       // Don't fail the entire pipeline if description generation fails
     }
   }
@@ -143,6 +159,16 @@ export async function processImage(input: ProcessImageInput): Promise<ProcessIma
     outputBuffer: bgResult.outputBuffer,
     metadata: resultMetadata,
     productDescription,
-    bilingualDescription
+    bilingualDescription,
+    rekognitionAnalysis: {
+      labels: rekResult.labels,
+      colors: rekResult.colors,
+      category: rekResult.category,
+      brand: rekResult.brand,
+      size: rekResult.size,
+      material: rekResult.material,
+      careInstructions: rekResult.careInstructions,
+      moderationLabels: rekResult.moderationLabels
+    }
   };
 }

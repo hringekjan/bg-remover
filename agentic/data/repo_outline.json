@@ -1,0 +1,2088 @@
+{
+  "version": 1,
+  "scopes": {
+    "/Users/davideagle/git/CarouselLabs/enterprise-packages/services/bg-remover|services/bg-remover": {
+      "generated_at": "2026-01-20T23:14:00.544027",
+      "project_structure": {
+        "artifacts": {
+          "type": "directory",
+          "path": "artifacts"
+        },
+        "types": {
+          "type": "directory",
+          "path": "types"
+        },
+        "app": {
+          "type": "directory",
+          "path": "app"
+        },
+        "test-data": {
+          "type": "directory",
+          "path": "test-data"
+        },
+        "dist": {
+          "type": "directory",
+          "path": "dist"
+        },
+        "tests": {
+          "type": "directory",
+          "path": "tests"
+        },
+        "utils": {
+          "type": "directory",
+          "path": "utils"
+        },
+        "agentic": {
+          "type": "directory",
+          "path": "agentic"
+        },
+        "docs": {
+          "type": "directory",
+          "path": "docs"
+        },
+        "samples": {
+          "type": "directory",
+          "path": "samples"
+        },
+        "components": {
+          "type": "directory",
+          "path": "components"
+        },
+        "__tests__": {
+          "type": "directory",
+          "path": "__tests__"
+        },
+        "hooks": {
+          "type": "directory",
+          "path": "hooks"
+        },
+        "scripts": {
+          "type": "directory",
+          "path": "scripts"
+        },
+        "lib": {
+          "type": "directory",
+          "path": "lib"
+        },
+        "debug_output": {
+          "type": "directory",
+          "path": "debug_output"
+        },
+        "lambda-package": {
+          "type": "directory",
+          "path": "lambda-package"
+        },
+        "coverage": {
+          "type": "directory",
+          "path": "coverage"
+        },
+        "services": {
+          "type": "directory",
+          "path": "services"
+        },
+        "package": {
+          "type": "directory",
+          "path": "package"
+        },
+        "src": {
+          "type": "directory",
+          "path": "src"
+        },
+        "sql": {
+          "type": "directory",
+          "path": "sql"
+        },
+        "root": "/Users/davideagle/git/CarouselLabs/enterprise-packages/services/bg-remover",
+        "scoped_dirs": [
+          "services/bg-remover"
+        ],
+        "trees": {
+          "services/bg-remover": []
+        },
+        "readme_checks": [
+          {
+            "path": "services/bg-remover",
+            "readme": null,
+            "status": "missing_readme",
+            "expected": []
+          }
+        ]
+      }
+    },
+    "/Users/davideagle/git/CarouselLabs/enterprise-packages/services/bg-remover|services": {
+      "generated_at": "2026-02-08T22:28:50.523234",
+      "project_structure": {
+        "artifacts": {
+          "type": "directory",
+          "path": "artifacts"
+        },
+        "types": {
+          "type": "directory",
+          "path": "types"
+        },
+        "app": {
+          "type": "directory",
+          "path": "app"
+        },
+        "test-data": {
+          "type": "directory",
+          "path": "test-data"
+        },
+        "integration": {
+          "type": "directory",
+          "path": "integration"
+        },
+        "tests": {
+          "type": "directory",
+          "path": "tests"
+        },
+        "utils": {
+          "type": "directory",
+          "path": "utils"
+        },
+        "agentic": {
+          "type": "directory",
+          "path": "agentic"
+        },
+        "docs": {
+          "type": "directory",
+          "path": "docs"
+        },
+        "samples": {
+          "type": "directory",
+          "path": "samples"
+        },
+        "components": {
+          "type": "directory",
+          "path": "components"
+        },
+        "__tests__": {
+          "type": "directory",
+          "path": "__tests__"
+        },
+        "hooks": {
+          "type": "directory",
+          "path": "hooks"
+        },
+        "scripts": {
+          "type": "directory",
+          "path": "scripts"
+        },
+        "lib": {
+          "type": "directory",
+          "path": "lib"
+        },
+        "playwright-report": {
+          "type": "directory",
+          "path": "playwright-report"
+        },
+        "debug_output": {
+          "type": "directory",
+          "path": "debug_output"
+        },
+        "test-results": {
+          "type": "directory",
+          "path": "test-results"
+        },
+        "e2e": {
+          "type": "directory",
+          "path": "e2e"
+        },
+        "lambda-package": {
+          "type": "directory",
+          "path": "lambda-package"
+        },
+        "coverage": {
+          "type": "directory",
+          "path": "coverage"
+        },
+        "services": {
+          "type": "directory",
+          "path": "services"
+        },
+        "package": {
+          "type": "directory",
+          "path": "package"
+        },
+        "src": {
+          "type": "directory",
+          "path": "src"
+        },
+        "sql": {
+          "type": "directory",
+          "path": "sql"
+        },
+        "root": "/Users/davideagle/git/CarouselLabs/enterprise-packages/services/bg-remover",
+        "scoped_dirs": [
+          "services"
+        ],
+        "trees": {
+          "services": [
+            "|-- bg-remover",
+            "`-- ProductIdentityService.ts"
+          ]
+        },
+        "readme_checks": [
+          {
+            "path": "services/bg-remover",
+            "readme": null,
+            "status": "missing_readme",
+            "expected": []
+          }
+        ]
+      }
+    },
+    "/Users/davideagle/git/CarouselLabs/enterprise-packages/services/bg-remover|services/bg-remover,services/bg-remover/src": {
+      "generated_at": "2026-01-27T21:16:48.526792",
+      "project_structure": {
+        "artifacts": {
+          "type": "directory",
+          "path": "artifacts"
+        },
+        "types": {
+          "type": "directory",
+          "path": "types"
+        },
+        "app": {
+          "type": "directory",
+          "path": "app"
+        },
+        "test-data": {
+          "type": "directory",
+          "path": "test-data"
+        },
+        "tests": {
+          "type": "directory",
+          "path": "tests"
+        },
+        "utils": {
+          "type": "directory",
+          "path": "utils"
+        },
+        "agentic": {
+          "type": "directory",
+          "path": "agentic"
+        },
+        "docs": {
+          "type": "directory",
+          "path": "docs"
+        },
+        "samples": {
+          "type": "directory",
+          "path": "samples"
+        },
+        "components": {
+          "type": "directory",
+          "path": "components"
+        },
+        "__tests__": {
+          "type": "directory",
+          "path": "__tests__"
+        },
+        "hooks": {
+          "type": "directory",
+          "path": "hooks"
+        },
+        "scripts": {
+          "type": "directory",
+          "path": "scripts"
+        },
+        "lib": {
+          "type": "directory",
+          "path": "lib"
+        },
+        "debug_output": {
+          "type": "directory",
+          "path": "debug_output"
+        },
+        "lambda-package": {
+          "type": "directory",
+          "path": "lambda-package"
+        },
+        "coverage": {
+          "type": "directory",
+          "path": "coverage"
+        },
+        "services": {
+          "type": "directory",
+          "path": "services"
+        },
+        "package": {
+          "type": "directory",
+          "path": "package"
+        },
+        "src": {
+          "type": "directory",
+          "path": "src"
+        },
+        "sql": {
+          "type": "directory",
+          "path": "sql"
+        },
+        "root": "/Users/davideagle/git/CarouselLabs/enterprise-packages/services/bg-remover",
+        "scoped_dirs": [
+          "services/bg-remover",
+          "services/bg-remover/src"
+        ],
+        "trees": {
+          "services/bg-remover": []
+        },
+        "readme_checks": [
+          {
+            "path": "services/bg-remover",
+            "readme": null,
+            "status": "missing_readme",
+            "expected": []
+          }
+        ]
+      }
+    },
+    "/Users/davideagle/git/CarouselLabs/enterprise-packages/services/bg-remover|services/ArchiveMatrix,services/bg-remover": {
+      "generated_at": "2026-02-04T01:50:16.372857",
+      "project_structure": {
+        "artifacts": {
+          "type": "directory",
+          "path": "artifacts"
+        },
+        "types": {
+          "type": "directory",
+          "path": "types"
+        },
+        "app": {
+          "type": "directory",
+          "path": "app"
+        },
+        "test-data": {
+          "type": "directory",
+          "path": "test-data"
+        },
+        "integration": {
+          "type": "directory",
+          "path": "integration"
+        },
+        "tests": {
+          "type": "directory",
+          "path": "tests"
+        },
+        "utils": {
+          "type": "directory",
+          "path": "utils"
+        },
+        "agentic": {
+          "type": "directory",
+          "path": "agentic"
+        },
+        "docs": {
+          "type": "directory",
+          "path": "docs"
+        },
+        "samples": {
+          "type": "directory",
+          "path": "samples"
+        },
+        "components": {
+          "type": "directory",
+          "path": "components"
+        },
+        "__tests__": {
+          "type": "directory",
+          "path": "__tests__"
+        },
+        "hooks": {
+          "type": "directory",
+          "path": "hooks"
+        },
+        "scripts": {
+          "type": "directory",
+          "path": "scripts"
+        },
+        "lib": {
+          "type": "directory",
+          "path": "lib"
+        },
+        "debug_output": {
+          "type": "directory",
+          "path": "debug_output"
+        },
+        "e2e": {
+          "type": "directory",
+          "path": "e2e"
+        },
+        "lambda-package": {
+          "type": "directory",
+          "path": "lambda-package"
+        },
+        "coverage": {
+          "type": "directory",
+          "path": "coverage"
+        },
+        "services": {
+          "type": "directory",
+          "path": "services"
+        },
+        "package": {
+          "type": "directory",
+          "path": "package"
+        },
+        "src": {
+          "type": "directory",
+          "path": "src"
+        },
+        "sql": {
+          "type": "directory",
+          "path": "sql"
+        },
+        "root": "/Users/davideagle/git/CarouselLabs/enterprise-packages/services/bg-remover",
+        "scoped_dirs": [
+          "services/ArchiveMatrix",
+          "services/bg-remover"
+        ],
+        "trees": {
+          "services/bg-remover": []
+        },
+        "readme_checks": [
+          {
+            "path": "services/bg-remover",
+            "readme": null,
+            "status": "missing_readme",
+            "expected": []
+          }
+        ]
+      }
+    },
+    "/Users/davideagle/git/CarouselLabs/enterprise-packages/services/bg-remover|services/bg-remover,services/bg-remover/src/lib/auth": {
+      "generated_at": "2026-02-04T01:51:55.880458",
+      "project_structure": {
+        "artifacts": {
+          "type": "directory",
+          "path": "artifacts"
+        },
+        "types": {
+          "type": "directory",
+          "path": "types"
+        },
+        "app": {
+          "type": "directory",
+          "path": "app"
+        },
+        "test-data": {
+          "type": "directory",
+          "path": "test-data"
+        },
+        "integration": {
+          "type": "directory",
+          "path": "integration"
+        },
+        "tests": {
+          "type": "directory",
+          "path": "tests"
+        },
+        "utils": {
+          "type": "directory",
+          "path": "utils"
+        },
+        "agentic": {
+          "type": "directory",
+          "path": "agentic"
+        },
+        "docs": {
+          "type": "directory",
+          "path": "docs"
+        },
+        "samples": {
+          "type": "directory",
+          "path": "samples"
+        },
+        "components": {
+          "type": "directory",
+          "path": "components"
+        },
+        "__tests__": {
+          "type": "directory",
+          "path": "__tests__"
+        },
+        "hooks": {
+          "type": "directory",
+          "path": "hooks"
+        },
+        "scripts": {
+          "type": "directory",
+          "path": "scripts"
+        },
+        "lib": {
+          "type": "directory",
+          "path": "lib"
+        },
+        "debug_output": {
+          "type": "directory",
+          "path": "debug_output"
+        },
+        "e2e": {
+          "type": "directory",
+          "path": "e2e"
+        },
+        "lambda-package": {
+          "type": "directory",
+          "path": "lambda-package"
+        },
+        "coverage": {
+          "type": "directory",
+          "path": "coverage"
+        },
+        "services": {
+          "type": "directory",
+          "path": "services"
+        },
+        "package": {
+          "type": "directory",
+          "path": "package"
+        },
+        "src": {
+          "type": "directory",
+          "path": "src"
+        },
+        "sql": {
+          "type": "directory",
+          "path": "sql"
+        },
+        "root": "/Users/davideagle/git/CarouselLabs/enterprise-packages/services/bg-remover",
+        "scoped_dirs": [
+          "services/bg-remover",
+          "services/bg-remover/src/lib/auth"
+        ],
+        "trees": {
+          "services/bg-remover": []
+        },
+        "readme_checks": [
+          {
+            "path": "services/bg-remover",
+            "readme": null,
+            "status": "missing_readme",
+            "expected": []
+          }
+        ]
+      }
+    },
+    "/Users/davideagle/git/CarouselLabs/enterprise-packages/services/bg-remover|services/bg-remover,services/bg-remover/src/handlers": {
+      "generated_at": "2026-02-04T01:53:22.619063",
+      "project_structure": {
+        "artifacts": {
+          "type": "directory",
+          "path": "artifacts"
+        },
+        "types": {
+          "type": "directory",
+          "path": "types"
+        },
+        "app": {
+          "type": "directory",
+          "path": "app"
+        },
+        "test-data": {
+          "type": "directory",
+          "path": "test-data"
+        },
+        "integration": {
+          "type": "directory",
+          "path": "integration"
+        },
+        "tests": {
+          "type": "directory",
+          "path": "tests"
+        },
+        "utils": {
+          "type": "directory",
+          "path": "utils"
+        },
+        "agentic": {
+          "type": "directory",
+          "path": "agentic"
+        },
+        "docs": {
+          "type": "directory",
+          "path": "docs"
+        },
+        "samples": {
+          "type": "directory",
+          "path": "samples"
+        },
+        "components": {
+          "type": "directory",
+          "path": "components"
+        },
+        "__tests__": {
+          "type": "directory",
+          "path": "__tests__"
+        },
+        "hooks": {
+          "type": "directory",
+          "path": "hooks"
+        },
+        "scripts": {
+          "type": "directory",
+          "path": "scripts"
+        },
+        "lib": {
+          "type": "directory",
+          "path": "lib"
+        },
+        "debug_output": {
+          "type": "directory",
+          "path": "debug_output"
+        },
+        "e2e": {
+          "type": "directory",
+          "path": "e2e"
+        },
+        "lambda-package": {
+          "type": "directory",
+          "path": "lambda-package"
+        },
+        "coverage": {
+          "type": "directory",
+          "path": "coverage"
+        },
+        "services": {
+          "type": "directory",
+          "path": "services"
+        },
+        "package": {
+          "type": "directory",
+          "path": "package"
+        },
+        "src": {
+          "type": "directory",
+          "path": "src"
+        },
+        "sql": {
+          "type": "directory",
+          "path": "sql"
+        },
+        "root": "/Users/davideagle/git/CarouselLabs/enterprise-packages/services/bg-remover",
+        "scoped_dirs": [
+          "services/bg-remover",
+          "services/bg-remover/src/handlers"
+        ],
+        "trees": {
+          "services/bg-remover": []
+        },
+        "readme_checks": [
+          {
+            "path": "services/bg-remover",
+            "readme": null,
+            "status": "missing_readme",
+            "expected": []
+          }
+        ]
+      }
+    },
+    "/Users/davideagle/git/CarouselLabs/enterprise-packages/services/bg-remover|.": {
+      "generated_at": "2026-02-04T01:56:05.969369",
+      "project_structure": {
+        "artifacts": {
+          "type": "directory",
+          "path": "artifacts"
+        },
+        "types": {
+          "type": "directory",
+          "path": "types"
+        },
+        "app": {
+          "type": "directory",
+          "path": "app"
+        },
+        "test-data": {
+          "type": "directory",
+          "path": "test-data"
+        },
+        "integration": {
+          "type": "directory",
+          "path": "integration"
+        },
+        "tests": {
+          "type": "directory",
+          "path": "tests"
+        },
+        "utils": {
+          "type": "directory",
+          "path": "utils"
+        },
+        "agentic": {
+          "type": "directory",
+          "path": "agentic"
+        },
+        "docs": {
+          "type": "directory",
+          "path": "docs"
+        },
+        "samples": {
+          "type": "directory",
+          "path": "samples"
+        },
+        "components": {
+          "type": "directory",
+          "path": "components"
+        },
+        "__tests__": {
+          "type": "directory",
+          "path": "__tests__"
+        },
+        "hooks": {
+          "type": "directory",
+          "path": "hooks"
+        },
+        "scripts": {
+          "type": "directory",
+          "path": "scripts"
+        },
+        "lib": {
+          "type": "directory",
+          "path": "lib"
+        },
+        "debug_output": {
+          "type": "directory",
+          "path": "debug_output"
+        },
+        "e2e": {
+          "type": "directory",
+          "path": "e2e"
+        },
+        "lambda-package": {
+          "type": "directory",
+          "path": "lambda-package"
+        },
+        "coverage": {
+          "type": "directory",
+          "path": "coverage"
+        },
+        "services": {
+          "type": "directory",
+          "path": "services"
+        },
+        "package": {
+          "type": "directory",
+          "path": "package"
+        },
+        "src": {
+          "type": "directory",
+          "path": "src"
+        },
+        "sql": {
+          "type": "directory",
+          "path": "sql"
+        },
+        "root": "/Users/davideagle/git/CarouselLabs/enterprise-packages/services/bg-remover",
+        "scoped_dirs": [
+          "."
+        ],
+        "trees": {
+          ".": [
+            "|-- __tests__",
+            "|   `-- config-loader-integration.test.ts",
+            "|-- agentic",
+            "|   `-- data",
+            "|-- app",
+            "|   |-- api",
+            "|   |-- layout.tsx",
+            "|   `-- page.tsx",
+            "|-- components",
+            "|-- debug_output",
+            "|   |-- pants_alpha.png",
+            "|   `-- pants_mask.png",
+            "|-- docs",
+            "|   |-- S3_TABLES_DEPLOYMENT_GUIDE.md",
+            "|   |-- S3_TABLES_IMPLEMENTATION.md",
+            "|   |-- S3_TABLES_QUICKSTART.md",
+            "|   |-- S3_TABLES_TECHNICAL_REFERENCE.md",
+            "|   |-- SALES_INTELLIGENCE_SCHEMA.md",
+            "|   |-- SECRETS_MANAGEMENT.md",
+            "|   `-- USER_FLOW_DIAGRAM.md",
+            "|-- e2e",
+            "|   |-- burst-rate-limit.e2e.test.ts",
+            "|   |-- corrupted-image.e2e.test.ts",
+            "|   `-- png-with-alpha.e2e.test.ts",
+            "|-- hooks",
+            "|   `-- useProductIdentityClustering.ts",
+            "|-- integration",
+            "|   `-- serverless-offline.integration.test.ts",
+            "|-- lambda-package",
+            "|   |-- lib",
+            "|   `-- src",
+            "|-- lib",
+            "|   |-- auth",
+            "|   |-- bedrock",
+            "|   |-- carousel-api",
+            "|   |-- clustering",
+            "|   |-- config",
+            "|   |-- dynamo",
+            "|   |-- image-optimizer",
+            "|   |-- s3",
+            "|   |-- tenant",
+            "|   |-- types",
+            "|   `-- utils",
+            "|-- package",
+            "|   |-- lib",
+            "|   |-- LICENSE",
+            "|   |-- package.json",
+            "|   `-- README.md",
+            "|-- samples",
+            "|   `-- pants.png",
+            "|-- scripts",
+            "|   |-- attach-authorizer.js",
+            "|   |-- create-s3-tables-schema.py",
+            "|   |-- deploy-and-verify.sh",
+            "|   |-- deploy-bg-remover.sh",
+            "|   |-- deploy-s3-tables.sh",
+            "|   |-- install.sh",
+            "|   |-- load-sample-sales-data.py",
+            "|   |-- quick_install.sh",
+            "|   |-- README.md",
+            "|   |-- README_DEPLOY_VERIFY.md",
+            "|   |-- rotate-admin-keys.sh",
+            "|   |-- run_tests.sh",
+            "|   |-- seed-admin-keys.sh",
+            "|   |-- sync-bg-remover.sh",
+            "|   |-- test-admin-keys.sh",
+            "|   |-- test-endpoints.sh",
+            "|   |-- TEST_DEPLOY_VERIFY.md",
+            "|   |-- verify-e2e-flow.sh",
+            "|   |-- verify-handler-paths.sh",
+            "|   |-- verify-s3-tables.sh",
+            "|   `-- verify-tracing.sh",
+            "|-- services",
+            "|   |-- bg-remover",
+            "|   `-- ProductIdentityService.ts",
+            "|-- sql",
+            "|   `-- sales-history-queries.sql",
+            "|-- src",
+            "|   |-- @types",
+            "|   |-- __tests__",
+            "|   |-- handlers",
+            "|   |-- lambdas",
+            "|   |-- lib",
+            "|   |-- resources",
+            "|   |-- services",
+            "|   |-- types",
+            "|   |-- cache.js",
+            "|   `-- handler.ts",
+            "|-- test-data",
+            "|   `-- real-images",
+            "|-- tests",
+            "|   |-- performance",
+            "|   |-- unit",
+            "|   |-- cache-manager.test.ts",
+            "|   |-- carousel-to-s3-tables-sync.test.ts",
+            "|   |-- handler.test.ts",
+            "|   |-- image-processor.test.ts",
+            "|   |-- image-validation.test.ts",
+            "|   |-- job-store.test.ts",
+            "|   |-- ownership-validation.test.ts",
+            "|   |-- permissions-manager.test.ts",
+            "|   |-- product-identity.test.ts",
+            "|   |-- secret-rotator.test.ts",
+            "|   |-- setup.ts",
+            "|   |-- tenant-resolver.test.ts",
+            "|   |-- types.test.ts",
+            "|   `-- workflow.test.ts",
+            "|-- types",
+            "|   `-- product-identity-settings.ts",
+            "|-- utils",
+            "|   `-- ImageFeatureExtractor.ts",
+            "|-- API_ENDPOINTS.md",
+            "|-- AUTHENTICATION.md",
+            "|-- BACKFILL_TTL_CODE_REFERENCE.md",
+            "|-- BACKFILL_TTL_DELIVERY_CHECKLIST.md",
+            "|-- BACKFILL_TTL_EXECUTIVE_SUMMARY.md",
+            "|-- BACKFILL_TTL_FIX_SUMMARY.md",
+            "|-- BACKFILL_TTL_INDEX.md",
+            "|-- BACKFILL_TTL_QUICK_REFERENCE.md",
+            "|-- BEDROCK_NOVA_LITE_DELIVERY.md",
+            "|-- BENCHMARK-FILE-PATHS.md",
+            "|-- BG-REMOVER-QUICK-WINS-IMPLEMENTATION-COMPLETE.md",
+            "|-- BG_REMOVER_AUTH_COMPLETE.md",
+            "|-- BG_REMOVER_TELEMETRY_UNSTUB_COMPLETE.md",
+            "|-- BG_REMOVER_TIMEOUT_FIX_LEARNINGS.md",
+            "|-- BG_REMOVER_UI_ARCHITECTURE_DECISION.md",
+            "|-- BG_REMOVER_UI_DELETION_TIMELINE.md",
+            "|-- CACHE_INTEGRATION_FINAL_REVIEW.md",
+            "|-- CACHE_MEMORY_LEAK_FIX.md",
+            "|-- CAROUSEL_S3_TABLES_SYNC.md",
+            "|-- CAROUSEL_SYNC_QUICK_START.md",
+            "|-- classifier_handler.py",
+            "|-- clothing_detection_results.json",
+            "|-- CLOUDFRONT_403_ROOT_CAUSE.md",
+            "|-- cloudwatch-dashboard.json",
+            "|-- cloudwatch-insights-queries.md",
+            "|-- CLOUDWATCH_ALARMS.md",
+            "|-- CLOUDWATCH_DASHBOARD.json",
+            "|-- CODE_REVIEW.md",
+            "|-- DELETED_DOCUMENTATION_INVENTORY.md",
+            "|-- DELIVERABLES.md",
+            "|-- DELIVERABLES.txt",
+            "|-- deploy.log",
+            "|-- DEPLOY_VERIFY_QUICK_START.md",
+            "|-- DEPLOYMENT_CHECKLIST.md",
+            "|-- DEPLOYMENT_COMPLETE.md",
+            "|-- DEPLOYMENT_COMPLETE_20251230.md",
+            "|-- DEPLOYMENT_FIX_SUMMARY.md",
+            "|-- DEPLOYMENT_GUIDE.md",
+            "|-- DEPLOYMENT_IN_PROGRESS.md",
+            "|-- DEPLOYMENT_VERIFICATION_DELIVERY.md",
+            "|-- Dockerfile",
+            "|-- DOCUMENTATION_FIXES_DELIVERY_SUMMARY.md",
+            "|-- EMBEDDING_CACHE_DELIVERY.md",
+            "|-- EMBEDDING_CACHE_IMPLEMENTATION.md",
+            "|-- execute-batch-processing.ts",
+            "|-- FIX_SUMMARY.md",
+            "|-- HANDLER_PATHS_FIX_SUMMARY.md",
+            "|-- HEALTH_ENDPOINT_FIX.md",
+            "|-- IMPLEMENTATION_SUMMARY.md",
+            "|-- IMPLEMENTATION_SUMMARY.txt",
+            "|-- INCUBATOR-WORK-STATUS.md",
+            "|-- INDEX.md",
+            "|-- integration-test-results.json",
+            "|-- jest.config.js",
+            "|-- next-env.d.ts",
+            "|-- next.config.ts",
+            "|-- OPERATIONAL_RUNBOOK.md",
+            "|-- OWNERSHIP_VALIDATION_IMPLEMENTATION.md",
+            "|-- OWNERSHIP_VALIDATION_SECURITY_REVIEW.md",
+            "|-- package-lock.json",
+            "|-- package.json",
+            "|-- PHASE_2_4_DELIVERABLES.md",
+            "|-- PHASE_4_2_VECTOR_SEARCH.md",
+            "|-- playwright.config.ts",
+            "|-- PRODUCT_IDENTITY_DEPLOYMENT_STATUS.md",
+            "|-- PRODUCT_REVIEW_WORKFLOW_COMPLETE.md",
+            "|-- QUICK_REFERENCE.md",
+            "|-- README.md",
+            "|-- README_SALES_INTELLIGENCE.md",
+            "|-- README_SEASONAL_ADJUSTMENT.md",
+            "|-- README_SECURITY_FIX.md",
+            "|-- requirements.txt",
+            "|-- S3_BATCH_FETCHER_INTEGRATION.md",
+            "|-- S3_TABLES_DATA_VALIDATOR_README.md",
+            "|-- S3_TABLES_IMPLEMENTATION_CHECKLIST.md",
+            "|-- S3_TABLES_SCHEMA_SUMMARY.md",
+            "|-- SALES_INTELLIGENCE_IMPLEMENTATION_GUIDE.md",
+            "|-- SALES_INTELLIGENCE_QUICK_REFERENCE.md",
+            "|-- SEASONAL_ADJUSTMENT_QUICK_REF.md",
+            "|-- SECURITY_AUDIT_REPORT.md",
+            "|-- SECURITY_FIX_3_SUMMARY.md",
+            "|-- SECURITY_FIX_ADMIN_KEYS.md",
+            "|-- SECURITY_FIX_COMPLETE.md",
+            "|-- SECURITY_FIX_OWNERSHIP_VALIDATION.md",
+            "|-- SECURITY_FIX_VERIFICATION.md",
+            "|-- SECURITY_ISSUE_3_HARDCODED_ADMIN_KEYS_REVIEW.md",
+            "|-- SECURITY_ISSUE_3_QUICK_REFERENCE.md",
+            "|-- serverless.yml",
+            "|-- SYSTEM_ARCHITECTURE.md"
+          ]
+        },
+        "readme_checks": [
+          {
+            "path": "services/bg-remover",
+            "readme": null,
+            "status": "missing_readme",
+            "expected": []
+          }
+        ]
+      }
+    },
+    "/Users/davideagle/git/CarouselLabs/enterprise-packages/services/bg-remover|src/lib/auth": {
+      "generated_at": "2026-02-04T12:10:06.519025",
+      "project_structure": {
+        "artifacts": {
+          "type": "directory",
+          "path": "artifacts"
+        },
+        "types": {
+          "type": "directory",
+          "path": "types"
+        },
+        "app": {
+          "type": "directory",
+          "path": "app"
+        },
+        "test-data": {
+          "type": "directory",
+          "path": "test-data"
+        },
+        "integration": {
+          "type": "directory",
+          "path": "integration"
+        },
+        "tests": {
+          "type": "directory",
+          "path": "tests"
+        },
+        "utils": {
+          "type": "directory",
+          "path": "utils"
+        },
+        "agentic": {
+          "type": "directory",
+          "path": "agentic"
+        },
+        "docs": {
+          "type": "directory",
+          "path": "docs"
+        },
+        "samples": {
+          "type": "directory",
+          "path": "samples"
+        },
+        "components": {
+          "type": "directory",
+          "path": "components"
+        },
+        "__tests__": {
+          "type": "directory",
+          "path": "__tests__"
+        },
+        "hooks": {
+          "type": "directory",
+          "path": "hooks"
+        },
+        "scripts": {
+          "type": "directory",
+          "path": "scripts"
+        },
+        "lib": {
+          "type": "directory",
+          "path": "lib"
+        },
+        "debug_output": {
+          "type": "directory",
+          "path": "debug_output"
+        },
+        "e2e": {
+          "type": "directory",
+          "path": "e2e"
+        },
+        "lambda-package": {
+          "type": "directory",
+          "path": "lambda-package"
+        },
+        "coverage": {
+          "type": "directory",
+          "path": "coverage"
+        },
+        "services": {
+          "type": "directory",
+          "path": "services"
+        },
+        "package": {
+          "type": "directory",
+          "path": "package"
+        },
+        "src": {
+          "type": "directory",
+          "path": "src"
+        },
+        "sql": {
+          "type": "directory",
+          "path": "sql"
+        },
+        "root": "/Users/davideagle/git/CarouselLabs/enterprise-packages/services/bg-remover",
+        "scoped_dirs": [
+          "src/lib/auth"
+        ],
+        "trees": {
+          "src/lib/auth": [
+            "|-- jwt-validator.test.ts",
+            "`-- jwt-validator.ts"
+          ]
+        },
+        "readme_checks": []
+      }
+    },
+    "/Users/davideagle/git/CarouselLabs/enterprise-packages/services/bg-remover|src/handlers": {
+      "generated_at": "2026-02-08T22:38:00.202724",
+      "project_structure": {
+        "artifacts": {
+          "type": "directory",
+          "path": "artifacts"
+        },
+        "types": {
+          "type": "directory",
+          "path": "types"
+        },
+        "app": {
+          "type": "directory",
+          "path": "app"
+        },
+        "test-data": {
+          "type": "directory",
+          "path": "test-data"
+        },
+        "integration": {
+          "type": "directory",
+          "path": "integration"
+        },
+        "tests": {
+          "type": "directory",
+          "path": "tests"
+        },
+        "utils": {
+          "type": "directory",
+          "path": "utils"
+        },
+        "agentic": {
+          "type": "directory",
+          "path": "agentic"
+        },
+        "docs": {
+          "type": "directory",
+          "path": "docs"
+        },
+        "samples": {
+          "type": "directory",
+          "path": "samples"
+        },
+        "components": {
+          "type": "directory",
+          "path": "components"
+        },
+        "__tests__": {
+          "type": "directory",
+          "path": "__tests__"
+        },
+        "hooks": {
+          "type": "directory",
+          "path": "hooks"
+        },
+        "scripts": {
+          "type": "directory",
+          "path": "scripts"
+        },
+        "lib": {
+          "type": "directory",
+          "path": "lib"
+        },
+        "playwright-report": {
+          "type": "directory",
+          "path": "playwright-report"
+        },
+        "debug_output": {
+          "type": "directory",
+          "path": "debug_output"
+        },
+        "test-results": {
+          "type": "directory",
+          "path": "test-results"
+        },
+        "e2e": {
+          "type": "directory",
+          "path": "e2e"
+        },
+        "lambda-package": {
+          "type": "directory",
+          "path": "lambda-package"
+        },
+        "coverage": {
+          "type": "directory",
+          "path": "coverage"
+        },
+        "services": {
+          "type": "directory",
+          "path": "services"
+        },
+        "package": {
+          "type": "directory",
+          "path": "package"
+        },
+        "src": {
+          "type": "directory",
+          "path": "src"
+        },
+        "sql": {
+          "type": "directory",
+          "path": "sql"
+        },
+        "root": "/Users/davideagle/git/CarouselLabs/enterprise-packages/services/bg-remover",
+        "scoped_dirs": [
+          "src/handlers"
+        ],
+        "trees": {
+          "src/handlers": [
+            "|-- __tests__",
+            "|   |-- s3-tables-data-validator.test.ts",
+            "|   |-- stream-processor.test.ts",
+            "|   |-- upload-events-consumer-grouping-mode.test.ts",
+            "|   |-- upload-events-consumer.test.ts",
+            "|   `-- upload-events-router.test.ts",
+            "|-- base-handler.ts",
+            "|-- batchProcess.ts",
+            "|-- carousel-to-s3-tables-sync.ts",
+            "|-- carousel-to-s3-tables-sync.ts.bak",
+            "|-- carousel-to-s3-tables-sync.ts.bak2",
+            "|-- cleanup-test-artifacts-handler.ts",
+            "|-- cleanup-test-artifacts-handler.ts.bak",
+            "|-- cleanup-test-artifacts-handler.ts.bak2",
+            "|-- create-products-handler.ts",
+            "|-- event-stats-handler.ts",
+            "|-- group-images-handler.ts",
+            "|-- group-images-worker-handler.ts",
+            "|-- group-status-handler.ts",
+            "|-- health-handler.ts",
+            "|-- jobs-handler.ts",
+            "|-- metadata-approval-handler.ts",
+            "|-- metadata-approval-handler.ts.bak",
+            "|-- metadata-approval-handler.ts.bak2",
+            "|-- metrics-handler.ts",
+            "|-- metrics-wrapper.ts",
+            "|-- pricing-calculator.ts",
+            "|-- pricing-handler.ts",
+            "|-- pricing-insight-aggregator.ts",
+            "|-- process-groups-handler.ts",
+            "|-- process-handler.ts",
+            "|-- process-worker-handler.ts",
+            "|-- process-worker-handler.ts.bak",
+            "|-- process-worker-handler.ts.bak2",
+            "|-- process-worker-handler.ts.bak3",
+            "|-- process-worker-handler.ts.bak4",
+            "|-- processImage.ts",
+            "|-- rotate-keys-handler.ts",
+            "|-- s3-tables-data-validator.ts",
+            "|-- s3-tables-data-validator.ts.bak",
+            "|-- s3-tables-data-validator.ts.bak2",
+            "|-- status-handler.ts",
+            "|-- status-handler.ts.bak",
+            "|-- status-handler.ts.bak2",
+            "|-- statusCheck.ts",
+            "|-- stream-processor.ts",
+            "|-- upload-events-consumer.ts",
+            "|-- upload-events-router.ts",
+            "|-- upload-urls-handler.ts",
+            "`-- webhookHandler.ts"
+          ]
+        },
+        "readme_checks": []
+      }
+    },
+    "/Users/davideagle/git/CarouselLabs/enterprise-packages/services/bg-remover|tests": {
+      "generated_at": "2026-02-04T02:04:48.165635",
+      "project_structure": {
+        "artifacts": {
+          "type": "directory",
+          "path": "artifacts"
+        },
+        "types": {
+          "type": "directory",
+          "path": "types"
+        },
+        "app": {
+          "type": "directory",
+          "path": "app"
+        },
+        "test-data": {
+          "type": "directory",
+          "path": "test-data"
+        },
+        "integration": {
+          "type": "directory",
+          "path": "integration"
+        },
+        "tests": {
+          "type": "directory",
+          "path": "tests"
+        },
+        "utils": {
+          "type": "directory",
+          "path": "utils"
+        },
+        "agentic": {
+          "type": "directory",
+          "path": "agentic"
+        },
+        "docs": {
+          "type": "directory",
+          "path": "docs"
+        },
+        "samples": {
+          "type": "directory",
+          "path": "samples"
+        },
+        "components": {
+          "type": "directory",
+          "path": "components"
+        },
+        "__tests__": {
+          "type": "directory",
+          "path": "__tests__"
+        },
+        "hooks": {
+          "type": "directory",
+          "path": "hooks"
+        },
+        "scripts": {
+          "type": "directory",
+          "path": "scripts"
+        },
+        "lib": {
+          "type": "directory",
+          "path": "lib"
+        },
+        "debug_output": {
+          "type": "directory",
+          "path": "debug_output"
+        },
+        "e2e": {
+          "type": "directory",
+          "path": "e2e"
+        },
+        "lambda-package": {
+          "type": "directory",
+          "path": "lambda-package"
+        },
+        "coverage": {
+          "type": "directory",
+          "path": "coverage"
+        },
+        "services": {
+          "type": "directory",
+          "path": "services"
+        },
+        "package": {
+          "type": "directory",
+          "path": "package"
+        },
+        "src": {
+          "type": "directory",
+          "path": "src"
+        },
+        "sql": {
+          "type": "directory",
+          "path": "sql"
+        },
+        "root": "/Users/davideagle/git/CarouselLabs/enterprise-packages/services/bg-remover",
+        "scoped_dirs": [
+          "tests"
+        ],
+        "trees": {
+          "tests": [
+            "|-- performance",
+            "|   `-- pricing-cache.test.ts",
+            "|-- unit",
+            "|   `-- embedding-cache.test.ts",
+            "|-- cache-manager.test.ts",
+            "|-- carousel-to-s3-tables-sync.test.ts",
+            "|-- handler.test.ts",
+            "|-- image-processor.test.ts",
+            "|-- image-validation.test.ts",
+            "|-- job-store.test.ts",
+            "|-- ownership-validation.test.ts",
+            "|-- permissions-manager.test.ts",
+            "|-- product-identity.test.ts",
+            "|-- secret-rotator.test.ts",
+            "|-- setup.ts",
+            "|-- tenant-resolver.test.ts",
+            "|-- types.test.ts",
+            "`-- workflow.test.ts"
+          ]
+        },
+        "readme_checks": []
+      }
+    },
+    "/Users/davideagle/git/CarouselLabs/enterprise-packages/services/bg-remover|app/api/create-products,src/handlers,src/lib/credits": {
+      "generated_at": "2026-02-04T18:30:46.907861",
+      "project_structure": {
+        "artifacts": {
+          "type": "directory",
+          "path": "artifacts"
+        },
+        "types": {
+          "type": "directory",
+          "path": "types"
+        },
+        "app": {
+          "type": "directory",
+          "path": "app"
+        },
+        "test-data": {
+          "type": "directory",
+          "path": "test-data"
+        },
+        "integration": {
+          "type": "directory",
+          "path": "integration"
+        },
+        "tests": {
+          "type": "directory",
+          "path": "tests"
+        },
+        "utils": {
+          "type": "directory",
+          "path": "utils"
+        },
+        "agentic": {
+          "type": "directory",
+          "path": "agentic"
+        },
+        "docs": {
+          "type": "directory",
+          "path": "docs"
+        },
+        "samples": {
+          "type": "directory",
+          "path": "samples"
+        },
+        "components": {
+          "type": "directory",
+          "path": "components"
+        },
+        "__tests__": {
+          "type": "directory",
+          "path": "__tests__"
+        },
+        "hooks": {
+          "type": "directory",
+          "path": "hooks"
+        },
+        "scripts": {
+          "type": "directory",
+          "path": "scripts"
+        },
+        "lib": {
+          "type": "directory",
+          "path": "lib"
+        },
+        "debug_output": {
+          "type": "directory",
+          "path": "debug_output"
+        },
+        "e2e": {
+          "type": "directory",
+          "path": "e2e"
+        },
+        "lambda-package": {
+          "type": "directory",
+          "path": "lambda-package"
+        },
+        "coverage": {
+          "type": "directory",
+          "path": "coverage"
+        },
+        "services": {
+          "type": "directory",
+          "path": "services"
+        },
+        "package": {
+          "type": "directory",
+          "path": "package"
+        },
+        "src": {
+          "type": "directory",
+          "path": "src"
+        },
+        "sql": {
+          "type": "directory",
+          "path": "sql"
+        },
+        "root": "/Users/davideagle/git/CarouselLabs/enterprise-packages/services/bg-remover",
+        "scoped_dirs": [
+          "app/api/create-products",
+          "src/handlers",
+          "src/lib/credits"
+        ],
+        "trees": {
+          "src/handlers": [
+            "|-- __tests__",
+            "|   `-- s3-tables-data-validator.test.ts",
+            "|-- base-handler.ts",
+            "|-- batchProcess.ts",
+            "|-- carousel-to-s3-tables-sync.ts",
+            "|-- carousel-to-s3-tables-sync.ts.bak",
+            "|-- carousel-to-s3-tables-sync.ts.bak2",
+            "|-- cleanup-test-artifacts-handler.ts",
+            "|-- cleanup-test-artifacts-handler.ts.bak",
+            "|-- cleanup-test-artifacts-handler.ts.bak2",
+            "|-- create-products-handler.ts",
+            "|-- event-stats-handler.ts",
+            "|-- group-images-handler.ts",
+            "|-- group-images-worker-handler.ts",
+            "|-- group-status-handler.ts",
+            "|-- health-handler.ts",
+            "|-- metadata-approval-handler.ts",
+            "|-- metadata-approval-handler.ts.bak",
+            "|-- metadata-approval-handler.ts.bak2",
+            "|-- metrics-handler.ts",
+            "|-- metrics-wrapper.ts",
+            "|-- pricing-calculator.ts",
+            "|-- pricing-handler.ts",
+            "|-- pricing-insight-aggregator.ts",
+            "|-- process-groups-handler.ts",
+            "|-- process-handler.ts",
+            "|-- process-worker-handler.ts",
+            "|-- process-worker-handler.ts.bak",
+            "|-- process-worker-handler.ts.bak2",
+            "|-- process-worker-handler.ts.bak3",
+            "|-- process-worker-handler.ts.bak4",
+            "|-- processImage.ts",
+            "|-- rotate-keys-handler.ts",
+            "|-- s3-tables-data-validator.ts",
+            "|-- s3-tables-data-validator.ts.bak",
+            "|-- s3-tables-data-validator.ts.bak2",
+            "|-- status-handler.ts",
+            "|-- status-handler.ts.bak",
+            "|-- status-handler.ts.bak2",
+            "|-- statusCheck.ts",
+            "|-- stream-processor.ts",
+            "|-- upload-urls-handler.ts",
+            "`-- webhookHandler.ts"
+          ],
+          "src/lib/credits": [
+            "`-- client.ts"
+          ],
+          "app/api/create-products": [
+            "|-- __tests__",
+            "|   |-- route.auth.test.ts",
+            "|   `-- route.credits.test.ts",
+            "|-- route.js",
+            "|-- route.js.map",
+            "`-- route.ts"
+          ]
+        },
+        "readme_checks": []
+      }
+    },
+    "/Users/davideagle/git/CarouselLabs/enterprise-packages/services/bg-remover|app/api/create-product,app/api/create-products,src/handlers,src/lib/credits": {
+      "generated_at": "2026-02-04T18:33:03.359776",
+      "project_structure": {
+        "artifacts": {
+          "type": "directory",
+          "path": "artifacts"
+        },
+        "types": {
+          "type": "directory",
+          "path": "types"
+        },
+        "app": {
+          "type": "directory",
+          "path": "app"
+        },
+        "test-data": {
+          "type": "directory",
+          "path": "test-data"
+        },
+        "integration": {
+          "type": "directory",
+          "path": "integration"
+        },
+        "tests": {
+          "type": "directory",
+          "path": "tests"
+        },
+        "utils": {
+          "type": "directory",
+          "path": "utils"
+        },
+        "agentic": {
+          "type": "directory",
+          "path": "agentic"
+        },
+        "docs": {
+          "type": "directory",
+          "path": "docs"
+        },
+        "samples": {
+          "type": "directory",
+          "path": "samples"
+        },
+        "components": {
+          "type": "directory",
+          "path": "components"
+        },
+        "__tests__": {
+          "type": "directory",
+          "path": "__tests__"
+        },
+        "hooks": {
+          "type": "directory",
+          "path": "hooks"
+        },
+        "scripts": {
+          "type": "directory",
+          "path": "scripts"
+        },
+        "lib": {
+          "type": "directory",
+          "path": "lib"
+        },
+        "debug_output": {
+          "type": "directory",
+          "path": "debug_output"
+        },
+        "e2e": {
+          "type": "directory",
+          "path": "e2e"
+        },
+        "lambda-package": {
+          "type": "directory",
+          "path": "lambda-package"
+        },
+        "coverage": {
+          "type": "directory",
+          "path": "coverage"
+        },
+        "services": {
+          "type": "directory",
+          "path": "services"
+        },
+        "package": {
+          "type": "directory",
+          "path": "package"
+        },
+        "src": {
+          "type": "directory",
+          "path": "src"
+        },
+        "sql": {
+          "type": "directory",
+          "path": "sql"
+        },
+        "root": "/Users/davideagle/git/CarouselLabs/enterprise-packages/services/bg-remover",
+        "scoped_dirs": [
+          "app/api/create-product",
+          "app/api/create-products",
+          "src/handlers",
+          "src/lib/credits"
+        ],
+        "trees": {
+          "src/handlers": [
+            "|-- __tests__",
+            "|   `-- s3-tables-data-validator.test.ts",
+            "|-- base-handler.ts",
+            "|-- batchProcess.ts",
+            "|-- carousel-to-s3-tables-sync.ts",
+            "|-- carousel-to-s3-tables-sync.ts.bak",
+            "|-- carousel-to-s3-tables-sync.ts.bak2",
+            "|-- cleanup-test-artifacts-handler.ts",
+            "|-- cleanup-test-artifacts-handler.ts.bak",
+            "|-- cleanup-test-artifacts-handler.ts.bak2",
+            "|-- create-products-handler.ts",
+            "|-- event-stats-handler.ts",
+            "|-- group-images-handler.ts",
+            "|-- group-images-worker-handler.ts",
+            "|-- group-status-handler.ts",
+            "|-- health-handler.ts",
+            "|-- metadata-approval-handler.ts",
+            "|-- metadata-approval-handler.ts.bak",
+            "|-- metadata-approval-handler.ts.bak2",
+            "|-- metrics-handler.ts",
+            "|-- metrics-wrapper.ts",
+            "|-- pricing-calculator.ts",
+            "|-- pricing-handler.ts",
+            "|-- pricing-insight-aggregator.ts",
+            "|-- process-groups-handler.ts",
+            "|-- process-handler.ts",
+            "|-- process-worker-handler.ts",
+            "|-- process-worker-handler.ts.bak",
+            "|-- process-worker-handler.ts.bak2",
+            "|-- process-worker-handler.ts.bak3",
+            "|-- process-worker-handler.ts.bak4",
+            "|-- processImage.ts",
+            "|-- rotate-keys-handler.ts",
+            "|-- s3-tables-data-validator.ts",
+            "|-- s3-tables-data-validator.ts.bak",
+            "|-- s3-tables-data-validator.ts.bak2",
+            "|-- status-handler.ts",
+            "|-- status-handler.ts.bak",
+            "|-- status-handler.ts.bak2",
+            "|-- statusCheck.ts",
+            "|-- stream-processor.ts",
+            "|-- upload-urls-handler.ts",
+            "`-- webhookHandler.ts"
+          ],
+          "src/lib/credits": [
+            "`-- client.ts"
+          ],
+          "app/api/create-products": [
+            "|-- __tests__",
+            "|   |-- route.auth.test.ts",
+            "|   `-- route.credits.test.ts",
+            "|-- route.js",
+            "|-- route.js.map",
+            "`-- route.ts"
+          ],
+          "app/api/create-product": [
+            "`-- route.ts"
+          ]
+        },
+        "readme_checks": []
+      }
+    },
+    "/Users/davideagle/git/CarouselLabs/enterprise-packages/services/bg-remover|app/api/group-images,app/api/process,app/api/process-groups,app/api/status/[jobId],src/handlers,src/lib": {
+      "generated_at": "2026-02-04T18:34:28.180034",
+      "project_structure": {
+        "artifacts": {
+          "type": "directory",
+          "path": "artifacts"
+        },
+        "types": {
+          "type": "directory",
+          "path": "types"
+        },
+        "app": {
+          "type": "directory",
+          "path": "app"
+        },
+        "test-data": {
+          "type": "directory",
+          "path": "test-data"
+        },
+        "integration": {
+          "type": "directory",
+          "path": "integration"
+        },
+        "tests": {
+          "type": "directory",
+          "path": "tests"
+        },
+        "utils": {
+          "type": "directory",
+          "path": "utils"
+        },
+        "agentic": {
+          "type": "directory",
+          "path": "agentic"
+        },
+        "docs": {
+          "type": "directory",
+          "path": "docs"
+        },
+        "samples": {
+          "type": "directory",
+          "path": "samples"
+        },
+        "components": {
+          "type": "directory",
+          "path": "components"
+        },
+        "__tests__": {
+          "type": "directory",
+          "path": "__tests__"
+        },
+        "hooks": {
+          "type": "directory",
+          "path": "hooks"
+        },
+        "scripts": {
+          "type": "directory",
+          "path": "scripts"
+        },
+        "lib": {
+          "type": "directory",
+          "path": "lib"
+        },
+        "debug_output": {
+          "type": "directory",
+          "path": "debug_output"
+        },
+        "e2e": {
+          "type": "directory",
+          "path": "e2e"
+        },
+        "lambda-package": {
+          "type": "directory",
+          "path": "lambda-package"
+        },
+        "coverage": {
+          "type": "directory",
+          "path": "coverage"
+        },
+        "services": {
+          "type": "directory",
+          "path": "services"
+        },
+        "package": {
+          "type": "directory",
+          "path": "package"
+        },
+        "src": {
+          "type": "directory",
+          "path": "src"
+        },
+        "sql": {
+          "type": "directory",
+          "path": "sql"
+        },
+        "root": "/Users/davideagle/git/CarouselLabs/enterprise-packages/services/bg-remover",
+        "scoped_dirs": [
+          "app/api/group-images",
+          "app/api/process",
+          "app/api/process-groups",
+          "app/api/status/[jobId]",
+          "src/handlers",
+          "src/lib"
+        ],
+        "trees": {
+          "app/api/process-groups": [
+            "|-- __tests__",
+            "|   `-- route.test.ts",
+            "`-- route.ts"
+          ],
+          "src/handlers": [
+            "|-- __tests__",
+            "|   `-- s3-tables-data-validator.test.ts",
+            "|-- base-handler.ts",
+            "|-- batchProcess.ts",
+            "|-- carousel-to-s3-tables-sync.ts",
+            "|-- carousel-to-s3-tables-sync.ts.bak",
+            "|-- carousel-to-s3-tables-sync.ts.bak2",
+            "|-- cleanup-test-artifacts-handler.ts",
+            "|-- cleanup-test-artifacts-handler.ts.bak",
+            "|-- cleanup-test-artifacts-handler.ts.bak2",
+            "|-- create-products-handler.ts",
+            "|-- event-stats-handler.ts",
+            "|-- group-images-handler.ts",
+            "|-- group-images-worker-handler.ts",
+            "|-- group-status-handler.ts",
+            "|-- health-handler.ts",
+            "|-- metadata-approval-handler.ts",
+            "|-- metadata-approval-handler.ts.bak",
+            "|-- metadata-approval-handler.ts.bak2",
+            "|-- metrics-handler.ts",
+            "|-- metrics-wrapper.ts",
+            "|-- pricing-calculator.ts",
+            "|-- pricing-handler.ts",
+            "|-- pricing-insight-aggregator.ts",
+            "|-- process-groups-handler.ts",
+            "|-- process-handler.ts",
+            "|-- process-worker-handler.ts",
+            "|-- process-worker-handler.ts.bak",
+            "|-- process-worker-handler.ts.bak2",
+            "|-- process-worker-handler.ts.bak3",
+            "|-- process-worker-handler.ts.bak4",
+            "|-- processImage.ts",
+            "|-- rotate-keys-handler.ts",
+            "|-- s3-tables-data-validator.ts",
+            "|-- s3-tables-data-validator.ts.bak",
+            "|-- s3-tables-data-validator.ts.bak2",
+            "|-- status-handler.ts",
+            "|-- status-handler.ts.bak",
+            "|-- status-handler.ts.bak2",
+            "|-- statusCheck.ts",
+            "|-- stream-processor.ts",
+            "|-- upload-urls-handler.ts",
+            "`-- webhookHandler.ts"
+          ],
+          "app/api/status/[jobId]": [
+            "`-- route.ts"
+          ],
+          "app/api/process": [
+            "`-- route.ts"
+          ],
+          "app/api/group-images": [
+            "`-- route.ts"
+          ],
+          "src/lib": [
+            "|-- __tests__",
+            "|   |-- cors.test.ts",
+            "|   `-- embedding-storage-service.test.ts",
+            "|-- auth",
+            "|   |-- jwt-validator.test.ts",
+            "|   `-- jwt-validator.ts",
+            "|-- batch",
+            "|   |-- image-batch-processor.ts",
+            "|   `-- processor.ts",
+            "|-- bedrock",
+            "|   |-- background-remover.ts",
+            "|   |-- image-analysis.ts",
+            "|   |-- image-processor.ts",
+            "|   |-- model-registry.ts",
+            "|   `-- nova-pro-analyzer.ts",
+            "|-- cache",
+            "|   |-- cache-manager.test.ts",
+            "|   |-- cache-manager.ts",
+            "|   |-- cache-service-client.test.ts",
+            "|   |-- cache-service-client.ts",
+            "|   |-- circuit-breaker.test.ts",
+            "|   |-- circuit-breaker.ts",
+            "|   |-- constants.ts",
+            "|   `-- logger.ts",
+            "|-- config",
+            "|   `-- loader.ts",
+            "|-- credits",
+            "|   `-- client.ts",
+            "|-- pipelines",
+            "|   `-- image-processing-pipeline.ts",
+            "|-- pricing",
+            "|   |-- __tests__",
+            "|   |-- pattern-storage.ts",
+            "|   |-- seasonal-adjustment.ts",
+            "|   |-- types.ts",
+            "|   |-- vision-analysis.ts",
+            "|   `-- visual-similarity-pricing.ts",
+            "|-- product-identity",
+            "|   |-- __tests__",
+            "|   |-- batch-embeddings.ts",
+            "|   |-- image-analysis-cache.ts",
+            "|   |-- index.ts",
+            "|   |-- multi-signal-similarity.ts",
+            "|   |-- parallel-clustering.ts",
+            "|   |-- product-identity-service.ts",
+            "|   `-- settings-loader.ts",
+            "|-- rekognition",
+            "|   `-- analyzer.ts",
+            "|-- routing",
+            "|   `-- model-router.ts",
+            "|-- s3",
+            "|   `-- permissions-manager.ts",
+            "|-- sales-intelligence",
+            "|   |-- __tests__",
+            "|   |-- backfill-ttl.ts",
+            "|   |-- embedding-storage.ts",
+            "|   |-- index.ts",
+            "|   |-- sales-repository.test.ts",
+            "|   |-- sales-repository.ts",
+            "|   |-- shard-calculator.test.ts",
+            "|   |-- shard-calculator.ts",
+            "|   |-- vector-search-integration.ts",
+            "|   `-- vector-search.ts",
+            "|-- security",
+            "|   `-- secret-rotator.ts",
+            "|-- telemetry",
+            "|   `-- bg-remover-telemetry.ts",
+            "|-- tenant",
+            "|   |-- cognito-config.ts",
+            "|   |-- config.ts",
+            "|   `-- resolver.ts",
+            "|-- utils",
+            "|   `-- timeout.ts",
+            "|-- agent-state.ts",
+            "|-- cors.ts",
+            "|-- embedding-storage-service.ts",
+            "|-- errors.ts",
+            "|-- event-tracking.ts",
+            "|-- idempotency-manager.ts",
+            "|-- job-store.ts",
+            "|-- job-token.ts",
+            "|-- language-manager.ts",
+            "|-- logger.ts",
+            "|-- multilingual-description.ts",
+            "|-- rate-limiter.ts",
+            "|-- sales-intelligence-types.ts",
+            "|-- suggestion-engine.ts",
+            "|-- trace.ts",
+            "|-- types.ts",
+            "`-- validation.ts"
+          ]
+        },
+        "readme_checks": []
+      }
+    },
+    "/Users/davideagle/git/CarouselLabs/enterprise-packages/services/bg-remover|services/bg-remover/src/handlers": {
+      "generated_at": "2026-02-08T16:20:17.285192",
+      "project_structure": {
+        "artifacts": {
+          "type": "directory",
+          "path": "artifacts"
+        },
+        "types": {
+          "type": "directory",
+          "path": "types"
+        },
+        "app": {
+          "type": "directory",
+          "path": "app"
+        },
+        "test-data": {
+          "type": "directory",
+          "path": "test-data"
+        },
+        "integration": {
+          "type": "directory",
+          "path": "integration"
+        },
+        "tests": {
+          "type": "directory",
+          "path": "tests"
+        },
+        "utils": {
+          "type": "directory",
+          "path": "utils"
+        },
+        "agentic": {
+          "type": "directory",
+          "path": "agentic"
+        },
+        "docs": {
+          "type": "directory",
+          "path": "docs"
+        },
+        "samples": {
+          "type": "directory",
+          "path": "samples"
+        },
+        "components": {
+          "type": "directory",
+          "path": "components"
+        },
+        "__tests__": {
+          "type": "directory",
+          "path": "__tests__"
+        },
+        "hooks": {
+          "type": "directory",
+          "path": "hooks"
+        },
+        "scripts": {
+          "type": "directory",
+          "path": "scripts"
+        },
+        "lib": {
+          "type": "directory",
+          "path": "lib"
+        },
+        "playwright-report": {
+          "type": "directory",
+          "path": "playwright-report"
+        },
+        "debug_output": {
+          "type": "directory",
+          "path": "debug_output"
+        },
+        "test-results": {
+          "type": "directory",
+          "path": "test-results"
+        },
+        "e2e": {
+          "type": "directory",
+          "path": "e2e"
+        },
+        "lambda-package": {
+          "type": "directory",
+          "path": "lambda-package"
+        },
+        "coverage": {
+          "type": "directory",
+          "path": "coverage"
+        },
+        "services": {
+          "type": "directory",
+          "path": "services"
+        },
+        "package": {
+          "type": "directory",
+          "path": "package"
+        },
+        "src": {
+          "type": "directory",
+          "path": "src"
+        },
+        "sql": {
+          "type": "directory",
+          "path": "sql"
+        },
+        "root": "/Users/davideagle/git/CarouselLabs/enterprise-packages/services/bg-remover",
+        "scoped_dirs": [
+          "services/bg-remover/src/handlers"
+        ],
+        "trees": {},
+        "readme_checks": []
+      }
+    }
+  }
+}

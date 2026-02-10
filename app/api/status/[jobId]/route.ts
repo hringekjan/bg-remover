@@ -23,9 +23,6 @@ import { validateCsrf } from '@/lib/auth/csrf';
 
 export const runtime = 'nodejs';
 
-// Re-export for backwards compatibility
-export { getJobStatus, setJobStatus };
-
 const ParamsSchema = z.object({
   jobId: z.string().uuid('Invalid job ID format'),
 });

@@ -5,6 +5,12 @@ import { buildCacheKey, CacheTTL } from '../cache/constants';
 
 const ssmClient = new SSMClient({});
 
+/**
+ * Whitelisted tenant domains for hostname validation
+ * R002 - CRITICAL: Prevents tenant-spoofing attacks via Host header manipulation
+ */
+const ALLOWED_TENANT_DOMAINS = ['carousellabs.co', 'hringekjan.is'] as const;
+
 export interface TenantConfig {
   tenant: string;
   stage: string;
@@ -19,16 +25,22 @@ export interface TenantConfig {
  * Resolve tenant from request using multiple strategies:
  * 1. X-Tenant-ID header (explicit)
  * 2. Domain-based resolution (host header)
- * 3. Authorization token claims
- * 4. Default tenant fallback
+ * 3. Default tenant fallback
  */
 export const resolveTenantFromRequest = async (event: any, stage: string): Promise<string> => {
-  // Strategy 1: Check X-Tenant-ID header (case-insensitive)
   const headers = event.headers || {};
+  console.log('[TenantResolver] Incoming Headers:', {
+    host: headers['host'] || headers['Host'],
+    origin: headers['origin'] || headers['Origin'],
+    'x-tenant-id': headers['x-tenant-id'] || headers['X-Tenant-ID'] || headers['X-Tenant-Id'],
+  });
+
+
   const tenantHeader = headers['x-tenant-id'] || headers['X-Tenant-ID'] || headers['X-Tenant-Id'];
   if (tenantHeader && typeof tenantHeader === 'string' && tenantHeader.trim()) {
-    console.log('Tenant resolved from X-Tenant-ID header:', tenantHeader);
-    return tenantHeader.trim().toLowerCase();
+    const resolvedTenant = tenantHeader.trim().toLowerCase();
+    console.log('Tenant resolved from X-Tenant-ID header:', resolvedTenant);
+    return resolvedTenant;
   }
 
   // Strategy 2: Domain-based resolution from Host header
@@ -36,7 +48,7 @@ export const resolveTenantFromRequest = async (event: any, stage: string): Promi
   if (host) {
     const tenant = extractTenantFromHost(host);
     if (tenant) {
-      console.log('Tenant resolved from host:', host, '->', tenant);
+      console.log('Tenant resolved from host header:', host, '->', tenant);
       return tenant;
     }
   }
@@ -48,7 +60,7 @@ export const resolveTenantFromRequest = async (event: any, stage: string): Promi
       const originHost = new URL(origin).host;
       const tenant = extractTenantFromHost(originHost);
       if (tenant) {
-        console.log('Tenant resolved from origin:', originHost, '->', tenant);
+        console.log('Tenant resolved from origin header:', originHost, '->', tenant);
         return tenant;
       }
     } catch (error) {
@@ -59,28 +71,20 @@ export const resolveTenantFromRequest = async (event: any, stage: string): Promi
     }
   }
 
-  // Strategy 3: Extract from JWT claims if present
-  const authHeader = headers['authorization'] || headers['Authorization'];
-  if (authHeader) {
-    const tenant = extractTenantFromJWT(authHeader);
-    if (tenant) {
-      console.log('Tenant resolved from JWT claims:', tenant);
-      return tenant;
-    }
-  }
-
-  // Strategy 4: Check path parameters (for API Gateway path-based routing)
+  // Strategy 3: Check path parameters (for API Gateway path-based routing)
   const pathParams = event.pathParameters || {};
   if (pathParams.tenant) {
-    console.log('Tenant resolved from path parameters:', pathParams.tenant);
-    return pathParams.tenant.toLowerCase();
+    const resolvedTenant = pathParams.tenant.toLowerCase();
+    console.log('Tenant resolved from path parameters:', resolvedTenant);
+    return resolvedTenant;
   }
 
-  // Strategy 5: Environment variable default
+  // Strategy 4: Environment variable default
   const envTenant = process.env.TENANT || process.env.DEFAULT_TENANT;
   if (envTenant) {
-    console.log('Tenant resolved from environment:', envTenant);
-    return envTenant.toLowerCase();
+    const resolvedTenant = envTenant.toLowerCase();
+    console.log('Tenant resolved from environment:', resolvedTenant);
+    return resolvedTenant;
   }
 
   // Fallback to carousel-labs (primary tenant)
@@ -90,6 +94,7 @@ export const resolveTenantFromRequest = async (event: any, stage: string): Promi
 
 /**
  * Extract tenant from hostname
+ * R002 - CRITICAL: Validates hostname against ALLOWED_TENANT_DOMAINS whitelist
  * Supports patterns:
  * - {tenant}.carousellabs.co
  * - {tenant}.{stage}.carousellabs.co
@@ -97,8 +102,23 @@ export const resolveTenantFromRequest = async (event: any, stage: string): Promi
  * - api.{stage}.carousellabs.co (shared API)
  */
 function extractTenantFromHost(host: string): string | null {
-  // Remove port if present
-  const hostname = host.split(':')[0].toLowerCase();
+  if (!host) {
+    console.warn('Missing Host header while resolving tenant');
+    return null;
+  }
+
+  const hostname = host.split(':')[0].trim().toLowerCase();
+  console.log('[TenantResolver] Extracting tenant from hostname:', hostname);
+
+  // R002 - CRITICAL: Validate hostname against whitelist before processing
+  const isAllowedDomain = ALLOWED_TENANT_DOMAINS.some(
+    (domain) => hostname === domain || hostname.endsWith(`.${domain}`)
+  );
+
+  if (!isAllowedDomain) {
+    console.warn('Tenant host not allowed (not in whitelist)', { host: hostname });
+    return null;
+  }
 
   // Pattern: {tenant}.carousellabs.co or {tenant}.dev.carousellabs.co
   const carouselPattern = /^([a-z0-9-]+)\.(?:dev\.|prod\.)?carousellabs\.co$/;
@@ -118,69 +138,15 @@ function extractTenantFromHost(host: string): string | null {
     return icelandicMatch[1];
   }
 
-  // Pattern: {tenant}.hringekjan.is
-  const hringekjanPattern = /^([a-z0-9-]+)\.hringekjan\.is$/;
-  const hringekjanMatch = hostname.match(hringekjanPattern);
-  if (hringekjanMatch) {
-    const subdomain = hringekjanMatch[1];
-    if (subdomain === 'carousel') {
-      return 'hringekjan';
-    }
-  }
 
-  // Pattern: carousel.dev.hringekjan.is or carousel.hringekjan.is
-  if (hostname === 'carousel.hringekjan.is' || hostname === 'carousel.dev.hringekjan.is') {
-    return 'hringekjan';
-  }
-
-  // Pattern: api.dev.hringekjan.is or api.hringekjan.is
-  if (hostname === 'api.hringekjan.is' || hostname === 'api.dev.hringekjan.is') {
-    return 'hringekjan';
-  }
 
   // Special case: direct hringekjan domain
   if (hostname === 'hringekjan.is' || hostname.endsWith('.hringekjan.is')) {
+    console.log('[TenantResolver] Resolved hringekjan tenant from hostname:', hostname);
     return 'hringekjan';
   }
 
   return null;
-}
-
-/**
- * Extract tenant from JWT claims
- * Looks for custom:tenant_id or tenant claim in JWT payload
- */
-function extractTenantFromJWT(authHeader: string): string | null {
-  try {
-    // Remove "Bearer " prefix if present
-    const token = authHeader.replace(/^Bearer\s+/i, '');
-
-    // Split JWT and decode payload (middle part)
-    const parts = token.split('.');
-    if (parts.length !== 3) {
-      return null;
-    }
-
-    // Decode base64url payload
-    const payload = JSON.parse(
-      Buffer.from(parts[1].replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8')
-    );
-
-    // Check various claim names
-    const tenant = payload['custom:tenant_id'] ||
-                   payload['tenant_id'] ||
-                   payload['tenant'] ||
-                   payload['custom:tenant'];
-
-    if (tenant && typeof tenant === 'string') {
-      return tenant.toLowerCase();
-    }
-
-    return null;
-  } catch (error) {
-    console.warn('Failed to extract tenant from JWT:', error);
-    return null;
-  }
 }
 
 /**
