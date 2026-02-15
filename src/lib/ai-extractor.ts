@@ -42,6 +42,13 @@ const SUSTAINABILITY_KEYWORDS = /\b(sustainable|eco-friendly|organic|recycled|fa
 // Care instruction keywords
 const CARE_INSTRUCTION_PATTERNS = /\b(machine wash cold|machine wash warm|hand wash only|dry clean only|do not dry clean|tumble dry low|tumble dry medium|do not tumble dry|line dry|lay flat to dry|hang to dry|iron on low heat|iron on medium heat|do not iron|steam only|cool iron if needed|do not bleach|non-chlorine bleach only|bleach when needed|professional dry clean|dry flat|reshape while damp)\b/gi;
 
+// Condition rating keywords (1-5 scale)
+const CONDITION_EXCELLENT = /\b(new with tags|brand new|never worn|mint condition|pristine|unworn|nwt|bnwt|tags attached)\b/gi;
+const CONDITION_VERY_GOOD = /\b(like new|excellent condition|barely worn|hardly used|minimal wear|near mint|almost new|worn once)\b/gi;
+const CONDITION_GOOD = /\b(good condition|gently used|light wear|some signs of use|lightly worn|normal wear)\b/gi;
+const CONDITION_FAIR = /\b(used|wear and tear|visible signs|needs repair|stains|fading|pilling|minor damage)\b/gi;
+const CONDITION_POOR = /\b(damaged|broken|heavily worn|for parts|restoration needed|major damage|torn|ripped)\b/gi;
+
 // Stop words for keyword extraction
 const STOP_WORDS = new Set([
   'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for',
@@ -104,6 +111,7 @@ export interface AIConfidence {
   keywords?: number;
   category?: number;
   careInstructions?: number;
+  conditionRating?: number;
 }
 
 /**
@@ -119,6 +127,7 @@ export interface ExtractionResult {
   keywords?: string[];
   category?: CategoryPath;
   careInstructions?: string[];
+  conditionRating?: number; // 1-5 star rating
   aiConfidence?: AIConfidence;
 }
 
@@ -155,6 +164,9 @@ export function extractAttributes(
   // Extract care instructions
   const { careInstructions, confidence: careInstructionsScore } = extractCareInstructions(fullText);
 
+  // Extract condition rating
+  const { conditionRating, confidence: conditionRatingScore } = extractConditionRating(fullText);
+
   // Extract keywords (includes brand, material, colors, pattern, style)
   const { keywords, confidence: keywordsScore } = extractKeywords({
     title,
@@ -186,6 +198,7 @@ export function extractAttributes(
     keywords: keywordsScore,
     category: categoryScore,
     careInstructions: careInstructionsScore,
+    conditionRating: conditionRatingScore,
   };
 
   return {
@@ -198,6 +211,7 @@ export function extractAttributes(
     keywords,
     category,
     careInstructions,
+    conditionRating,
     aiConfidence,
   };
 }
@@ -343,6 +357,40 @@ function extractCareInstructions(text: string): { careInstructions: string[]; co
   }
 
   return { careInstructions: [], confidence: 0.50 };
+}
+
+/**
+ * Extract condition rating from description (1-5 stars)
+ * Based on condition keywords and descriptions
+ */
+function extractConditionRating(text: string): { conditionRating: number; confidence: number } {
+  // Check for excellent condition (5 stars)
+  if (CONDITION_EXCELLENT.test(text)) {
+    return { conditionRating: 5, confidence: 0.95 };
+  }
+
+  // Check for very good condition (4 stars)
+  if (CONDITION_VERY_GOOD.test(text)) {
+    return { conditionRating: 4, confidence: 0.90 };
+  }
+
+  // Check for good condition (3 stars)
+  if (CONDITION_GOOD.test(text)) {
+    return { conditionRating: 3, confidence: 0.85 };
+  }
+
+  // Check for fair condition (2 stars)
+  if (CONDITION_FAIR.test(text)) {
+    return { conditionRating: 2, confidence: 0.80 };
+  }
+
+  // Check for poor condition (1 star)
+  if (CONDITION_POOR.test(text)) {
+    return { conditionRating: 1, confidence: 0.85 };
+  }
+
+  // Default: assume good condition (3 stars) with lower confidence
+  return { conditionRating: 3, confidence: 0.50 };
 }
 
 /**

@@ -348,5 +348,105 @@ describe('AI Attribute Extractor', () => {
       expect(result.careInstructions).toEqual([]);
       expect(result.aiConfidence?.careInstructions).toBe(0.50);
     });
+
+    it('should extract excellent condition rating (5 stars)', () => {
+      const product = {
+        productName: 'Designer Handbag',
+        bilingualDescription: {
+          en: {
+            short: 'Brand new designer handbag with tags',
+            long: 'This is a brand new designer handbag, never worn, with all original tags attached. In mint condition.',
+            keywords: [],
+            category: 'general',
+          },
+          is: {
+            short: 'Glæný hönnuðartaska með merkjum',
+            long: 'Þetta er glæný hönnuðartaska.',
+            keywords: [],
+            category: 'general',
+          },
+        } as MultilingualProductDescription,
+      };
+
+      const result: ExtractionResult = extractAttributes(product);
+
+      expect(result.conditionRating).toBe(5);
+      expect(result.aiConfidence?.conditionRating).toBeGreaterThan(0.90);
+    });
+
+    it('should extract very good condition rating (4 stars)', () => {
+      const product = {
+        productName: 'Designer Shoes',
+        bilingualDescription: {
+          en: {
+            short: 'Like new designer shoes',
+            long: 'These designer shoes are in excellent condition, barely worn with minimal signs of use.',
+            keywords: [],
+            category: 'general',
+          },
+          is: {
+            short: 'Næstum nýir hönnuðarskór',
+            long: 'Þessir hönnuðarskór eru í frábæru ástandi.',
+            keywords: [],
+            category: 'general',
+          },
+        } as MultilingualProductDescription,
+      };
+
+      const result: ExtractionResult = extractAttributes(product);
+
+      expect(result.conditionRating).toBe(4);
+      expect(result.aiConfidence?.conditionRating).toBeGreaterThan(0.85);
+    });
+
+    it('should extract good condition rating (3 stars)', () => {
+      const product = {
+        productName: 'Casual Jacket',
+        bilingualDescription: {
+          en: {
+            short: 'Good condition casual jacket',
+            long: 'This casual jacket is in good condition with some light wear from normal use.',
+            keywords: [],
+            category: 'general',
+          },
+          is: {
+            short: 'Jakki í góðu ástandi',
+            long: 'Þessi jakki er í góðu ástandi.',
+            keywords: [],
+            category: 'general',
+          },
+        } as MultilingualProductDescription,
+      };
+
+      const result: ExtractionResult = extractAttributes(product);
+
+      expect(result.conditionRating).toBe(3);
+      expect(result.aiConfidence?.conditionRating).toBeGreaterThan(0.80);
+    });
+
+    it('should default to 3 stars for products without explicit condition', () => {
+      const product = {
+        productName: 'Generic Product',
+        bilingualDescription: {
+          en: {
+            short: 'A simple product',
+            long: 'Just a basic product description.',
+            keywords: [],
+            category: 'general',
+          },
+          is: {
+            short: 'Einföld vara',
+            long: 'Bara einföld vörulýsing.',
+            keywords: [],
+            category: 'general',
+          },
+        } as MultilingualProductDescription,
+      };
+
+      const result: ExtractionResult = extractAttributes(product);
+
+      expect(result.conditionRating).toBe(3);
+      expect(result.aiConfidence?.conditionRating).toBe(0.50);
+    });
   });
 });
