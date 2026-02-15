@@ -448,5 +448,72 @@ describe('AI Attribute Extractor', () => {
       expect(result.conditionRating).toBe(3);
       expect(result.aiConfidence?.conditionRating).toBe(0.50);
     });
+
+    it('should translate attributes to Icelandic', () => {
+      const product = {
+        productName: 'Cotton T-Shirt',
+        bilingualDescription: {
+          en: {
+            short: 'Comfortable cotton t-shirt',
+            long: 'This comfortable cotton t-shirt is in light gray color with casual style. Machine wash cold. Tumble dry low.',
+            keywords: [],
+            category: 'general',
+          },
+          is: {
+            short: 'Þægilegt bómullar stuttermabolur',
+            long: 'Þessi þægilega bómullar stuttermabolur er í ljósgrárri lit.',
+            keywords: [],
+            category: 'general',
+          },
+        } as MultilingualProductDescription,
+      };
+
+      const result: ExtractionResult = extractAttributes(product);
+
+      // Check English attributes
+      expect(result.material).toBe('Cotton');
+      expect(result.colors).toContain('Light Gray');
+      expect(result.style).toContain('Casual');
+      expect(result.careInstructions).toContain('Machine wash cold');
+      expect(result.careInstructions).toContain('Tumble dry low');
+
+      // Check Icelandic translations
+      expect(result.translations).toBeDefined();
+      expect(result.translations?.is).toBeDefined();
+      expect(result.translations?.is?.material).toBe('Bómull');
+      expect(result.translations?.is?.colors).toContain('Ljós Grár');
+      expect(result.translations?.is?.style).toContain('Óformlegt');
+      expect(result.translations?.is?.careInstructions).toContain('Þvottavél í köldu vatni');
+      expect(result.translations?.is?.careInstructions).toContain('Þurrktumbla lágt');
+    });
+
+    it('should handle untranslatable attributes gracefully', () => {
+      const product = {
+        productName: 'Unknown Product',
+        bilingualDescription: {
+          en: {
+            short: 'Product with unknown material',
+            long: 'This product has unknown material called "SuperFabric" with "NeonPurple" color.',
+            keywords: [],
+            category: 'general',
+          },
+          is: {
+            short: 'Vara með óþekkt efni',
+            long: 'Þessi vara hefur óþekkt efni.',
+            keywords: [],
+            category: 'general',
+          },
+        } as MultilingualProductDescription,
+      };
+
+      const result: ExtractionResult = extractAttributes(product);
+
+      // Should return original values for untranslatable terms
+      expect(result.translations?.is).toBeDefined();
+      // Untranslatable material should fallback to English
+      if (result.material) {
+        expect(result.translations?.is?.material).toBe(result.material);
+      }
+    });
   });
 });

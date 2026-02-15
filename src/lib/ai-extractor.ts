@@ -59,6 +59,99 @@ const STOP_WORDS = new Set([
   'your', 'he', 'she', 'his', 'her',
 ]);
 
+// Icelandic translation dictionary for common product attributes
+const ICELANDIC_TRANSLATIONS: Record<string, string> = {
+  // Materials
+  'Cotton': 'Bómull',
+  'Linen': 'Hör',
+  'Polyester': 'Pólýester',
+  'Leather': 'Leður',
+  'Silk': 'Silki',
+  'Wool': 'Ull',
+  'Cashmere': 'Kasmír',
+  'Denim': 'Denim',
+  'Suede': 'Súða',
+  'Velvet': 'Flauel',
+  'Satin': 'Satin',
+  'Chiffon': 'Chiffon',
+  'Nylon': 'Nylon',
+  'Spandex': 'Spandex',
+  'Elastane': 'Elastan',
+  'Viscose': 'Viskósi',
+  'Rayon': 'Rayon',
+  'Acrylic': 'Akrýl',
+  'Fleece': 'Fleece',
+
+  // Colors
+  'Gray': 'Grár',
+  'Grey': 'Grár',
+  'White': 'Hvítur',
+  'Black': 'Svartur',
+  'Blue': 'Blár',
+  'Red': 'Rauður',
+  'Green': 'Grænn',
+  'Yellow': 'Gulur',
+  'Purple': 'Fjólublár',
+  'Brown': 'Brúnn',
+  'Beige': 'Beige',
+  'Navy': 'Dökkblár',
+  'Pink': 'Bleikur',
+  'Orange': 'Appelsínugulur',
+  'Light': 'Ljós',
+  'Dark': 'Dökk',
+  'Pale': 'Fölur',
+  'Bright': 'Skær',
+  'Deep': 'Djúp',
+
+  // Patterns
+  'Striped': 'Röndótt',
+  'Solid': 'Einfalt',
+  'Floral': 'Blómamynstur',
+  'Polka dot': 'Prikka',
+  'Checkered': 'Terningsmynstur',
+  'Plaid': 'Skosk mynstur',
+
+  // Styles
+  'Casual': 'Óformlegt',
+  'Formal': 'Formlegt',
+  'Elegant': 'Glæsilegt',
+  'Sporty': 'Íþrótta',
+  'Relaxed': 'Afslappaður',
+  'Fitted': 'Þröngt',
+  'Oversized': 'Stórt',
+  'Slim': 'Mjótt',
+  'Classic': 'Klassískt',
+  'Modern': 'Nútímalegt',
+  'Vintage': 'Sígilt',
+  'Summer': 'Sumar',
+  'Winter': 'Vetur',
+  'Spring': 'Vor',
+  'Fall': 'Haust',
+  'Autumn': 'Haust',
+
+  // Care Instructions
+  'Machine wash cold': 'Þvottavél í köldu vatni',
+  'Machine wash warm': 'Þvottavél í hlýju vatni',
+  'Hand wash only': 'Aðeins handþvottur',
+  'Dry clean only': 'Aðeins efnaþvottur',
+  'Do not dry clean': 'Ekki efnaþvottur',
+  'Tumble dry low': 'Þurrktumbla lágt',
+  'Tumble dry medium': 'Þurrktumbla miðlungs',
+  'Do not tumble dry': 'Ekki þurrktumbla',
+  'Line dry': 'Hengja til þerris',
+  'Lay flat to dry': 'Leggja flatt til þerris',
+  'Hang to dry': 'Hengja til þerris',
+  'Iron on low heat': 'Strauja á lágum hita',
+  'Iron on medium heat': 'Strauja á miðlungs hita',
+  'Do not iron': 'Ekki strauja',
+  'Steam only': 'Aðeins gufa',
+  'Cool iron if needed': 'Kalt straujárn ef þörf krefur',
+  'Do not bleach': 'Ekki bleikja',
+  'Non-chlorine bleach only': 'Aðeins bleikja án klórs',
+  'Bleach when needed': 'Bleikja þegar þörf krefur',
+  'Professional dry clean': 'Fagleg efnaþvott',
+};
+
 /**
  * Category mapping from product type keywords to hierarchical structure
  */
@@ -115,6 +208,17 @@ export interface AIConfidence {
 }
 
 /**
+ * Icelandic translations for extracted attributes
+ */
+export interface IcelandicTranslations {
+  material?: string | null;
+  colors?: string[];
+  pattern?: string | null;
+  style?: string[];
+  careInstructions?: string[];
+}
+
+/**
  * Extraction result with all optional attributes
  */
 export interface ExtractionResult {
@@ -129,6 +233,9 @@ export interface ExtractionResult {
   careInstructions?: string[];
   conditionRating?: number; // 1-5 star rating
   aiConfidence?: AIConfidence;
+  translations?: {
+    is?: IcelandicTranslations; // Icelandic translations
+  };
 }
 
 /**
@@ -201,7 +308,8 @@ export function extractAttributes(
     conditionRating: conditionRatingScore,
   };
 
-  return {
+  // Create base result
+  const baseResult: ExtractionResult = {
     brand,
     material,
     colors,
@@ -213,6 +321,16 @@ export function extractAttributes(
     careInstructions,
     conditionRating,
     aiConfidence,
+  };
+
+  // Add Icelandic translations
+  const icelandicTranslations = translateToIcelandic(baseResult);
+
+  return {
+    ...baseResult,
+    translations: {
+      is: icelandicTranslations,
+    },
   };
 }
 
@@ -391,6 +509,50 @@ function extractConditionRating(text: string): { conditionRating: number; confid
 
   // Default: assume good condition (3 stars) with lower confidence
   return { conditionRating: 3, confidence: 0.50 };
+}
+
+/**
+ * Translate extracted attributes to Icelandic
+ * Uses a translation dictionary for common product terms
+ */
+function translateToIcelandic(result: ExtractionResult): IcelandicTranslations {
+  const translations: IcelandicTranslations = {};
+
+  // Translate material
+  if (result.material) {
+    translations.material = ICELANDIC_TRANSLATIONS[result.material] || result.material;
+  }
+
+  // Translate colors
+  if (result.colors && result.colors.length > 0) {
+    translations.colors = result.colors.map(color => {
+      // Handle multi-word colors (e.g., "Light Gray")
+      const words = color.split(' ');
+      const translatedWords = words.map(word => ICELANDIC_TRANSLATIONS[word] || word);
+      return translatedWords.join(' ');
+    });
+  }
+
+  // Translate pattern
+  if (result.pattern) {
+    translations.pattern = ICELANDIC_TRANSLATIONS[result.pattern] || result.pattern;
+  }
+
+  // Translate style tags
+  if (result.style && result.style.length > 0) {
+    translations.style = result.style.map(style =>
+      ICELANDIC_TRANSLATIONS[style] || style
+    );
+  }
+
+  // Translate care instructions
+  if (result.careInstructions && result.careInstructions.length > 0) {
+    translations.careInstructions = result.careInstructions.map(instruction =>
+      ICELANDIC_TRANSLATIONS[instruction] || instruction
+    );
+  }
+
+  return translations;
 }
 
 /**
