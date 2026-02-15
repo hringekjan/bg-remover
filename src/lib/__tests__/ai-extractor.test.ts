@@ -291,5 +291,62 @@ describe('AI Attribute Extractor', () => {
       expect(result.category?.secondary).toBe('Bags');
       expect(result.category?.tertiary).toBe('Handbags');
     });
+
+    it('should extract care instructions from product description', () => {
+      const product = {
+        productName: 'Cotton T-Shirt',
+        bilingualDescription: {
+          en: {
+            short: 'Comfortable cotton t-shirt',
+            long: 'This comfortable cotton t-shirt is easy to care for. Machine wash cold with similar colors. Tumble dry low. Do not bleach. Iron on low heat if needed.',
+            keywords: [],
+            category: 'general',
+          },
+          is: {
+            short: 'Þægilegt bómullar stuttermabolur',
+            long: 'Þessi þægilega bómullar stuttermabolur er auðveld í þvotti.',
+            keywords: [],
+            category: 'general',
+          },
+        } as MultilingualProductDescription,
+      };
+
+      const result: ExtractionResult = extractAttributes(product);
+
+      // Care instructions extraction
+      expect(result.careInstructions).toBeDefined();
+      expect(result.careInstructions).toContain('Machine wash cold');
+      expect(result.careInstructions).toContain('Tumble dry low');
+      expect(result.careInstructions).toContain('Do not bleach');
+      expect(result.careInstructions).toContain('Iron on low heat');
+      expect(result.aiConfidence?.careInstructions).toBeGreaterThan(0.85);
+    });
+
+    it('should handle products with no care instructions gracefully', () => {
+      const product = {
+        productName: 'Generic Product',
+        bilingualDescription: {
+          en: {
+            short: 'A simple product',
+            long: 'Just a basic product without care information.',
+            keywords: [],
+            category: 'general',
+          },
+          is: {
+            short: 'Einföld vara',
+            long: 'Bara einföld vara án umönnunarupplýsinga.',
+            keywords: [],
+            category: 'general',
+          },
+        } as MultilingualProductDescription,
+      };
+
+      const result: ExtractionResult = extractAttributes(product);
+
+      // Should return empty array, not undefined
+      expect(result.careInstructions).toBeDefined();
+      expect(result.careInstructions).toEqual([]);
+      expect(result.aiConfidence?.careInstructions).toBe(0.50);
+    });
   });
 });

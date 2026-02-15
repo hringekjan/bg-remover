@@ -39,6 +39,9 @@ const SEASONAL_KEYWORDS = /\b(summer|winter|spring|fall|autumn|all-season)\b/gi;
 // Sustainability keywords
 const SUSTAINABILITY_KEYWORDS = /\b(sustainable|eco-friendly|organic|recycled|fair trade|ethically sourced|biodegradable|renewable|vegan|cruelty-free)\b/gi;
 
+// Care instruction keywords
+const CARE_INSTRUCTION_PATTERNS = /\b(machine wash cold|machine wash warm|hand wash only|dry clean only|do not dry clean|tumble dry low|tumble dry medium|do not tumble dry|line dry|lay flat to dry|hang to dry|iron on low heat|iron on medium heat|do not iron|steam only|cool iron if needed|do not bleach|non-chlorine bleach only|bleach when needed|professional dry clean|dry flat|reshape while damp)\b/gi;
+
 // Stop words for keyword extraction
 const STOP_WORDS = new Set([
   'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for',
@@ -100,6 +103,7 @@ export interface AIConfidence {
   style?: number;
   keywords?: number;
   category?: number;
+  careInstructions?: number;
 }
 
 /**
@@ -114,6 +118,7 @@ export interface ExtractionResult {
   sustainability?: string[];
   keywords?: string[];
   category?: CategoryPath;
+  careInstructions?: string[];
   aiConfidence?: AIConfidence;
 }
 
@@ -147,6 +152,9 @@ export function extractAttributes(
   // Extract style and sustainability
   const { style, sustainability, confidence: styleScore } = extractStyleAndSustainability(fullText);
 
+  // Extract care instructions
+  const { careInstructions, confidence: careInstructionsScore } = extractCareInstructions(fullText);
+
   // Extract keywords (includes brand, material, colors, pattern, style)
   const { keywords, confidence: keywordsScore } = extractKeywords({
     title,
@@ -177,6 +185,7 @@ export function extractAttributes(
     style: styleScore,
     keywords: keywordsScore,
     category: categoryScore,
+    careInstructions: careInstructionsScore,
   };
 
   return {
@@ -188,6 +197,7 @@ export function extractAttributes(
     sustainability,
     keywords,
     category,
+    careInstructions,
     aiConfidence,
   };
 }
@@ -308,6 +318,31 @@ function extractPattern(title: string, description: string): { pattern: string |
   }
 
   return { pattern: null, confidence: 0.50 };
+}
+
+/**
+ * Extract care instructions from description
+ */
+function extractCareInstructions(text: string): { careInstructions: string[]; confidence: number } {
+  const matches = text.match(CARE_INSTRUCTION_PATTERNS);
+
+  if (matches && matches.length > 0) {
+    // Deduplicate and capitalize care instructions
+    const instructionSet = new Set(matches.map(instruction => {
+      return instruction.trim()
+        .split(/\s+/)
+        .map((word, index) => index === 0 ? word.charAt(0).toUpperCase() + word.slice(1).toLowerCase() : word.toLowerCase())
+        .join(' ');
+    }));
+    const uniqueInstructions = Array.from(instructionSet);
+
+    return {
+      careInstructions: uniqueInstructions,
+      confidence: 0.90,
+    };
+  }
+
+  return { careInstructions: [], confidence: 0.50 };
 }
 
 /**
