@@ -24,6 +24,8 @@ import { multilingualDescriptionGenerator } from '../lib/multilingual-descriptio
 import { bgRemoverTelemetry, calculateBgRemoverCost } from '../lib/telemetry/bg-remover-telemetry';
 import { addProductsToBooking, createProductInCarouselApi, type CreateProductRequest } from '../../lib/carousel-api/client';
 import { EventTracker } from '../lib/event-tracking';
+import { PricingIntelligenceService, PricingSuggestion } from '../lib/pricing-intelligence';
+import { extractAttributes, type ExtractionResult } from '../lib/ai-extractor';
 
 const dynamoDB = new DynamoDBClient({
   requestHandler: new NodeHttpHandler({
@@ -249,12 +251,42 @@ export class ProcessWorkerHandler extends BaseHandler {
 
   /**
    * Generate price suggestion enhanced with group quality signals
+   * Prices are in ISK for Icelandic market
    */
   private generatePriceSuggestion(
     productFeatures: any,
     groupContext?: GroupProcessingPayload['groupContext']
   ): { min: number; max: number; suggested: number } {
-    let basePrice = 50; // Default base price
+    // Icelandic market base prices by category (in ISK)
+    // USD to ISK conversion is approximately 140 ISK per 1 USD
+    const categoryBasePrices: Record<string, number> = {
+      clothing: 5000,      // ~35 USD
+      electronics: 25000,   // ~180 USD
+      furniture: 35000,     // ~250 USD
+      books: 3000,         // ~20 USD
+      art: 75000,          // ~535 USD
+      jewelry: 40000,       // ~285 USD
+      collectibles: 15000,  // ~105 USD
+      vintage: 25000,      // ~180 USD
+      handmade: 20000,     // ~140 USD
+      sports: 15000,       // ~105 USD
+      home: 15000,         // ~105 USD
+      accessories: 10000,  // ~70 USD
+      general: 8000,       // ~55 USD default
+    };
+
+    let basePrice = categoryBasePrices.general; // Default base price
+
+    // Get category from product features or group context
+    const category = (groupContext?.category || productFeatures.category || 'general').toLowerCase();
+    
+    // Find matching category base price
+    for (const [cat, price] of Object.entries(categoryBasePrices)) {
+      if (category.includes(cat)) {
+        basePrice = price;
+        break;
+      }
+    }
 
     if (groupContext) {
       // Adjust based on image quality signals
@@ -262,44 +294,105 @@ export class ProcessWorkerHandler extends BaseHandler {
         const composition = groupContext.signalBreakdown.composition;
         const background = groupContext.signalBreakdown.background;
 
-        // Professional photography = premium pricing
+        // Professional photography = premium pricing (5% boost)
         if (composition > 0.85 && background > 0.85) {
-          basePrice *= 1.5;
+          basePrice *= 1.05;
         }
 
-        // Multiple angles = higher value perception
-        if (groupContext.totalImages >= 5) {
-          basePrice *= 1.2;
+        // Multiple angles = higher value perception (3% boost per additional image beyond first)
+        if (groupContext.totalImages >= 3) {
+          basePrice *= 1.03;
         }
-      }
-
-      // Category-based pricing
-      const category = groupContext.category?.toLowerCase() || '';
-      if (category.includes('jewelry') || category.includes('vintage')) {
-        basePrice *= 2.0;
-      } else if (category.includes('electronics')) {
-        basePrice *= 1.5;
-      } else if (category.includes('furniture')) {
-        basePrice *= 1.3;
       }
     }
 
-    // Apply condition-based pricing
+    // Apply condition-based pricing (more moderate multipliers)
     const condition = productFeatures.condition || 'good';
     const conditionMultipliers: Record<string, number> = {
       new_with_tags: 1.0,
-      like_new: 0.85,
-      very_good: 0.70,
-      good: 0.55,
-      fair: 0.40,
+      like_new: 0.90,
+      very_good: 0.80,
+      good: 0.70,
+      fair: 0.55,
     };
-    basePrice *= conditionMultipliers[condition] || 0.55;
+    basePrice *= conditionMultipliers[condition] || 0.70;
+
+    // Apply brand premium if available
+    if (productFeatures.brand) {
+      const brandPremium = this.calculateBrandPremium(productFeatures.brand);
+      basePrice *= brandPremium;
+    }
 
     return {
-      min: Math.floor(basePrice * 0.8),
-      max: Math.ceil(basePrice * 1.2),
-      suggested: Math.floor(basePrice),
+      min: Math.round(basePrice * 0.85),
+      max: Math.round(basePrice * 1.25),
+      suggested: Math.round(basePrice / 100) * 100, // Round to nearest 100 ISK
     };
+  }
+
+  /**
+   * Generate price suggestion using the new Pricing Intelligence Module
+   * Uses historical sales data, category baselines, and recency weighting
+   */
+  private async generatePriceSuggestionWithIntelligence(
+    productName: string,
+    category?: string,
+    brand?: string,
+    condition?: string
+  ): Promise<{ min: number; max: number; suggested: number; confidence: string }> {
+    try {
+      const pricingService = new PricingIntelligenceService();
+      
+      const suggestion: PricingSuggestion = await pricingService.getSuggestion({
+        productName,
+        category,
+      });
+
+      console.log('[Worker] Pricing intelligence suggestion', {
+        productName,
+        suggestedPrice: suggestion.suggestedPrice,
+        minPrice: suggestion.minPrice,
+        maxPrice: suggestion.maxPrice,
+        confidence: suggestion.confidence,
+        sources: suggestion.sources,
+      });
+
+      return {
+        min: suggestion.minPrice,
+        max: suggestion.maxPrice,
+        suggested: suggestion.suggestedPrice,
+        confidence: suggestion.confidence,
+      };
+    } catch (error) {
+      console.warn('[Worker] Pricing intelligence failed, falling back to legacy method', {
+        productName,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      
+      // Fallback to legacy method
+      const legacyResult = this.generatePriceSuggestion({ name: productName, brand, category, condition });
+      return {
+        ...legacyResult,
+        confidence: 'low',
+      };
+    }
+  }
+
+  /**
+   * Calculate brand premium multiplier
+   */
+  private calculateBrandPremium(brand: string): number {
+    const premiumBrands = ['louis vuitton', 'gucci', 'prada', 'chanel', 'hermès', 'cartier', 'rolex'];
+    const luxuryBrands = ['armani', 'versace', 'dior', 'balenciaga', 'tiffany', 'omega'];
+    const designerBrands = ['zara', 'h&m', 'uniqlo', 'mango', 'cos', '&otherstories'];
+    
+    const brandLower = brand.toLowerCase();
+    
+    if (premiumBrands.some(b => brandLower.includes(b))) return 2.5;
+    if (luxuryBrands.some(b => brandLower.includes(b))) return 2.0;
+    if (designerBrands.some(b => brandLower.includes(b))) return 1.4;
+    
+    return 1.0; // No premium for unknown brands
   }
 
   /**
@@ -419,7 +512,10 @@ export class ProcessWorkerHandler extends BaseHandler {
    * 4. Update job status with product creation result
    */
   private async handleGroupProcessing(payload: GroupProcessingPayload): Promise<any> {
-    const { jobId, tenant, groupId, images, productName, pipeline, processingOptions, stage, groupContext, userId, bookingId, authToken } = payload;
+    const { jobId, tenant, groupId, images, pipeline, processingOptions, stage, groupContext, userId, bookingId, authToken } = payload;
+    
+    // Use let for productName since it may be updated based on AI-derived name
+    let productName = payload.productName;
 
     console.log('[Worker] Processing group', {
       jobId,
@@ -680,6 +776,7 @@ export class ProcessWorkerHandler extends BaseHandler {
       let groupPricing: { min: number; max: number; suggested: number } | undefined;
       let predictedRating: number | undefined;
       let seoKeywords: string[] = [];
+      let extractedAttributes: ExtractionResult | undefined;
 
       console.log('[Worker] Checking description generation condition', {
         jobId,
@@ -694,32 +791,141 @@ export class ProcessWorkerHandler extends BaseHandler {
         const primaryResult = imageResults[0];
         const languages = processingOptions.languages || ['en', 'is'];
 
+        // Declare variables outside try block for broader scope
+        let contextPrompt = '';
+        let productFeatures: any;
+
         try {
-          // Build context prompt from group metadata
-          const contextPrompt = this.buildGroupContextPrompt(
-            groupContext,
-            imageResults.length,
-            productName
-          );
+          // Check if we already have AI-generated bilingual descriptions from the pipeline
+          // Note: primaryResult.bilingualDescription would come from the pipeline if available
+          // For now, we build it from productDescription
+          if (primaryResult.productDescription?.short) {
+            console.log('[Worker] Using product description from pipeline');
+            multilingualDescription = {
+              en: {
+                short: primaryResult.productDescription.short,
+                long: primaryResult.productDescription.long || primaryResult.productDescription.short,
+                keywords: primaryResult.productDescription.keywords || [],
+                category: primaryResult.productDescription.category || 'general',
+                colors: primaryResult.productDescription.colors,
+                condition: primaryResult.productDescription.condition || 'good',
+              },
+              is: {
+                short: primaryResult.productDescription.short,
+                long: primaryResult.productDescription.long || primaryResult.productDescription.short,
+                keywords: primaryResult.productDescription.keywords || [],
+                category: primaryResult.productDescription.category || 'general',
+                colors: primaryResult.productDescription.colors,
+                condition: primaryResult.productDescription.condition || 'good',
+              },
+            };
+          } else {
+            // Build context prompt from group metadata
+            contextPrompt = this.buildGroupContextPrompt(
+              groupContext,
+              imageResults.length,
+              productName
+            );
 
-          const productFeatures = {
-            name: productName || 'Product',
-            category: groupContext?.category || primaryResult.productDescription.category || 'general',
-            colors: primaryResult.productDescription.colors,
-            condition: primaryResult.productDescription.condition || 'good' as const,
-            brand: primaryResult.productDescription.priceSuggestion?.factors.brand,
-            // NEW: Add group-aware fields
-            groupContext: contextPrompt,
-            imageCount: groupContext?.totalImages || images.length,
-            hasMultipleAngles: (groupContext?.totalImages || images.length) > 1,
-          };
+            productFeatures = {
+              name: productName || 'Product',
+              category: groupContext?.category || primaryResult.productDescription?.category || 'general',
+              colors: primaryResult.productDescription?.colors,
+              condition: primaryResult.productDescription?.condition || 'good' as const,
+              brand: primaryResult.productDescription?.priceSuggestion?.factors.brand,
+              // Add group-aware fields
+              groupContext: contextPrompt,
+              imageCount: groupContext?.totalImages || images.length,
+              hasMultipleAngles: (groupContext?.totalImages || images.length) > 1,
+            };
 
-          multilingualDescription = await multilingualDescriptionGenerator.generateMultilingualDescriptions(
-            productFeatures,
-            languages,
-            processingOptions.generatePriceSuggestion || false,
-            processingOptions.generateRatingSuggestion || false
-          );
+            multilingualDescription = await multilingualDescriptionGenerator.generateMultilingualDescriptions(
+              productFeatures,
+              languages,
+              processingOptions.generatePriceSuggestion || false,
+              processingOptions.generateRatingSuggestion || false
+            );
+          }
+
+          // NEW: Extract comprehensive attributes from multilingual descriptions
+          // This extracts brand, material, colors, pattern, style, keywords, and category
+          if (multilingualDescription) {
+            try {
+              extractedAttributes = extractAttributes({
+                productName: productName || 'Product',
+                bilingualDescription: multilingualDescription,
+              });
+
+              console.log('[Worker] Extracted product attributes', {
+                jobId,
+                groupId,
+                brand: extractedAttributes.brand,
+                material: extractedAttributes.material,
+                colors: extractedAttributes.colors,
+                pattern: extractedAttributes.pattern,
+                style: extractedAttributes.style,
+                keywords: extractedAttributes.keywords?.slice(0, 5),
+                category: extractedAttributes.category?.path,
+                aiConfidence: extractedAttributes.aiConfidence,
+              });
+
+              // Enrich multilingual description with extracted attributes
+              if (multilingualDescription.en && extractedAttributes) {
+                multilingualDescription.en = {
+                  ...multilingualDescription.en,
+                  keywords: extractedAttributes.keywords || multilingualDescription.en.keywords || [],
+                  category: extractedAttributes.category?.path || multilingualDescription.en.category || 'general',
+                  colors: extractedAttributes.colors || multilingualDescription.en.colors,
+                };
+              }
+              if (multilingualDescription.is && extractedAttributes) {
+                multilingualDescription.is = {
+                  ...multilingualDescription.is,
+                  keywords: extractedAttributes.keywords || multilingualDescription.is.keywords || [],
+                  category: extractedAttributes.category?.path || multilingualDescription.is.category || 'general',
+                  colors: extractedAttributes.colors || multilingualDescription.is.colors,
+                };
+              }
+            } catch (error) {
+              console.warn('[Worker] Failed to extract attributes', {
+                jobId,
+                groupId,
+                error: error instanceof Error ? error.message : String(error),
+              });
+            }
+          }
+
+          // NEW: Derive a better product name if current one is generic
+          // Use AI-generated elegant name from the primary result or generated description
+          const aiDerivedName = multilingualDescription?.en?.short || primaryResult.productDescription?.short;
+          
+          // Check if productName is generic (Product, Product 1, product 1, etc.)
+          const cleanName = (productName || '').toLowerCase().trim();
+          const isGenericName = !productName || 
+            cleanName === 'product' || 
+            cleanName.match(/^product\s*\d*$/);
+          
+          if (aiDerivedName && isGenericName) {
+            // Extract first meaningful phrase from short description as product name
+            let derivedName = aiDerivedName;
+            // Remove condition-related text from the beginning
+            derivedName = derivedName
+              .replace(/^(Brand new|New|Like new|Barely used|Beautiful|Lovely|Nice|Decent)\s+/i, '')
+              .split(/[,.]/)[0] // Take first phrase before comma or period
+              .trim();
+            
+            // Capitalize first letter
+            derivedName = derivedName.charAt(0).toUpperCase() + derivedName.slice(1);
+            
+            productName = derivedName;
+            console.info('[Worker] Generic product name replaced with AI-derived name', { 
+              jobId, 
+              groupId, 
+              originalName: productName,
+              aiShortDescription: aiDerivedName,
+              derivedName: productName
+            });
+          }
 
           // Generate group-aware pricing if requested
           if (processingOptions.generatePriceSuggestion) {
@@ -732,7 +938,8 @@ export class ProcessWorkerHandler extends BaseHandler {
           }
 
           // Generate SEO keywords from all images in group
-          seoKeywords = this.generateSEOKeywords(
+          // Prefer extracted keywords, fallback to generated SEO keywords
+          seoKeywords = extractedAttributes?.keywords || this.generateSEOKeywords(
             groupContext,
             productName || 'Product',
             multilingualDescription
@@ -887,7 +1094,15 @@ export class ProcessWorkerHandler extends BaseHandler {
         groupPricing,
         seoKeywords,
         predictedRating,
-        category: groupContext?.category,
+        category: extractedAttributes?.category?.path || groupContext?.category,
+        // Store extracted attributes for frontend display
+        brand: extractedAttributes?.brand,
+        material: extractedAttributes?.material,
+        colors: extractedAttributes?.colors,
+        pattern: extractedAttributes?.pattern,
+        style: extractedAttributes?.style,
+        sustainability: extractedAttributes?.sustainability,
+        aiConfidence: extractedAttributes?.aiConfidence,
         // Store processedImages array with full metadata for frontend display
         processedImages: processedImages.map(img => ({
           imageId: img.imageId,
@@ -896,7 +1111,8 @@ export class ProcessWorkerHandler extends BaseHandler {
           status: 'completed',
           width: img.width || img.metadata?.width,
           height: img.height || img.metadata?.height,
-          processingTimeMs: img.processingTimeMs || img.metadata?.processingTimeMs || 0,
+          // Use processingTimeMs from img if available, fallback to metadata
+          processingTimeMs: (img as any).processingTimeMs || (img as any).metadata?.processingTimeMs || (img as any).processingTimeMs || 0,
           // Add rich metadata for frontend display
           productName,
           bilingualDescription: multilingualDescription ? {
@@ -917,16 +1133,32 @@ export class ProcessWorkerHandler extends BaseHandler {
             max: groupPricing.max,
           } : undefined,
           keywords: seoKeywords,
-          category: groupContext?.category,
+          category: extractedAttributes?.category?.path || groupContext?.category,
           rating: predictedRating,
+          // Add extracted attributes to each image metadata
+          brand: extractedAttributes?.brand,
+          material: extractedAttributes?.material,
+          colors: extractedAttributes?.colors,
+          pattern: extractedAttributes?.pattern,
+          style: extractedAttributes?.style,
+          sustainability: extractedAttributes?.sustainability,
         })),
       });
 
       // Record batch telemetry with concurrency metrics
+      // Convert quality number (1-100) to 'low' | 'medium' | 'high' for telemetry
+      const qualityValue = processingOptions.quality;
+      let qualityLevel: 'low' | 'medium' | 'high' = 'medium';
+      if (typeof qualityValue === 'number') {
+        if (qualityValue <= 33) qualityLevel = 'low';
+        else if (qualityValue >= 67) qualityLevel = 'high';
+        else qualityLevel = 'medium';
+      }
+
       const totalCost = calculateBgRemoverCost({
         imageSize: processedImages.reduce((sum, img) => sum + (img.metadata?.processedSize || 0), 0) / processedImages.length,
         processingTime: processingTimeMs,
-        qualityLevel: processingOptions.quality || 'medium',
+        qualityLevel,
         imageCount: processedImages.length,
       });
 
@@ -1260,11 +1492,15 @@ export class ProcessWorkerHandler extends BaseHandler {
         completedAt: new Date().toISOString(),
       });
 
-      // Record telemetry
+      // Convert numeric quality to string level for telemetry
+      const qualityLevelValue: 'low' | 'medium' | 'high' = typeof quality === 'number' 
+        ? (quality <= 33 ? 'low' : quality >= 67 ? 'high' : 'medium')
+        : 'medium';
+
       const cost = calculateBgRemoverCost({
         imageSize: result.metadata.processedSize,
         processingTime: processingTimeMs,
-        qualityLevel: quality || 'medium',
+        qualityLevel: qualityLevelValue,
         imageCount: 1,
       });
 
@@ -1276,7 +1512,7 @@ export class ProcessWorkerHandler extends BaseHandler {
         metadata: {
           imageSize: result.metadata.processedSize,
           processingMode: 'single',
-          qualityLevel: quality || 'medium',
+          qualityLevel: qualityLevelValue,
           outputFormat: outputFormat || 'png',
         },
       });
