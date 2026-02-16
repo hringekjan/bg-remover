@@ -489,7 +489,7 @@ export type GroupImagesRequest = z.infer<typeof GroupImagesRequestSchema>;
  * Processes full-quality images for approved product groups
  */
 export const ProcessGroupsRequestSchema = z.object({
-  bookingId: z.string().min(1).optional(),
+  bookingId: z.string().min(1).nullable().optional(),
   groups: z.array(z.object({
     groupId: z.string()
       .regex(/^pg_[a-f0-9-]+$/, 'Invalid group ID format'),
