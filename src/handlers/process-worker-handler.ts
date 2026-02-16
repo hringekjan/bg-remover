@@ -22,10 +22,13 @@ import { EventBridgeClient, PutEventsCommand } from '@aws-sdk/client-eventbridge
 import { refundCredits } from '../lib/credits/client';
 import { multilingualDescriptionGenerator } from '../lib/multilingual-description';
 import { bgRemoverTelemetry, calculateBgRemoverCost } from '../lib/telemetry/bg-remover-telemetry';
-import { addProductsToBooking, createProductInCarouselApi, type CreateProductRequest } from '../../lib/carousel-api/client';
+import { addProductsToBooking, createProductInCarouselApi, normalizeSizingInCarouselApi, type CreateProductRequest } from '../../lib/carousel-api/client';
 import { EventTracker } from '../lib/event-tracking';
 import { PricingIntelligenceService, PricingSuggestion } from '../lib/pricing-intelligence';
 import { extractAttributes, type ExtractionResult } from '../lib/ai-extractor';
+import { ratingGenerator } from '../lib/quality-assessment/rating-generator';
+import { VisionAnalysisService } from '../lib/pricing/vision-analysis';
+import { extractSizeHint } from '../lib/sizing/size-hints';
 
 const dynamoDB = new DynamoDBClient({
   requestHandler: new NodeHttpHandler({
@@ -48,6 +51,26 @@ const eventBridgeClient = new EventBridgeClient({
   }),
 });
 const tableName = process.env.DYNAMODB_TABLE || `carousel-main-${process.env.STAGE || 'dev'}`;
+const GARMENT_TYPES = new Set([
+  'TSHIRT_KNIT_TOP',
+  'SHIRT_BUTTONDOWN',
+  'SWEATER_HOODIE',
+  'JACKET_COAT',
+  'BLAZER_SUIT',
+  'JEANS_TROUSERS',
+  'SKIRT',
+  'SHORTS',
+  'DRESS',
+  'JUMPSUIT',
+  'BRA',
+  'UNDERWEAR',
+  'TIGHTS',
+  'SHOES',
+  'RINGS',
+  'HATS',
+  'BELTS',
+  'GLOVES',
+]);
 
 interface JobPayload {
   jobId: string;
@@ -787,8 +810,10 @@ export class ProcessWorkerHandler extends BaseHandler {
         processingOptionsKeys: Object.keys(processingOptions || {}),
       });
 
-      if (processingOptions.generateDescription && imageResults.length > 0) {
-        const primaryResult = imageResults[0];
+      // Declare primaryResult outside conditional block for broader scope
+      const primaryResult = imageResults.length > 0 ? imageResults[0] : null;
+
+      if (processingOptions.generateDescription && primaryResult) {
         const languages = processingOptions.languages || ['en', 'is'];
 
         // Declare variables outside try block for broader scope
@@ -895,6 +920,127 @@ export class ProcessWorkerHandler extends BaseHandler {
             }
           }
 
+          // NEW: Generate price and quality suggestions if requested
+          if ((processingOptions.generatePriceSuggestion || processingOptions.generateRatingSuggestion) &&
+              primaryResult && primaryResult.productDescription && multilingualDescription) {
+            try {
+              let visionScore: number | undefined;
+
+              // Get vision quality score for pricing/rating adjustments
+              if (processingOptions.generatePriceSuggestion || processingOptions.generateRatingSuggestion) {
+                try {
+                  const visionService = new VisionAnalysisService();
+                  const visionResult = await visionService.analyzeCondition(primaryResult.outputBuffer);
+                  visionScore = visionResult.conditionScore; // 1-10 scale
+
+                  console.log('[Worker] Vision quality analysis complete', {
+                    jobId,
+                    groupId,
+                    visionScore,
+                    photoQuality: visionResult.photoQualityScore,
+                  });
+                } catch (visionError) {
+                  console.warn('[Worker] Vision analysis failed, continuing without it', {
+                    jobId,
+                    groupId,
+                    error: visionError instanceof Error ? visionError.message : String(visionError),
+                  });
+                }
+              }
+
+              // Generate price suggestion
+              if (processingOptions.generatePriceSuggestion && primaryResult.mistralResult) {
+                try {
+                  const pricingService = new PricingIntelligenceService();
+                  const priceSuggestion = await pricingService.getSuggestionFromAI(
+                    primaryResult.mistralResult,
+                    productName || 'Product',
+                    visionScore
+                  );
+
+                  // Add to English description
+                  if (multilingualDescription.en) {
+                    multilingualDescription.en.priceSuggestion = priceSuggestion;
+                  }
+
+                  // Add to Icelandic description (convert USD to ISK)
+                  if (multilingualDescription.is) {
+                    multilingualDescription.is.priceSuggestion = {
+                      ...priceSuggestion,
+                      currency: 'ISK',
+                      suggestedPrice: Math.round(priceSuggestion.suggestedPrice * 140), // USD to ISK
+                      priceRange: {
+                        min: Math.round(priceSuggestion.priceRange.min * 140),
+                        max: Math.round(priceSuggestion.priceRange.max * 140),
+                      },
+                    };
+                  }
+
+                  console.log('[Worker] Price suggestion generated', {
+                    jobId,
+                    groupId,
+                    suggestedPrice: priceSuggestion.suggestedPrice,
+                    confidence: priceSuggestion.confidence,
+                    priceRange: priceSuggestion.priceRange,
+                  });
+                } catch (pricingError) {
+                  console.error('[Worker] Failed to generate price suggestion', {
+                    jobId,
+                    groupId,
+                    error: pricingError instanceof Error ? pricingError.message : String(pricingError),
+                  });
+                  // Don't throw - pricing is optional
+                }
+              }
+
+              // Generate rating suggestion
+              if (processingOptions.generateRatingSuggestion && primaryResult.mistralResult) {
+                try {
+                  const ratingSuggestionEn = ratingGenerator.generateRating(
+                    primaryResult.mistralResult,
+                    visionScore,
+                    'en'
+                  );
+                  const ratingSuggestionIs = ratingGenerator.generateRating(
+                    primaryResult.mistralResult,
+                    visionScore,
+                    'is'
+                  );
+
+                  // Add to descriptions
+                  if (multilingualDescription.en) {
+                    multilingualDescription.en.ratingSuggestion = ratingSuggestionEn;
+                  }
+                  if (multilingualDescription.is) {
+                    multilingualDescription.is.ratingSuggestion = ratingSuggestionIs;
+                  }
+
+                  console.log('[Worker] Rating suggestion generated', {
+                    jobId,
+                    groupId,
+                    overallRating: ratingSuggestionEn.overallRating,
+                    confidence: ratingSuggestionEn.confidence,
+                    breakdown: ratingSuggestionEn.breakdown,
+                  });
+                } catch (ratingError) {
+                  console.error('[Worker] Failed to generate rating suggestion', {
+                    jobId,
+                    groupId,
+                    error: ratingError instanceof Error ? ratingError.message : String(ratingError),
+                  });
+                  // Don't throw - rating is optional
+                }
+              }
+            } catch (error) {
+              console.error('[Worker] Failed to generate suggestions', {
+                jobId,
+                groupId,
+                error: error instanceof Error ? error.message : String(error),
+              });
+              // Don't throw - suggestions are optional and shouldn't break the pipeline
+            }
+          }
+
           // NEW: Derive a better product name if current one is generic
           // Use AI-generated elegant name from the primary result or generated description
           const aiDerivedName = multilingualDescription?.en?.short || primaryResult.productDescription?.short;
@@ -964,10 +1110,46 @@ export class ProcessWorkerHandler extends BaseHandler {
       }
 
       const processingTimeMs = Date.now() - processingStartTime;
+      const primaryDescription = multilingualDescription?.en || imageResults[0]?.productDescription;
+      const descriptionText = primaryDescription?.long || primaryDescription?.short || '';
+
+      const sizeHint = extractSizeHint(`${productName || ''} ${descriptionText}`);
+      let normalizedSizingPayload: Record<string, unknown> | undefined;
+      if (sizeHint && userId) {
+        const candidate = String(groupContext?.category || '')
+          .toUpperCase()
+          .replace(/[^A-Z0-9_]/g, '_');
+        const garmentType = GARMENT_TYPES.has(candidate) ? candidate : undefined;
+
+        if (garmentType) {
+          const { sizingPayload, error } = await normalizeSizingInCarouselApi(
+            tenant,
+            userId,
+            {
+              category: 'CLOTHING',
+              garment_type: garmentType,
+              sizing: {
+                input_system: sizeHint.input_system,
+                input_label: sizeHint.input_label,
+              },
+            },
+            authToken
+          );
+          if (error) {
+            console.warn('[Worker] Sizing normalization failed', { error, garmentType, sizeHint });
+          } else if (sizingPayload) {
+            normalizedSizingPayload = sizingPayload;
+          }
+        }
+      }
 
       // Enhance processed images with group-aware metadata
       const enhancedImages = processedImages.map(img => ({
         ...img,
+        metadata: {
+          ...(img.metadata || {}),
+          ...(sizeHint ? { sizing: sizeHint } : {}),
+        },
         groupPricing,
         predictedRating,
         seoKeywords,
@@ -981,8 +1163,6 @@ export class ProcessWorkerHandler extends BaseHandler {
 
       let createdProductId: string | undefined;
       if (userId && processedImages.length > 0) {
-        const primaryDescription = multilingualDescription?.en || imageResults[0]?.productDescription;
-        const descriptionText = primaryDescription?.long || primaryDescription?.short;
         const priceSuggestion = groupPricing?.suggested || primaryDescription?.priceSuggestion?.suggested;
 
         // Build complete product metadata matching CarouselProductRegistration schema
@@ -1004,8 +1184,26 @@ export class ProcessWorkerHandler extends BaseHandler {
           },
           pricing: {
             basePrice: Math.round((priceSuggestion || 0) * 100), // Convert to cents
-            currency: 'ISK'
+            currency: 'ISK',
+            // Include price suggestion if generated
+            ...(multilingualDescription?.en?.priceSuggestion && {
+              suggested: multilingualDescription.en.priceSuggestion.suggestedPrice,
+              min: multilingualDescription.en.priceSuggestion.priceRange.min,
+              max: multilingualDescription.en.priceSuggestion.priceRange.max,
+              confidence: multilingualDescription.en.priceSuggestion.confidence,
+            }),
           },
+          // Include rating suggestion if generated
+          ...(multilingualDescription?.en?.ratingSuggestion && {
+            qualityRating: {
+              overall: multilingualDescription.en.ratingSuggestion.overallRating,
+              quality: multilingualDescription.en.ratingSuggestion.breakdown.quality,
+              condition: multilingualDescription.en.ratingSuggestion.breakdown.condition,
+              value: multilingualDescription.en.ratingSuggestion.breakdown.value,
+              authenticity: multilingualDescription.en.ratingSuggestion.breakdown.authenticity,
+              confidence: multilingualDescription.en.ratingSuggestion.confidence,
+            },
+          }),
           seo: {
             metaTitle: productName || `Product ${groupId}`,
             metaDescription: primaryDescription?.short || descriptionText || '',
@@ -1024,7 +1222,25 @@ export class ProcessWorkerHandler extends BaseHandler {
           categorization: {
             category: groupContext?.category || primaryDescription?.category || 'uncategorized',
             subcategory: '',
-            tags: seoKeywords || []
+            tags: seoKeywords || [],
+            brand: extractedAttributes?.brand, // Auto-detected brand
+          },
+          features: {
+            material: extractedAttributes?.material, // Auto-detected material (e.g., "100% Cotton")
+            style: extractedAttributes?.style?.[0], // Primary style (e.g., "Casual")
+            attributes: [
+              ...(extractedAttributes?.careInstructions || []), // Care instructions
+              ...(extractedAttributes?.pattern ? [`Pattern: ${extractedAttributes.pattern}`] : []),
+              ...(extractedAttributes?.style?.slice(1) || []).map(s => `Style: ${s}`), // Additional styles
+            ],
+            specifications: {
+              ...(extractedAttributes?.pattern && { pattern: extractedAttributes.pattern }),
+              ...(extractedAttributes?.season && { season: extractedAttributes.season }),
+            },
+          },
+          colorAnalysis: {
+            dominantColors: [], // TODO: Extract from image analysis
+            colorPalette: extractedAttributes?.colors || primaryDescription?.colors || [], // Auto-detected color names
           },
           imageMetadata: processedImages[0] ? {
             width: processedImages[0].width || processedImages[0].metadata?.width || 1024,
@@ -1034,6 +1250,7 @@ export class ProcessWorkerHandler extends BaseHandler {
             sourceImageKey: images[0]?.s3Key || '',
             processedImageKey: processedImages[0].outputKey || ''
           } : undefined,
+          sizing: normalizedSizingPayload,
           status: 'DRAFT' as const
           // Note: createdAt and updatedAt are reserved fields set by carousel-api
         };
@@ -1099,10 +1316,13 @@ export class ProcessWorkerHandler extends BaseHandler {
         brand: extractedAttributes?.brand,
         material: extractedAttributes?.material,
         colors: extractedAttributes?.colors,
+        careInstructions: extractedAttributes?.careInstructions,
+        conditionRating: extractedAttributes?.conditionRating,
         pattern: extractedAttributes?.pattern,
         style: extractedAttributes?.style,
         sustainability: extractedAttributes?.sustainability,
         aiConfidence: extractedAttributes?.aiConfidence,
+        moderationLabels: primaryResult?.rekognitionAnalysis?.moderationLabels,
         // Store processedImages array with full metadata for frontend display
         processedImages: processedImages.map(img => ({
           imageId: img.imageId,
@@ -1139,9 +1359,12 @@ export class ProcessWorkerHandler extends BaseHandler {
           brand: extractedAttributes?.brand,
           material: extractedAttributes?.material,
           colors: extractedAttributes?.colors,
+          careInstructions: extractedAttributes?.careInstructions || (img as any)?.rekognitionAnalysis?.careInstructions,
+          conditionRating: extractedAttributes?.conditionRating,
           pattern: extractedAttributes?.pattern,
           style: extractedAttributes?.style,
           sustainability: extractedAttributes?.sustainability,
+          moderationLabels: (img as any)?.rekognitionAnalysis?.moderationLabels,
         })),
       });
 
