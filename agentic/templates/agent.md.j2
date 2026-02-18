@@ -1,0 +1,46 @@
+# {{ agent_name | capitalize }} Agent
+
+## Description
+This agent provides capabilities related to `{{ agent_functionality }}` by leveraging Pydantic-AI models and AWS Bedrock.
+
+## Skills
+
+The `{{ agent_name | capitalize }} Agent` exposes the following skills:
+
+{% if skills %}
+{% for skill in skills %}
+### `{{ skill.name }}`
+*   **Description:** {{ skill.description | default("No description provided.") }}
+*   **Inputs:**
+    ```json
+    {{ skill.inputs | tojson(indent=2) }}
+    ```
+*   **Outputs:**
+    ```json
+    {{ skill.outputs | tojson(indent=2) }}
+    ```
+{% endfor %}
+{% else %}
+No specific skills documented yet.
+{% endif %}
+
+## Usage Example
+
+```python
+from marvin.beta.applications import Agent
+
+# Assuming the agent is properly registered and discoverable
+# Replace with actual agent ID/name if different
+agent = Agent(name="{{ agent_name }}") 
+
+# Example of invoking a skill (adjust based on actual skill names and parameters)
+# result = agent.run_skill("some_skill_name", param1="value1", param2="value2")
+# print(result)
+```
+
+## Configuration
+This agent typically requires AWS credentials configured for Bedrock access in `{{ aws_region }}`.
+
+## Related Pydantic-AI Module
+*   **Module:** `services/bg-remover/agentic/pydantic_ai/{{ pydantic_ai_module_name }}.py`
+*   **Class:** `{{ pydantic_ai_class_name }}`

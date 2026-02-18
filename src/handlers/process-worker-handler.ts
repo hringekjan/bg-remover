@@ -821,56 +821,37 @@ export class ProcessWorkerHandler extends BaseHandler {
         let productFeatures: any;
 
         try {
-          // Check if we already have AI-generated bilingual descriptions from the pipeline
-          // Note: primaryResult.bilingualDescription would come from the pipeline if available
-          // For now, we build it from productDescription
-          if (primaryResult.productDescription?.short) {
-            console.log('[Worker] Using product description from pipeline');
-            multilingualDescription = {
-              en: {
-                short: primaryResult.productDescription.short,
-                long: primaryResult.productDescription.long || primaryResult.productDescription.short,
-                keywords: primaryResult.productDescription.keywords || [],
-                category: primaryResult.productDescription.category || 'general',
-                colors: primaryResult.productDescription.colors,
-                condition: primaryResult.productDescription.condition || 'good',
-              },
-              is: {
-                short: primaryResult.productDescription.short,
-                long: primaryResult.productDescription.long || primaryResult.productDescription.short,
-                keywords: primaryResult.productDescription.keywords || [],
-                category: primaryResult.productDescription.category || 'general',
-                colors: primaryResult.productDescription.colors,
-                condition: primaryResult.productDescription.condition || 'good',
-              },
-            };
-          } else {
-            // Build context prompt from group metadata
-            contextPrompt = this.buildGroupContextPrompt(
-              groupContext,
-              imageResults.length,
-              productName
-            );
+          // ALWAYS generate multilingual descriptions via AI translator
+          // Do NOT use pipeline description directly - it lacks Icelandic translation
+          // Build context prompt from group metadata
+          contextPrompt = this.buildGroupContextPrompt(
+            groupContext,
+            imageResults.length,
+            productName
+          );
 
-            productFeatures = {
-              name: productName || 'Product',
-              category: groupContext?.category || primaryResult.productDescription?.category || 'general',
-              colors: primaryResult.productDescription?.colors,
-              condition: primaryResult.productDescription?.condition || 'good' as const,
-              brand: primaryResult.productDescription?.priceSuggestion?.factors.brand,
-              // Add group-aware fields
-              groupContext: contextPrompt,
-              imageCount: groupContext?.totalImages || images.length,
-              hasMultipleAngles: (groupContext?.totalImages || images.length) > 1,
-            };
+          // Use AI-identified product name from pipeline if available (e.g., "Vintage Leather Handbag")
+          // Otherwise fall back to user-provided name (which may be generic like "Product 1")
+          const aiProductName = primaryResult.productDescription?.short || productName;
 
-            multilingualDescription = await multilingualDescriptionGenerator.generateMultilingualDescriptions(
-              productFeatures,
-              languages,
-              processingOptions.generatePriceSuggestion || false,
-              processingOptions.generateRatingSuggestion || false
-            );
-          }
+          productFeatures = {
+            name: aiProductName || 'Product',
+            category: groupContext?.category || primaryResult.productDescription?.category || 'general',
+            colors: primaryResult.productDescription?.colors,
+            condition: primaryResult.productDescription?.condition || 'good' as const,
+            brand: primaryResult.productDescription?.priceSuggestion?.factors.brand,
+            // Add group-aware fields
+            groupContext: contextPrompt,
+            imageCount: groupContext?.totalImages || images.length,
+            hasMultipleAngles: (groupContext?.totalImages || images.length) > 1,
+          };
+
+          multilingualDescription = await multilingualDescriptionGenerator.generateMultilingualDescriptions(
+            productFeatures,
+            languages,
+            processingOptions.generatePriceSuggestion || false,
+            processingOptions.generateRatingSuggestion || false
+          );
 
           // NEW: Extract comprehensive attributes from multilingual descriptions
           // This extracts brand, material, colors, pattern, style, keywords, and category
@@ -1323,6 +1304,7 @@ export class ProcessWorkerHandler extends BaseHandler {
         sustainability: extractedAttributes?.sustainability,
         aiConfidence: extractedAttributes?.aiConfidence,
         moderationLabels: primaryResult?.rekognitionAnalysis?.moderationLabels,
+        rekognitionLabels: primaryResult?.rekognitionAnalysis?.labels,
         // Store processedImages array with full metadata for frontend display
         processedImages: processedImages.map(img => ({
           imageId: img.imageId,

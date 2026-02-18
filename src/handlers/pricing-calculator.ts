@@ -18,12 +18,12 @@
  * @module handlers/pricing-calculator
  */
 
-import { APIGatewayProxyEventV2, APIGatewayProxyResultV2, Context } from 'aws-lambda';
+import type { APIGatewayProxyEventV2, APIGatewayProxyResultV2, Context } from 'aws-lambda';
 import { VisualSimilarityPricingEngine } from '../lib/pricing/visual-similarity-pricing';
 import { Logger } from '@aws-lambda-powertools/logger';
 import { z } from 'zod';
 import type { ProductCondition, PricingSuggestion } from '../lib/pricing/types';
-import { isValidProductCondition } from '../lib/pricing/types';
+import { createTenantCorsHeaders, createBasicCorsHeaders } from '../lib/cors';
 
 // Logger instance for structured logging
 const logger = new Logger({
@@ -32,6 +32,126 @@ const logger = new Logger({
 
 // Global pricing engine instance - persists across Lambda invocations for cache reuse
 let pricingEngine: VisualSimilarityPricingEngine | null = null;
+const USD_TO_ISK_RATE = Number.parseFloat(process.env.USD_TO_ISK_RATE || '140');
+const MIN_ISK_SUGGESTED_PRICE = Number.parseFloat(process.env.MIN_ISK_SUGGESTED_PRICE || '1000');
+const DEFAULT_PRICE_FLOOR_BY_CURRENCY: Record<string, number> = {
+  ISK: 1000,
+  USD: 10,
+  EUR: 10,
+};
+const DEFAULT_PRICE_CEILING_BY_CURRENCY: Record<string, number> = {
+  ISK: 1_000_000,
+  USD: 10_000,
+  EUR: 10_000,
+};
+const MIN_SUGGESTED_PRICE = Number.parseFloat(process.env.MIN_SUGGESTED_PRICE || '');
+const MAX_SUGGESTED_PRICE = Number.parseFloat(process.env.MAX_SUGGESTED_PRICE || '');
+
+/**
+ * Response options interface for consistent response building
+ */
+interface ResponseOptions {
+  requestId: string;
+  tenantId: string;
+  correlationId?: string;
+}
+
+/**
+ * Response builder for standardized API responses
+ */
+class ResponseBuilder {
+  /**
+   * Build successful response with proper headers
+   */
+  static success<T>(
+    statusCode: number,
+    body: T,
+    event: APIGatewayProxyEventV2,
+    options: ResponseOptions
+  ): APIGatewayProxyResultV2 {
+    const corsHeaders = createTenantCorsHeaders(event, options.tenantId);
+    return {
+      statusCode,
+      headers: {
+        ...corsHeaders,
+        'Content-Type': 'application/json',
+        'X-Request-ID': options.requestId,
+        ...(options.correlationId && { 'X-Correlation-ID': options.correlationId }),
+      },
+      body: JSON.stringify(body),
+    };
+  }
+
+  /**
+   * Build error response with proper headers and error details
+   */
+  static error(
+    statusCode: number,
+    message: string,
+    event: APIGatewayProxyEventV2,
+    options: ResponseOptions
+  ): APIGatewayProxyResultV2 {
+    const corsHeaders = createTenantCorsHeaders(event, options.tenantId);
+    return {
+      statusCode,
+      headers: {
+        ...corsHeaders,
+        'Content-Type': 'application/json',
+        'X-Request-ID': options.requestId,
+        ...(options.correlationId && { 'X-Correlation-ID': options.correlationId }),
+      },
+      body: JSON.stringify({
+        error: message,
+        requestId: options.requestId,
+        correlationId: options.correlationId,
+        timestamp: new Date().toISOString(),
+      }),
+    };
+  }
+
+  /**
+   * Build CORS preflight response
+   */
+  static cors(
+    event: APIGatewayProxyEventV2,
+    options: ResponseOptions
+  ): APIGatewayProxyResultV2 {
+    const corsHeaders = createTenantCorsHeaders(event, options.tenantId);
+    return {
+      statusCode: 200,
+      headers: {
+        ...corsHeaders,
+        'Content-Type': 'application/json',
+        'X-Request-ID': options.requestId,
+      },
+      body: JSON.stringify({ message: 'OK' }),
+    };
+  }
+
+  /**
+   * Build error response before tenant resolution (uses basic CORS)
+   */
+  static errorBeforeTenant(
+    statusCode: number,
+    message: string,
+    requestId: string
+  ): APIGatewayProxyResultV2 {
+    const corsHeaders = createBasicCorsHeaders();
+    return {
+      statusCode,
+      headers: {
+        ...corsHeaders,
+        'Content-Type': 'application/json',
+        'X-Request-ID': requestId,
+      },
+      body: JSON.stringify({
+        error: message,
+        requestId,
+        timestamp: new Date().toISOString(),
+      }),
+    };
+  }
+}
 
 /**
  * Request validation schema using Zod
@@ -89,6 +209,59 @@ interface PricingResponse extends PricingSuggestion {
   responseTimeMs: number;
 }
 
+function normalizeIskSuggestion(suggestion: PricingSuggestion, targetCurrency: string): PricingSuggestion {
+  if (targetCurrency !== 'ISK') return suggestion;
+  if (!Number.isFinite(suggestion.suggestedPrice) || suggestion.suggestedPrice <= 0) return suggestion;
+  if (!Number.isFinite(USD_TO_ISK_RATE) || USD_TO_ISK_RATE <= 0) return suggestion;
+
+  // If the suggestion is implausibly low for ISK, treat it as USD and convert.
+  if (suggestion.suggestedPrice >= MIN_ISK_SUGGESTED_PRICE) return suggestion;
+
+  const convert = (value: number) => Math.round(value * USD_TO_ISK_RATE);
+  const converted: PricingSuggestion = {
+    ...suggestion,
+    suggestedPrice: convert(suggestion.suggestedPrice),
+    priceRange: {
+      min: convert(suggestion.priceRange.min),
+      max: convert(suggestion.priceRange.max),
+    },
+    factors: {
+      ...suggestion.factors,
+      basePrice: convert(suggestion.factors.basePrice),
+      similarProducts: suggestion.factors.similarProducts?.map((item) => ({
+        ...item,
+        salePrice: convert(item.salePrice),
+      })),
+    },
+  };
+
+  return converted;
+}
+
+function applyPriceGuards(suggestion: PricingSuggestion, targetCurrency: string): PricingSuggestion {
+  const currency = targetCurrency.toUpperCase();
+  const defaultFloor = DEFAULT_PRICE_FLOOR_BY_CURRENCY[currency] ?? 1;
+  const defaultCeiling = DEFAULT_PRICE_CEILING_BY_CURRENCY[currency] ?? Number.MAX_SAFE_INTEGER;
+  const floor = Number.isFinite(MIN_SUGGESTED_PRICE) ? MIN_SUGGESTED_PRICE : defaultFloor;
+  const ceiling = Number.isFinite(MAX_SUGGESTED_PRICE) ? MAX_SUGGESTED_PRICE : defaultCeiling;
+
+  const clamp = (value: number) => Math.min(Math.max(value, floor), ceiling);
+  const minClamped = clamp(suggestion.priceRange.min);
+  const maxClamped = clamp(suggestion.priceRange.max);
+  const rangeMin = Math.min(minClamped, maxClamped);
+  const rangeMax = Math.max(minClamped, maxClamped);
+
+  return {
+    ...suggestion,
+    suggestedPrice: clamp(suggestion.suggestedPrice),
+    priceRange: { min: rangeMin, max: rangeMax },
+    factors: {
+      ...suggestion.factors,
+      basePrice: clamp(suggestion.factors.basePrice),
+    },
+  };
+}
+
 /**
  * Initialize or reuse the pricing engine instance
  * Uses global variable to persist cache across invocations
@@ -118,14 +291,25 @@ function initializePricingEngine(tenantId: string, stage: string): VisualSimilar
 }
 
 /**
+ * Check if error is retryable (service temporarily unavailable)
+ */
+function isRetryableError(error: Error): boolean {
+  const retryablePatterns = [
+    'DynamoDB',
+    'S3',
+    'Bedrock',
+    'Service Temporarily Unavailable',
+    'ThrottlingException',
+    'ProvisionedThroughputExceededException',
+  ];
+  return retryablePatterns.some(pattern => error.message.includes(pattern));
+}
+
+/**
  * Lambda handler for POST /bg-remover/pricing/calculate
  *
  * Validates product details, initializes pricing engine, and returns
  * AI-suggested pricing based on visual similarity to historical sales.
- *
- * @param event - APIGatewayProxyEventV2 request
- * @param context - Lambda context
- * @returns APIGatewayProxyResultV2 response
  */
 export async function handler(
   event: APIGatewayProxyEventV2,
@@ -133,29 +317,36 @@ export async function handler(
 ): Promise<APIGatewayProxyResultV2> {
   const startTime = Date.now();
   const requestId = event.requestContext?.requestId || context.awsRequestId;
+  const tenantId = event.headers['x-tenant-id'] || process.env.TENANT || 'carousel-labs';
+
+  const responseOptions: ResponseOptions = {
+    requestId,
+    tenantId,
+    correlationId: event.headers['x-correlation-id'] || event.headers['X-Correlation-Id'],
+  };
 
   try {
     logger.info('Pricing calculator request received', {
       requestId,
       method: event.requestContext?.http?.method,
       path: event.requestContext?.http?.path,
+      tenantId,
     });
 
     // Handle CORS preflight
     if (event.requestContext?.http?.method === 'OPTIONS') {
-      return buildCorsResponse(200, { message: 'OK' });
+      return ResponseBuilder.cors(event, responseOptions);
     }
 
     // Validate HTTP method
     if (event.requestContext?.http?.method !== 'POST') {
-      return buildErrorResponse(405, 'Method not allowed. Use POST.', requestId);
+      return ResponseBuilder.error(405, 'Method not allowed. Use POST.', event, responseOptions);
     }
 
     // Extract tenant from headers (required for multi-tenant isolation)
-    const tenantId = event.headers['x-tenant-id'];
-    if (!tenantId) {
+    if (!event.headers['x-tenant-id']) {
       logger.warn('Missing x-tenant-id header', { requestId });
-      return buildErrorResponse(400, 'Missing x-tenant-id header', requestId);
+      return ResponseBuilder.error(400, 'Missing x-tenant-id header', event, responseOptions);
     }
 
     // Parse and validate request body
@@ -167,7 +358,7 @@ export async function handler(
         requestId,
         error: error instanceof Error ? error.message : 'Unknown error',
       });
-      return buildErrorResponse(400, 'Invalid JSON in request body', requestId);
+      return ResponseBuilder.error(400, 'Invalid JSON in request body', event, responseOptions);
     }
 
     // Validate request with Zod
@@ -182,14 +373,15 @@ export async function handler(
         errors: errorMessages,
       });
 
-      return buildErrorResponse(400, `Validation error: ${errorMessages}`, requestId);
+      return ResponseBuilder.error(400, `Validation error: ${errorMessages}`, event, responseOptions);
     }
 
     const validated = validationResult.data;
+    const resolvedTenantId = event.headers['x-tenant-id'];
 
     logger.info('Pricing request validated', {
       requestId,
-      tenantId,
+      tenantId: resolvedTenantId,
       productId: validated.productId,
       category: validated.category,
       condition: validated.condition,
@@ -198,7 +390,7 @@ export async function handler(
 
     // Initialize pricing engine (reuses cached instance)
     const stage = process.env.STAGE || 'dev';
-    const engine = initializePricingEngine(tenantId, stage);
+    const engine = initializePricingEngine(resolvedTenantId, stage);
 
     // Generate embedding for primary product image using Titan Embeddings
     // This produces a 1024-dimensional vector for visual similarity search
@@ -225,10 +417,11 @@ export async function handler(
         imageUrl: validated.images[0],
       });
 
-      return buildErrorResponse(
+      return ResponseBuilder.error(
         503,
         'Embedding generation service temporarily unavailable',
-        requestId
+        event,
+        { ...responseOptions, tenantId: resolvedTenantId }
       );
     }
 
@@ -240,10 +433,11 @@ export async function handler(
         actualDimensions: productEmbedding?.length || 0,
       });
 
-      return buildErrorResponse(
+      return ResponseBuilder.error(
         500,
         'Failed to generate valid product embedding',
-        requestId
+        event,
+        { ...responseOptions, tenantId: resolvedTenantId }
       );
     }
 
@@ -260,121 +454,49 @@ export async function handler(
       validated.category,
       validated.language || 'en'
     );
+    const targetCurrency = validated.currency || suggestion.currency;
+    const normalizedSuggestion = normalizeIskSuggestion(
+      { ...suggestion, currency: targetCurrency },
+      targetCurrency
+    );
+    const guardedSuggestion = applyPriceGuards(normalizedSuggestion, targetCurrency);
 
     const responseTime = Date.now() - startTime;
 
     const response: PricingResponse = {
-      ...suggestion,
+      ...guardedSuggestion,
       requestId,
       responseTimeMs: responseTime,
     };
 
     logger.info('Pricing calculation succeeded', {
       requestId,
-      tenantId,
+      tenantId: resolvedTenantId,
       productId: validated.productId,
       suggestedPrice: suggestion.suggestedPrice,
       confidence: suggestion.confidence,
       responseTimeMs: responseTime,
     });
 
-    return buildSuccessResponse(200, response);
+    return ResponseBuilder.success(200, response, event, { ...responseOptions, tenantId: resolvedTenantId });
 
   } catch (error) {
     const responseTime = Date.now() - startTime;
+    const errorMessage = error instanceof Error ? error.message : String(error);
 
     logger.error('Pricing calculation failed', {
       requestId,
-      error: error instanceof Error ? error.message : String(error),
+      error: errorMessage,
       stack: error instanceof Error ? error.stack : undefined,
       responseTimeMs: responseTime,
     });
 
-    // Return 503 for service errors (retryable)
-    if (
-      error instanceof Error &&
-      (error.message.includes('DynamoDB') ||
-        error.message.includes('S3') ||
-        error.message.includes('Bedrock'))
-    ) {
-      return buildErrorResponse(503, 'Pricing service temporarily unavailable', requestId);
+    // Return 503 for retryable service errors
+    if (error instanceof Error && isRetryableError(error)) {
+      return ResponseBuilder.error(503, 'Pricing service temporarily unavailable', event, responseOptions);
     }
 
     // Return 500 for other errors
-    return buildErrorResponse(500, 'Internal server error', requestId);
+    return ResponseBuilder.error(500, 'Internal server error', event, responseOptions);
   }
-}
-
-/**
- * Build successful response with proper headers
- * TODO: Migrate to tenant-aware CORS using createTenantCorsHeaders from lib/cors.ts
- */
-function buildSuccessResponse(
-  statusCode: number,
-  body: PricingResponse
-): APIGatewayProxyResultV2 {
-  return {
-    statusCode,
-    headers: {
-      'Content-Type': 'application/json',
-      'Access-Control-Allow-Origin': 'null',  // Secure: no wildcard CORS
-      'Access-Control-Allow-Methods': 'POST, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, x-tenant-id',
-      'Access-Control-Max-Age': '86400',
-      'Vary': 'Origin',  // Prevent cache poisoning
-      'X-Request-ID': body.requestId,
-      'X-Response-Time': body.responseTimeMs.toString(),
-    },
-    body: JSON.stringify(body),
-  };
-}
-
-/**
- * Build error response with proper headers and error details
- * TODO: Migrate to tenant-aware CORS using createTenantCorsHeaders from lib/cors.ts
- */
-function buildErrorResponse(
-  statusCode: number,
-  message: string,
-  requestId: string
-): APIGatewayProxyResultV2 {
-  return {
-    statusCode,
-    headers: {
-      'Content-Type': 'application/json',
-      'Access-Control-Allow-Origin': 'null',  // Secure: no wildcard CORS
-      'Access-Control-Allow-Methods': 'POST, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, x-tenant-id',
-      'Access-Control-Max-Age': '86400',
-      'Vary': 'Origin',  // Prevent cache poisoning
-      'X-Request-ID': requestId,
-    },
-    body: JSON.stringify({
-      error: message,
-      requestId,
-      timestamp: new Date().toISOString(),
-    }),
-  };
-}
-
-/**
- * Build CORS preflight response
- * TODO: Migrate to tenant-aware CORS using createTenantCorsHeaders from lib/cors.ts
- */
-function buildCorsResponse(
-  statusCode: number,
-  body: any
-): APIGatewayProxyResultV2 {
-  return {
-    statusCode,
-    headers: {
-      'Content-Type': 'application/json',
-      'Access-Control-Allow-Origin': 'null',  // Secure: no wildcard CORS
-      'Access-Control-Allow-Methods': 'POST, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, x-tenant-id',
-      'Access-Control-Max-Age': '86400',
-      'Vary': 'Origin',  // Prevent cache poisoning
-    },
-    body: JSON.stringify(body),
-  };
 }

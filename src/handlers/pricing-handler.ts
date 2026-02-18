@@ -18,6 +18,7 @@
 import { APIGatewayProxyEvent, APIGatewayProxyResult, Context } from 'aws-lambda';
 import { VisualSimilarityPricingEngine, type SaleRecord } from '../lib/pricing/visual-similarity-pricing';
 import { Logger } from '@aws-lambda-powertools/logger';
+import { createTenantCorsHeaders } from '../lib/cors';
 
 // Global instance - persists across Lambda invocations for cache reuse
 let pricingEngine: VisualSimilarityPricingEngine | null = null;
@@ -31,26 +32,27 @@ export async function handler(
   context: Context
 ): Promise<APIGatewayProxyResult> {
   const requestId = event.requestContext?.requestId || context.awsRequestId;
+  const tenantId = event.headers['x-tenant-id'] || process.env.TENANT || 'carousel-labs';
 
   try {
     logger.info('Pricing request received', {
       requestId,
       method: event.httpMethod,
       path: event.path,
+      tenantId,
     });
 
     // Validate HTTP method
     if (event.httpMethod === 'OPTIONS') {
-      return buildCorsResponse(200, { message: 'OK' });
+      return buildCorsResponse(200, { message: 'OK' }, event, tenantId);
     }
 
     if (event.httpMethod !== 'POST') {
-      return buildErrorResponse(405, 'Method not allowed. Use POST.');
+      return buildErrorResponse(405, 'Method not allowed. Use POST.', event, tenantId);
     }
 
     // Initialize pricing engine once per container (cache persists)
     if (!pricingEngine) {
-      const tenantId = event.headers['x-tenant-id'] || process.env.TENANT || 'carousel-labs';
       const stage = process.env.STAGE || 'dev';
 
       pricingEngine = new VisualSimilarityPricingEngine(tenantId, stage, {
@@ -73,11 +75,11 @@ export async function handler(
 
     // Validate required fields
     if (!body.productEmbedding || !Array.isArray(body.productEmbedding)) {
-      return buildErrorResponse(400, 'productEmbedding (array of numbers) is required');
+      return buildErrorResponse(400, 'productEmbedding (array of numbers) is required', event, tenantId);
     }
 
     if (body.productEmbedding.length === 0) {
-      return buildErrorResponse(400, 'productEmbedding cannot be empty');
+      return buildErrorResponse(400, 'productEmbedding cannot be empty', event, tenantId);
     }
 
     // Extract optional parameters
@@ -149,7 +151,7 @@ export async function handler(
         queryDuration,
         timestamp: Date.now(),
       },
-    });
+    }, event, tenantId);
   } catch (error) {
     logger.error('Pricing request failed', {
       requestId,
@@ -157,7 +159,7 @@ export async function handler(
       stack: error instanceof Error ? error.stack : undefined,
     });
 
-    return buildErrorResponse(500, 'Internal server error: Unable to generate pricing suggestion');
+    return buildErrorResponse(500, 'Internal server error: Unable to generate pricing suggestion', event, tenantId);
   }
 }
 
@@ -232,39 +234,42 @@ function parseRequestBody(body: string | null | undefined): any {
 
 /**
  * Build success response with cache metrics in headers
- * TODO: Migrate to tenant-aware CORS using createTenantCorsHeaders from lib/cors.ts
+ * Uses tenant-aware CORS for multi-tenant security
  */
-function buildSuccessResponse(statusCode: number, body: any): APIGatewayProxyResult {
+function buildSuccessResponse(
+  statusCode: number,
+  body: any,
+  event: APIGatewayProxyEvent,
+  tenantId: string
+): APIGatewayProxyResult {
+  const corsHeaders = createTenantCorsHeaders(event, tenantId);
   return {
     statusCode,
     headers: {
+      ...corsHeaders,
       'Content-Type': 'application/json',
       'X-Cache-Hit-Rate': ((body.cacheMetrics?.hitRate || 0) * 100).toFixed(1),
       'X-Cache-Size-Percent': body.cacheMetrics?.cacheSizePercent || '0',
-      'Access-Control-Allow-Origin': 'null',  // Secure: no wildcard CORS
-      'Access-Control-Allow-Methods': 'POST, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, x-tenant-id',
-      'Access-Control-Max-Age': '86400',
-      'Vary': 'Origin',  // Prevent cache poisoning
     },
     body: JSON.stringify(body),
   };
 }
 
 /**
- * Build error response
- * TODO: Migrate to tenant-aware CORS using createTenantCorsHeaders from lib/cors.ts
+ * Build error response with tenant-aware CORS
  */
-function buildErrorResponse(statusCode: number, message: string): APIGatewayProxyResult {
+function buildErrorResponse(
+  statusCode: number,
+  message: string,
+  event: APIGatewayProxyEvent,
+  tenantId: string
+): APIGatewayProxyResult {
+  const corsHeaders = createTenantCorsHeaders(event, tenantId);
   return {
     statusCode,
     headers: {
+      ...corsHeaders,
       'Content-Type': 'application/json',
-      'Access-Control-Allow-Origin': 'null',  // Secure: no wildcard CORS
-      'Access-Control-Allow-Methods': 'POST, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, x-tenant-id',
-      'Access-Control-Max-Age': '86400',
-      'Vary': 'Origin',  // Prevent cache poisoning
     },
     body: JSON.stringify({
       error: message,
@@ -274,19 +279,20 @@ function buildErrorResponse(statusCode: number, message: string): APIGatewayProx
 }
 
 /**
- * Build CORS response
- * TODO: Migrate to tenant-aware CORS using createTenantCorsHeaders from lib/cors.ts
+ * Build CORS preflight response with tenant-aware CORS
  */
-function buildCorsResponse(statusCode: number, body: any): APIGatewayProxyResult {
+function buildCorsResponse(
+  statusCode: number,
+  body: any,
+  event: APIGatewayProxyEvent,
+  tenantId: string
+): APIGatewayProxyResult {
+  const corsHeaders = createTenantCorsHeaders(event, tenantId);
   return {
     statusCode,
     headers: {
+      ...corsHeaders,
       'Content-Type': 'application/json',
-      'Access-Control-Allow-Origin': 'null',  // Secure: no wildcard CORS
-      'Access-Control-Allow-Methods': 'POST, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, x-tenant-id',
-      'Access-Control-Max-Age': '86400',
-      'Vary': 'Origin',  // Prevent cache poisoning
     },
     body: JSON.stringify(body),
   };

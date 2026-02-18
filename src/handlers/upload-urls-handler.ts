@@ -4,8 +4,7 @@ import { UploadUrlsRequestSchema, type UploadUrlsRequest } from '../lib/types';
 import { validateRequest } from '../lib/validation';
 import { resolveTenantFromRequest } from '../lib/tenant/resolver';
 import { createTenantCorsHeaders } from '../lib/cors';
-import { extractAuthContext, isStaff } from '@carousellabs/rbac-access-kit';
-import { validateJWTFromEvent } from '../lib/auth/jwt-validator';
+import { validateJWTFromEvent, getCognitoConfigForTenantAsync } from '../lib/auth/jwt-validator';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { NodeHttpHandler } from '@smithy/node-http-handler';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
@@ -72,30 +71,21 @@ export class UploadUrlsHandler extends BaseHandler {
       const tenant = await resolveTenantFromRequest(event, stage);
       corsHeaders = createTenantCorsHeaders(event, tenant) as any;
 
-      // Validate authentication (allow all authenticated users, not just staff)
-      let authContext: { tenantId?: string; userId?: string; roles?: string[] };
-      try {
-        authContext = extractAuthContext(event, { defaultTenantId: tenant });
-      } catch (authError: any) {
-        // Fallback: Try manual JWT validation if API Gateway didn't parse the token
-        console.log('[UploadUrls] Authorizer context missing, attempting manual JWT validation...');
-        const validation = await validateJWTFromEvent(event);
-        
-        if (!validation.isValid) {
-          console.warn('[UploadUrls] Authentication failed', { error: validation.error });
-          return this.createErrorResponse(validation.error || 'Unauthorized', 401, corsHeaders);
-        }
-
-        // Map validation result to expected context format
-        authContext = {
-          tenantId: validation.tenantId || tenant,
-          userId: validation.userId,
-          roles: validation.groups || []
-        };
-      }
-      
-      if (authContext.tenantId && authContext.tenantId !== tenant) {
-        return this.createErrorResponse('Tenant access mismatch', 403, corsHeaders);
+      // Validate authentication using same approach as process-groups-handler
+      // Load tenant-specific Cognito config for JWT validation
+      const cognitoConfig = await getCognitoConfigForTenantAsync(tenant, stage);
+      const authResult = await validateJWTFromEvent(event, cognitoConfig, {
+        required: true,
+        expectedTenant: tenant,
+        enforceTenantMatch: true,
+      });
+      if (!authResult.isValid || !authResult.userId) {
+        return this.createErrorResponse(
+          'Valid JWT token required',
+          401,
+          corsHeaders,
+          { error: authResult.error }
+        );
       }
 
       const body = JSON.parse(event.body || '{}');

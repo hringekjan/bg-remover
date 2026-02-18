@@ -53,12 +53,13 @@ export class SuggestionEngine {
     productFeatures: ProductFeatures,
     language: LanguageCode = 'en'
   ): PriceSuggestion {
-    const marketData = this.getMarketData(productFeatures.category, productFeatures.condition);
-    
+    const safeCondition = productFeatures.condition || 'good';
+    const marketData = this.getMarketData(productFeatures.category, safeCondition);
+
     // Base price calculation
     let basePrice = marketData.averagePrice;
     const factors: PriceSuggestion['factors'] = {
-      condition: productFeatures.condition,
+      condition: safeCondition,
       brand: productFeatures.brand,
       category: productFeatures.category,
       marketDemand: marketData.marketDemand,
@@ -74,7 +75,7 @@ export class SuggestionEngine {
       'good': 0.55,
       'fair': 0.40,
     };
-    basePrice *= conditionMultipliers[productFeatures.condition];
+    basePrice *= conditionMultipliers[safeCondition];
 
     // Adjust for brand premium
     if (productFeatures.brand) {
@@ -130,7 +131,7 @@ export class SuggestionEngine {
   ): RatingSuggestion {
     // Calculate individual ratings
     const quality = this.calculateQualityRating(productFeatures);
-    const condition = this.calculateConditionRating(productFeatures.condition);
+    const condition = this.calculateConditionRating(productFeatures.condition || 'good');
     const value = this.calculateValueRating(productFeatures);
     const authenticity = this.calculateAuthenticityRating(productFeatures);
 

@@ -96,13 +96,14 @@ export async function processImage(input: ProcessImageInput): Promise<ProcessIma
   // Step 3: Generate descriptions (optional) - Single Nova Pro call
   let productDescription: ProductDescription | undefined;
   let bilingualDescription: BilingualProductDescription | undefined;
+  let mistralResult: any | undefined; // Declare outside for pricing/rating suggestions
 
   if (generateDescription) {
     try {
       console.log('Generating bilingual description with Mistral Pixtral Large + Rekognition context');
 
       // Single Mistral Pixtral Large call with Rekognition context (faster, cheaper, better)
-      const mistralResult = await analyzeWithMistralPixtral(
+      mistralResult = await analyzeWithMistralPixtral(
         bgResult.outputBuffer,
         productName,
         {
@@ -160,6 +161,7 @@ export async function processImage(input: ProcessImageInput): Promise<ProcessIma
     metadata: resultMetadata,
     productDescription,
     bilingualDescription,
+    mistralResult, // Include Mistral analysis for pricing/rating suggestions
     rekognitionAnalysis: {
       labels: rekResult.labels,
       colors: rekResult.colors,

@@ -194,8 +194,10 @@ export class MultilingualDescriptionGenerator {
     // Generate long description
     const longDescription = this.generateLongDescription(productFeatures, templates, language);
     
-    // Generate keywords
-    const keywords = this.generateKeywords(productFeatures, templates, category);
+    // Generate keywords from template AND from description text
+    const templateKeywords = this.generateKeywords(productFeatures, templates, category);
+    const descriptionKeywords = this.extractKeywordsFromText(longDescription);
+    const allKeywords = [...new Set([...templateKeywords, ...descriptionKeywords])].slice(0, 20);
     
     // Generate suggestions if requested
     let priceSuggestion: PriceSuggestion | undefined;
@@ -208,7 +210,7 @@ export class MultilingualDescriptionGenerator {
         material: productFeatures.material,
         craftsmanship: productFeatures.style,
         age: productFeatures.age,
-        condition: productFeatures.condition,
+        condition: productFeatures.condition || 'good',
         colors: productFeatures.colors,
         size: productFeatures.size,
         occasion: productFeatures.occasion,
@@ -226,10 +228,10 @@ export class MultilingualDescriptionGenerator {
     return {
       short: shortDescription,
       long: longDescription,
-      keywords,
+      keywords: allKeywords,
       category: productFeatures.category,
       colors: productFeatures.colors,
-      condition: productFeatures.condition,
+      condition: productFeatures.condition || 'good',
       priceSuggestion,
       ratingSuggestion,
     };
@@ -243,7 +245,7 @@ export class MultilingualDescriptionGenerator {
     templates: any,
     language: LanguageCode
   ): string {
-    const condition = productFeatures.condition;
+    const condition = productFeatures.condition || 'good';
     const template = templates.short[condition] || templates.short.good;
     
     return this.replaceTemplateVariables(template, productFeatures, language);
@@ -257,7 +259,7 @@ export class MultilingualDescriptionGenerator {
     templates: any,
     language: LanguageCode
   ): string {
-    const condition = productFeatures.condition;
+    const condition = productFeatures.condition || 'good';
     let template = templates.long[condition] || templates.long.good;
 
     let description = this.replaceTemplateVariables(template, productFeatures, language);
@@ -356,8 +358,8 @@ export class MultilingualDescriptionGenerator {
       'good': ['good condition', 'functional', 'reliable'],
       'fair': ['affordable', 'budget', 'value'],
     };
-    
-    customKeywords.push(...(conditionKeywords[productFeatures.condition] || []));
+
+    customKeywords.push(...(conditionKeywords[productFeatures.condition || 'good'] || []));
 
     // Combine and deduplicate keywords
     const allKeywords = [...baseKeywords, ...customKeywords];
@@ -382,7 +384,7 @@ export class MultilingualDescriptionGenerator {
     result = result.replace(/\{\{material\}\}/g, material);
 
     // Replace {{condition}} with condition description
-    const conditionDesc = this.getConditionDescription(productFeatures.condition, language);
+    const conditionDesc = this.getConditionDescription(productFeatures.condition || 'good', language);
     result = result.replace(/\{\{condition\}\}/g, conditionDesc);
 
     // Replace {{occasion}} with occasion or fallback
@@ -538,6 +540,36 @@ export class MultilingualDescriptionGenerator {
     }
 
     return enhanced;
+  }
+
+  /**
+   * Extract keywords from description text
+   */
+  private extractKeywordsFromText(text: string): string[] {
+    // Common English and Icelandic stop words to filter out
+    const stopWords = new Set([
+      'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 
+      'of', 'with', 'by', 'from', 'as', 'is', 'was', 'are', 'were', 'been',
+      'be', 'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could',
+      'should', 'may', 'might', 'must', 'shall', 'can', 'this', 'that', 'these',
+      'those', 'it', 'its', 'they', 'them', 'their', 'we', 'us', 'our', 'you',
+      'your', 'he', 'she', 'his', 'her', 'who', 'which', 'what', 'when', 'where',
+      'why', 'how', 'all', 'each', 'every', 'both', 'few', 'more', 'most', 'other',
+      'some', 'such', 'no', 'nor', 'not', 'only', 'own', 'same', 'so', 'than',
+      'too', 'very', 'just', 'also', 'now', 'here', 'there', 'then', 'once',
+      'þetta', 'þessu', 'þessar', 'þessara', 'og', 'eða', 'en', 'í', 'á', 'af',
+      'með', 'fyrir', 'um', 'er', 'var', 'vera', 'hefur', 'hafa', 'varð', 'verið',
+      'þetta', 'þessi', 'sá', 'þeir', 'þær', 'það', 'sem'
+    ]);
+
+    // Extract words from text
+    const words = text
+      .toLowerCase()
+      .replace(/[^a-záðéýúíóþæöðø\s]/g, ' ')
+      .split(/\s+/)
+      .filter(word => word.length > 2 && !stopWords.has(word));
+
+    return [...new Set(words)];
   }
 
   /**

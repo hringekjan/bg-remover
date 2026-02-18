@@ -10,6 +10,7 @@
  * - Background (5%): Color histogram
  */
 
+import { RekognitionClient, DetectLabelsCommand, DetectLabelsCommandInput } from '@aws-sdk/client-rekognition';
 import { ImageFeatureExtractor, ImageFeatures } from '../utils/ImageFeatureExtractor';
 import type {
   ProductIdentitySettings,
@@ -28,10 +29,14 @@ interface ProductImage {
 export class ProductIdentityService {
   private extractor: ImageFeatureExtractor;
   private settings: ProductIdentitySettings;
+  private rekognition: RekognitionClient;
 
   constructor(settings: ProductIdentitySettings) {
     this.extractor = new ImageFeatureExtractor();
     this.settings = settings;
+    this.rekognition = new RekognitionClient({
+      region: process.env.AWS_REGION || 'eu-west-1',
+    });
   }
 
   /**
@@ -294,20 +299,264 @@ export class ProductIdentityService {
   }
 
   /**
-   * Semantic similarity using AWS Rekognition (mocked for now)
+   * Semantic similarity using AWS Rekognition DetectLabels API
+   *
+   * @param urlA - URL of first image
+   * @param urlB - URL of second image
+   * @returns Similarity score (0-1) based on label and brand overlap
    */
   private async calculateSemanticSimilarity(
     urlA: string,
     urlB: string
   ): Promise<number> {
-    // TODO: Integrate actual AWS Rekognition DetectLabels API
-    // For now, return neutral score
-    // In production, this would:
-    // 1. Call AWS Rekognition DetectLabels for both images
-    // 2. Extract label sets with confidence scores
-    // 3. Calculate Jaccard similarity of label sets
-    // 4. Weight by confidence scores
-    return 0.5;
+    if (!this.settings.useRekognition) {
+      return 0.5; // Neutral score when disabled
+    }
+
+    try {
+      const config = this.settings.rekognitionConfig || { minConfidence: 50, maxLabels: 20 };
+
+      // Fetch image bytes from URLs
+      const [imageA, imageB] = await Promise.all([
+        this.fetchImageBytes(urlA),
+        this.fetchImageBytes(urlB),
+      ]);
+
+      // Call Rekognition DetectLabels and brand detection for both images
+      const [labelsA, labelsB, brandsA, brandsB] = await Promise.all([
+        this.detectLabels(imageA, config),
+        this.detectLabels(imageB, config),
+        this.detectBrands(imageA, config),
+        this.detectBrands(imageB, config),
+      ]);
+
+      // Calculate label similarity
+      const labelSimilarity = this.calculateLabelSimilarity(labelsA, labelsB);
+
+      // Calculate brand similarity (higher weight for brand match)
+      const brandSimilarity = this.calculateBrandSimilarity(brandsA, brandsB);
+
+      // Combine similarities: 70% label + 30% brand
+      const combinedSimilarity = 0.7 * labelSimilarity + 0.3 * brandSimilarity;
+
+      console.log('[ProductIdentity] Rekognition similarity calculated', {
+        urlA: urlA.substring(0, 50) + '...',
+        urlB: urlB.substring(0, 50) + '...',
+        labelsACount: labelsA.length,
+        labelsBCount: labelsB.length,
+        brandsACount: brandsA.length,
+        brandsBCount: brandsB.length,
+        brandMatch: brandSimilarity === 1.0,
+        similarity: combinedSimilarity.toFixed(3),
+      });
+
+      return combinedSimilarity;
+    } catch (error) {
+      console.error('[ProductIdentity] Rekognition error:', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return 0.5; // Fallback to neutral score on error
+    }
+  }
+
+  /**
+   * Fetch image bytes from URL with timeout
+   */
+  private async fetchImageBytes(url: string): Promise<Uint8Array> {
+    const controller = new AbortController();
+    const timeoutMs = 5000;
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+    try {
+      const response = await fetch(url, { signal: controller.signal });
+      if (!response.ok) {
+        throw new Error(`Failed to fetch image: ${response.status} ${response.statusText}`);
+      }
+      const arrayBuffer = await response.arrayBuffer();
+      return new Uint8Array(arrayBuffer);
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  }
+
+  /**
+   * Detect labels in image using AWS Rekognition
+   */
+  private async detectLabels(
+    imageBytes: Uint8Array,
+    config: { minConfidence: number; maxLabels: number }
+  ): Promise<Array<{ name: string; confidence: number }>> {
+    const input: DetectLabelsCommandInput = {
+      Image: {
+        Bytes: imageBytes,
+      },
+      MaxLabels: config.maxLabels,
+      MinConfidence: config.minConfidence,
+      Features: ['GENERAL_LABELS'],
+      Settings: {
+        GeneralLabels: {
+          LabelInclusionFilters: [],
+          LabelExclusionFilters: [],
+          LabelCategoryInclusionFilters: [],
+          LabelCategoryExclusionFilters: [],
+        },
+      },
+    };
+
+    const command = new DetectLabelsCommand(input);
+    const response = await this.rekognition.send(command);
+
+    return (response.Labels || []).map(label => ({
+      name: label.Name || '',
+      confidence: label.Confidence || 0,
+    }));
+  }
+
+  /**
+   * Detect brands in image using AWS Rekognition
+   * Extracts brand names from label hierarchy (parent labels)
+   */
+  private async detectBrands(
+    imageBytes: Uint8Array,
+    config: { minConfidence: number; maxLabels: number }
+  ): Promise<Array<{ name: string; confidence: number }>> {
+    const input: DetectLabelsCommandInput = {
+      Image: {
+        Bytes: imageBytes,
+      },
+      MaxLabels: config.maxLabels,
+      MinConfidence: config.minConfidence,
+      Features: ['GENERAL_LABELS'],
+    };
+
+    const command = new DetectLabelsCommand(input);
+    const response = await this.rekognition.send(command);
+
+    // Extract brands from label hierarchy
+    const brands: Array<{ name: string; confidence: number }> = [];
+    const seenBrands = new Set<string>();
+
+    for (const label of response.Labels || []) {
+      const name = label.Name || '';
+      const lowerName = name.toLowerCase();
+
+      if (seenBrands.has(lowerName)) continue;
+
+      // Check if label has 'Brand' category
+      const isBrand = (label.Categories || []).some(
+        cat => cat.Name?.toLowerCase().includes('brand')
+      );
+
+      // Detect potential brands by name patterns and high confidence
+      const potentialBrand =
+        name.length > 2 &&
+        !lowerName.includes('product') &&
+        !lowerName.includes('electronics') &&
+        !lowerName.includes('clothing') &&
+        !lowerName.includes('food') &&
+        !lowerName.includes('animal') &&
+        !lowerName.includes('plant') &&
+        label.Confidence && label.Confidence > 70;
+
+      if (isBrand || potentialBrand) {
+        seenBrands.add(lowerName);
+        brands.push({
+          name: name,
+          confidence: label.Confidence || 0,
+        });
+      }
+
+      // Check parent labels for brand names
+      for (const parent of label.Parents || []) {
+        const parentName = parent.Name || '';
+        const lowerParent = parentName.toLowerCase();
+
+        if (seenBrands.has(lowerParent)) continue;
+
+        if (label.Confidence && label.Confidence > 80) {
+          seenBrands.add(lowerParent);
+          brands.push({
+            name: parentName,
+            confidence: label.Confidence,
+          });
+        }
+      }
+    }
+
+    return brands;
+  }
+
+  /**
+   * Calculate brand similarity between two image brand sets
+   * Returns 1.0 if both images have the same brand, 0.5 otherwise
+   */
+  private calculateBrandSimilarity(
+    brandsA: Array<{ name: string; confidence: number }>,
+    brandsB: Array<{ name: string; confidence: number }>
+  ): number {
+    if (brandsA.length === 0 || brandsB.length === 0) {
+      return 0.5;
+    }
+
+    const brandNamesA = new Set(brandsA.map((b: { name: string }) => b.name.toLowerCase()));
+    const brandNamesB = new Set(brandsB.map((b: { name: string }) => b.name.toLowerCase()));
+
+    const hasMatch = [...brandNamesA].some(brand => brandNamesB.has(brand));
+    return hasMatch ? 1.0 : 0.5;
+  }
+
+  /**
+   * Calculate similarity between two label sets using weighted Jaccard index
+   */
+  private calculateLabelSimilarity(
+    labelsA: Array<{ name: string; confidence: number }>,
+    labelsB: Array<{ name: string; confidence: number }>
+  ): number {
+    if (labelsA.length === 0 || labelsB.length === 0) {
+      return 0.5; // Neutral score if no labels detected
+    }
+
+    // Create maps for efficient lookup
+    const mapA = new Map(labelsA.map(l => [l.name.toLowerCase(), l.confidence]));
+    const mapB = new Map(labelsB.map(l => [l.name.toLowerCase(), l.confidence]));
+
+    // Find intersection and union
+    const intersection = new Set<string>();
+    const union = new Set<string>();
+
+    for (const name of mapA.keys()) {
+      union.add(name);
+      if (mapB.has(name)) {
+        intersection.add(name);
+      }
+    }
+
+    for (const name of mapB.keys()) {
+      union.add(name);
+    }
+
+    if (union.size === 0) {
+      return 0.5;
+    }
+
+    // Calculate weighted Jaccard similarity
+    let intersectionWeight = 0;
+    let unionWeight = 0;
+
+    for (const name of union) {
+      const weightA = mapA.get(name)?.valueOf() || 0;
+      const weightB = mapB.get(name)?.valueOf() || 0;
+      const maxWeight = Math.max(weightA, weightB);
+
+      unionWeight += maxWeight;
+
+      if (intersection.has(name)) {
+        const minWeight = Math.min(weightA, weightB);
+        intersectionWeight += minWeight;
+      }
+    }
+
+    return unionWeight > 0 ? intersectionWeight / unionWeight : 0.5;
   }
 
   /**

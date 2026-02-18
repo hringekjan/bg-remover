@@ -55,7 +55,7 @@
     "next": "^15.5.7",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "serverless": "^4.31.2",
+    "serverless": "^4.32.0",
     "zod": "^3.23.8"
   },
   "devDependencies": {
@@ -63,6 +63,7 @@
     "@carousellabs/serverless-ssm-json-env": "^0.1.50",
     "@next/swc-darwin-arm64": "^15.5.7",
     "@playwright/test": "^1.57.0",
+    "@types/aws-lambda": "^8.10.145",
     "@types/jest": "^29.5.0",
     "@types/node": "^22.9.0",
     "@types/react": "18.3.27",

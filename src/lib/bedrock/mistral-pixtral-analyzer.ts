@@ -28,6 +28,42 @@ export interface MistralPixtralAnalysisResult {
   short_is: string;
   long_is: string;
   stylingTip_is?: string;
+
+  // AI confidence scores for each extracted attribute
+  aiConfidence?: {
+    brand?: number;
+    size?: number;
+    material?: number;
+    condition: number;
+    colors: number;
+    category: number;
+    overall: number;
+  };
+
+  // Pricing intelligence hints from AI visual analysis
+  pricingHints?: {
+    rarity: 'common' | 'uncommon' | 'rare' | 'vintage';
+    craftsmanship: 'poor' | 'fair' | 'good' | 'excellent';
+    marketDemand: 'low' | 'medium' | 'high';
+    estimatedAgeYears?: number;
+    brandTier?: 'premium' | 'luxury' | 'designer' | 'mass-market' | 'unknown';
+  };
+
+  // Quality assessment hints from AI visual analysis
+  qualityHints?: {
+    materialQuality: 'poor' | 'fair' | 'good' | 'excellent';
+    constructionQuality: 'poor' | 'fair' | 'good' | 'excellent';
+    authenticity: 'questionable' | 'likely' | 'confirmed';
+    visibleDefects: string[];
+    wearPattern: 'minimal' | 'light' | 'moderate' | 'heavy';
+  };
+
+  // Additional extracted attributes (replacing regex-based extraction)
+  pattern?: string;  // striped, solid, floral, plaid, geometric, etc.
+  style?: string[];  // casual, formal, elegant, sporty, vintage, etc.
+  season?: 'spring' | 'summer' | 'fall' | 'winter' | 'all-season';
+  occasion?: string[];  // work, party, casual, formal, athletic, etc.
+  careInstructions?: string[];  // machine wash, dry clean, hand wash, etc.
 }
 
 /**
@@ -138,7 +174,35 @@ Create premium marketing content in English:
 Translate the same content naturally to Icelandic:
 - Elegant product name in Icelandic
 - Same 3-sentence description in natural Icelandic (not literal translation)
-- Same styling tip in Icelandic`;
+- Same styling tip in Icelandic
+
+**TASK 5: COMPREHENSIVE ATTRIBUTE EXTRACTION WITH CONFIDENCE SCORES**
+For each attribute below, provide assessment WITH confidence score (0.0-1.0):
+
+5.1 **Additional Attributes (AI-native extraction, no hardcoding):**
+- Pattern: striped, solid, floral, plaid, geometric, animal print, checkered, polka dot, etc. (null if no clear pattern)
+- Style: casual, formal, elegant, sporty, vintage, bohemian, minimalist, preppy, etc. (array, can be multiple)
+- Season: spring, summer, fall, winter, or all-season
+- Occasion: work, party, casual, formal, athletic, evening, beach, etc. (array, can be multiple)
+- Care Instructions: visible on care labels (e.g., "machine wash cold", "dry clean only", "hand wash", "line dry", etc.)
+
+5.2 **Pricing Intelligence Hints (for market positioning):**
+Analyze visual indicators to help with pricing:
+- Rarity: common (mass-produced), uncommon (limited production), rare (hard to find), vintage (20+ years old)
+- Craftsmanship: poor (mass-produced low quality), fair (standard), good (well-made), excellent (artisan/handmade)
+- Market Demand: low, medium, high (based on desirability, trend relevance, brand popularity from visual cues)
+- Estimated Age: approximate age in years if determinable from wear/style (e.g., 2, 5, 15, null if unsure)
+- Brand Tier: premium (Hermès, Chanel, Louis Vuitton), luxury (Armani, Versace, Gucci), designer (Zara, Mango, COS), mass-market (H&M, Uniqlo, Forever 21), unknown
+
+5.3 **Quality Assessment Hints (visual quality indicators):**
+Evaluate based on what you can SEE in the image:
+- Material Quality: poor, fair, good, excellent (visual appearance, texture, finish)
+- Construction Quality: poor, fair, good, excellent (stitching, seams, finishing, durability indicators)
+- Authenticity: questionable (possible counterfeit signs), likely (appears genuine), confirmed (verified markers visible)
+- Visible Defects: list ANY visible damage, stains, tears, wear spots, fading, pilling, loose threads, etc. (empty array if none)
+- Wear Pattern: minimal (like new), light (barely worn), moderate (normal use signs), heavy (significant wear)
+
+**CRITICAL:** Base ALL assessments on VISUAL EVIDENCE from the image only. Do not speculate beyond what is visible.`;
 
   const requestBody = {
     messages: [{
@@ -170,7 +234,35 @@ Return ONLY valid JSON (no markdown, no explanation, no code blocks):
   "stylingTip_en": "Styling tip in English.",
   "short_is": "Elegant Icelandic Name",
   "long_is": "Þrjár setningar á íslensku um gæði og sjálfbærni.",
-  "stylingTip_is": "Stílráð á íslensku."
+  "stylingTip_is": "Stílráð á íslensku.",
+  "aiConfidence": {
+    "brand": 0.9,
+    "size": 0.8,
+    "material": 0.95,
+    "condition": 0.85,
+    "colors": 0.9,
+    "category": 0.92,
+    "overall": 0.88
+  },
+  "pattern": "striped or null",
+  "style": ["casual", "summer"],
+  "season": "summer or all-season",
+  "occasion": ["casual", "work"],
+  "careInstructions": ["machine wash cold", "line dry"],
+  "pricingHints": {
+    "rarity": "common",
+    "craftsmanship": "good",
+    "marketDemand": "medium",
+    "estimatedAgeYears": 2,
+    "brandTier": "designer"
+  },
+  "qualityHints": {
+    "materialQuality": "good",
+    "constructionQuality": "good",
+    "authenticity": "likely",
+    "visibleDefects": [],
+    "wearPattern": "light"
+  }
 }`
         }
       ]
@@ -234,6 +326,39 @@ Return ONLY valid JSON (no markdown, no explanation, no code blocks):
     result.condition = 'very_good';
   }
 
+  // Ensure aiConfidence has defaults
+  if (!result.aiConfidence) {
+    result.aiConfidence = {
+      brand: result.brand ? 0.7 : 0.0,
+      size: result.size ? 0.7 : 0.0,
+      material: result.material ? 0.7 : 0.0,
+      condition: 0.8,
+      colors: result.colors?.length > 0 ? 0.8 : 0.5,
+      category: 0.8,
+      overall: 0.75
+    };
+  }
+
+  // Set defaults for pricing hints if missing
+  if (!result.pricingHints) {
+    result.pricingHints = {
+      rarity: 'common',
+      craftsmanship: 'fair',
+      marketDemand: 'medium'
+    };
+  }
+
+  // Set defaults for quality hints if missing
+  if (!result.qualityHints) {
+    result.qualityHints = {
+      materialQuality: 'fair',
+      constructionQuality: 'fair',
+      authenticity: 'likely',
+      visibleDefects: [],
+      wearPattern: 'light'
+    };
+  }
+
   console.log('Mistral Pixtral Large analysis complete:', {
     brand: result.brand || 'not detected',
     size: result.size || 'not detected',
@@ -242,7 +367,11 @@ Return ONLY valid JSON (no markdown, no explanation, no code blocks):
     category: result.category,
     approved: result.approved,
     hasEnglish: !!result.short_en,
-    hasIcelandic: !!result.short_is
+    hasIcelandic: !!result.short_is,
+    hasPattern: !!result.pattern,
+    hasStyle: result.style?.length > 0,
+    hasPricingHints: !!result.pricingHints,
+    hasQualityHints: !!result.qualityHints
   });
 
   return {
@@ -260,6 +389,18 @@ Return ONLY valid JSON (no markdown, no explanation, no code blocks):
     stylingTip_en: result.stylingTip_en || undefined,
     short_is: result.short_is,
     long_is: result.long_is,
-    stylingTip_is: result.stylingTip_is || undefined
+    stylingTip_is: result.stylingTip_is || undefined,
+    // AI confidence scores
+    aiConfidence: result.aiConfidence,
+    // Additional extracted attributes
+    pattern: (result.pattern === "null" || !result.pattern) ? undefined : result.pattern,
+    style: Array.isArray(result.style) ? result.style : undefined,
+    season: result.season || undefined,
+    occasion: Array.isArray(result.occasion) ? result.occasion : undefined,
+    careInstructions: Array.isArray(result.careInstructions) ? result.careInstructions : undefined,
+    // Pricing intelligence hints
+    pricingHints: result.pricingHints,
+    // Quality assessment hints
+    qualityHints: result.qualityHints
   };
 }

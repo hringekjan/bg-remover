@@ -10,6 +10,8 @@
  * - Defect detection
  * - Pricing multiplier generation (0.75-1.15)
  * - Error handling with graceful degradation
+ * - Circuit breaker pattern for resilience
+ * - Externalized configuration
  *
  * Cost: $0.000096 per request
  * Latency: <1s per image
@@ -19,7 +21,85 @@ import {
   BedrockRuntimeClient,
   InvokeModelCommand,
 } from '@aws-sdk/client-bedrock-runtime';
+import { Logger } from '@aws-lambda-powertools/logger';
 import { z } from 'zod';
+
+/**
+ * Configuration interface for vision analysis service
+ */
+export interface VisionAnalysisConfig {
+  region: string;
+  timeout: number;
+  maxResponseSize: number;
+  simpleCategories: string[];
+  complexCategories: string[];
+  defaultModel: string;
+  novaMicroModel: string;
+  novaLiteModel: string;
+  titanEmbedModel: string;
+  circuitBreaker: {
+    failureThreshold: number;
+    successThreshold: number;
+    timeout: number;
+  };
+}
+
+/**
+ * Default configuration values
+ */
+const DEFAULT_CONFIG: VisionAnalysisConfig = {
+  region: 'us-east-1',
+  timeout: 10000,
+  maxResponseSize: 10 * 1024, // 10KB
+  simpleCategories: [
+    'electronics', 'computers', 'phones', 'tablets',
+    'books', 'media', 'video games', 'accessories',
+    'office supplies', 'cables', 'chargers'
+  ],
+  complexCategories: [
+    'clothing', 'shoes', 'furniture', 'home decor',
+    'jewelry', 'art', 'antiques', 'collectibles'
+  ],
+  defaultModel: 'us.amazon.nova-lite-v1:0',
+  novaMicroModel: 'amazon.nova-micro-v1:0',
+  novaLiteModel: 'us.amazon.nova-lite-v1:0',
+  titanEmbedModel: 'amazon.titan-embed-image-v1',
+  circuitBreaker: {
+    failureThreshold: 5,
+    successThreshold: 2,
+    timeout: 30000, // 30 seconds
+  },
+};
+
+/**
+ * Load configuration from environment or use defaults
+ */
+function loadConfig(): VisionAnalysisConfig {
+  return {
+    region: process.env.AWS_REGION || process.env.BEDROCK_REGION || DEFAULT_CONFIG.region,
+    timeout: parseInt(process.env.VISION_TIMEOUT_MS || '') || DEFAULT_CONFIG.timeout,
+    maxResponseSize: parseInt(process.env.VISION_MAX_RESPONSE_SIZE || '') || DEFAULT_CONFIG.maxResponseSize,
+    simpleCategories: parseEnvArray(process.env.VISION_SIMPLE_CATEGORIES) || DEFAULT_CONFIG.simpleCategories,
+    complexCategories: parseEnvArray(process.env.VISION_COMPLEX_CATEGORIES) || DEFAULT_CONFIG.complexCategories,
+    defaultModel: process.env.VISION_DEFAULT_MODEL || DEFAULT_CONFIG.defaultModel,
+    novaMicroModel: process.env.VISION_NOVA_MICRO_MODEL || DEFAULT_CONFIG.novaMicroModel,
+    novaLiteModel: process.env.VISION_NOVA_LITE_MODEL || DEFAULT_CONFIG.novaLiteModel,
+    titanEmbedModel: process.env.VISION_TITAN_MODEL || DEFAULT_CONFIG.titanEmbedModel,
+    circuitBreaker: {
+      failureThreshold: parseInt(process.env.CIRCUIT_BREAKER_FAILURE_THRESHOLD || '') || DEFAULT_CONFIG.circuitBreaker.failureThreshold,
+      successThreshold: parseInt(process.env.CIRCUIT_BREAKER_SUCCESS_THRESHOLD || '') || DEFAULT_CONFIG.circuitBreaker.successThreshold,
+      timeout: parseInt(process.env.CIRCUIT_BREAKER_TIMEOUT || '') || DEFAULT_CONFIG.circuitBreaker.timeout,
+    },
+  };
+}
+
+/**
+ * Parse comma-separated environment variable into array
+ */
+function parseEnvArray(value: string | undefined): string[] | undefined {
+  if (!value) return undefined;
+  return value.split(',').map(s => s.trim()).filter(s => s.length > 0);
+}
 
 /**
  * Visual quality assessment result
@@ -54,6 +134,72 @@ export type ImageMediaType = 'image/jpeg' | 'image/png' | 'image/webp';
 export interface ImageInput {
   base64: string;
   mediaType: ImageMediaType;
+}
+
+/**
+ * Circuit breaker state
+ */
+enum CircuitState {
+  CLOSED = 'CLOSED',
+  OPEN = 'OPEN',
+  HALF_OPEN = 'HALF_OPEN',
+}
+
+/**
+ * Simple circuit breaker implementation
+ */
+class CircuitBreaker {
+  private state: CircuitState = CircuitState.CLOSED;
+  private failureCount: number = 0;
+  private successCount: number = 0;
+  private lastFailureTime: number = 0;
+
+  constructor(private readonly config: VisionAnalysisConfig['circuitBreaker']) {}
+
+  /**
+   * Execute function with circuit breaker protection
+   */
+  async execute<T>(fn: () => Promise<T>): Promise<T> {
+    if (this.state === CircuitState.OPEN) {
+      if (Date.now() - this.lastFailureTime > this.config.timeout) {
+        this.state = CircuitState.HALF_OPEN;
+        this.successCount = 0;
+      } else {
+        throw new Error('Circuit breaker is OPEN');
+      }
+    }
+
+    try {
+      const result = await fn();
+      this.onSuccess();
+      return result;
+    } catch (error) {
+      this.onFailure();
+      throw error;
+    }
+  }
+
+  private onSuccess(): void {
+    this.failureCount = 0;
+    if (this.state === CircuitState.HALF_OPEN) {
+      this.successCount++;
+      if (this.successCount >= this.config.successThreshold) {
+        this.state = CircuitState.CLOSED;
+      }
+    }
+  }
+
+  private onFailure(): void {
+    this.failureCount++;
+    this.lastFailureTime = Date.now();
+    if (this.failureCount >= this.config.failureThreshold) {
+      this.state = CircuitState.OPEN;
+    }
+  }
+
+  getState(): string {
+    return this.state;
+  }
 }
 
 /**
@@ -141,74 +287,97 @@ function detectImageFormat(base64: string): ImageMediaType {
 }
 
 /**
+ * Multiplier configuration for assessment levels
+ */
+const MULTIPLIERS: Record<'excellent' | 'good' | 'fair' | 'poor', number> = {
+  excellent: 1.15,
+  good: 1.0,
+  fair: 0.9,
+  poor: 0.75,
+};
+
+/**
  * VisionAnalysisService - Bedrock Nova Lite for visual quality assessment
  */
 export class VisionAnalysisService {
-  private bedrock: BedrockRuntimeClient;
-  private region: string;
-  private readonly requestTimeout: number;
-  private readonly maxResponseSize: number = 10 * 1024; // 10KB
+  private readonly config: VisionAnalysisConfig;
+  private readonly logger: Logger;
+  private readonly circuitBreaker: CircuitBreaker;
 
   /**
    * Initialize vision analysis service with configurable timeout
-   *
-   * @param options - Configuration options
-   * @param options.region - AWS region (default: us-east-1)
-   * @param options.timeout - Request timeout in milliseconds (default: 10000)
    */
   constructor(
-    options: { region?: string; timeout?: number } = {}
+    options: { config?: Partial<VisionAnalysisConfig>; logger?: Logger } = {}
   ) {
-    this.region = options.region || 'us-east-1';
-    this.requestTimeout = options.timeout || 10000; // 10 seconds default
+    this.config = { ...DEFAULT_CONFIG, ...options.config, circuitBreaker: { ...DEFAULT_CONFIG.circuitBreaker, ...options.config?.circuitBreaker } };
+    this.logger = options.logger || new Logger({ serviceName: 'vision-analysis' });
+    this.circuitBreaker = new CircuitBreaker(this.config.circuitBreaker);
 
-    this.bedrock = new BedrockRuntimeClient({
-      region: this.region,
+    const bedrock = new BedrockRuntimeClient({
+      region: this.config.region,
       requestHandler: {
-        requestTimeout: this.requestTimeout,
+        requestTimeout: this.config.timeout,
       },
       maxAttempts: 3,
       retryMode: 'adaptive',
     });
 
-    console.log('[VisionAnalysis] Initialized', {
-      region: this.region,
-      timeout: `${this.requestTimeout}ms`,
+    // Use Object.defineProperty to make bedrock private but accessible
+    Object.defineProperty(this, 'bedrock', { value: bedrock, writable: true, configurable: true });
+
+    this.logger.info('VisionAnalysisService initialized', {
+      region: this.config.region,
+      timeout: `${this.config.timeout}ms`,
+      circuitBreaker: this.config.circuitBreaker,
     });
+  }
+
+  /**
+   * Get Bedrock client (for testing)
+   */
+  protected getBedrockClient(): BedrockRuntimeClient {
+    return (this as any).bedrock as BedrockRuntimeClient;
   }
 
   /**
    * Select optimal Bedrock model based on product context for cost optimization
    *
-   * Current strategy: Use Nova Lite for all products (balanced cost/performance)
-   * Future enhancement: Cost-based routing when Nova Micro becomes available
-   *
-   * Cost-based routing strategy (when implemented):
-   * - Nova Micro: 15% cheaper than Lite, suitable for simple goods
+   * Cost-based routing strategy:
+   * - Nova Micro: 15% cheaper than Lite, suitable for simple goods (electronics, books, etc.)
    * - Nova Lite: Default choice for most products (balanced cost/performance)
-   * - Nova Pro: Only when complex analysis is absolutely needed
-   *
-   * @param context - Product context for model selection
-   * @returns Selected model ID
    */
-  private selectBedrockModel(context?: ProductContext): string {
-    // Currently using Nova Lite for all products
-    // TODO: Implement cost-based routing when Nova Micro becomes available
-    // if (context?.category?.toLowerCase().includes('simple') ||
-    //     context?.category?.toLowerCase().includes('basic') ||
-    //     context?.category?.toLowerCase().includes('generic')) {
-    //   return 'amazon.nova-micro-v1:0'; // 15% cost savings
-    // }
+  protected selectBedrockModel(context?: ProductContext): string {
+    if (context?.category) {
+      const category = context.category.toLowerCase();
 
-    return 'us.amazon.nova-lite-v1:0';
+      // Simple goods: Use Nova Micro for cost savings
+      if (this.config.simpleCategories.some(cat => category.includes(cat))) {
+        this.logger.info('Using Nova Micro for simple category', {
+          category,
+          costSavings: '~15%'
+        });
+        return this.config.novaMicroModel;
+      }
+
+      // Complex goods: Use Nova Lite for detailed analysis
+      if (this.config.complexCategories.some(cat => category.includes(cat))) {
+        this.logger.info('Using Nova Lite for complex category', {
+          category,
+          reason: 'Detailed condition assessment needed'
+        });
+        return this.config.novaLiteModel;
+      }
+    }
+
+    // Default: Use Nova Lite for balanced cost/performance
+    return this.config.defaultModel;
   }
 
   /**
    * Returns default assessment for error cases
-   *
-   * @returns Neutral assessment with no multiplier adjustment
    */
-  private getDefaultAssessment(): VisualQualityAssessment {
+  protected getDefaultAssessment(): VisualQualityAssessment {
     return {
       conditionScore: 5,
       photoQualityScore: 5,
@@ -221,163 +390,9 @@ export class VisionAnalysisService {
   }
 
   /**
-   * Assess visual quality using Bedrock Nova Lite
-   *
-   * Analyzes product image for condition, defects, and photo quality,
-   * returning a pricing multiplier for use in price suggestions.
-   *
-   * @param imageInput - Image input with base64 and media type, or plain base64 string
-   * @param context - Optional product context
-   * @returns Quality assessment with pricing multiplier
-   * @throws Error if image validation fails (validation handled in try-catch)
-   */
-  async assessVisualQuality(
-    imageInput: ImageInput | string,
-    context?: ProductContext
-  ): Promise<VisualQualityAssessment> {
-    const startTime = Date.now();
-
-    try {
-      // Handle both legacy string input and new ImageInput interface
-      let base64: string;
-      let mediaType: ImageMediaType;
-
-      if (typeof imageInput === 'string') {
-        // Legacy support: validate and auto-detect format
-        base64 = imageInput;
-        validateBase64Image(base64);
-        mediaType = detectImageFormat(base64);
-      } else {
-        // New ImageInput interface
-        base64 = imageInput.base64;
-        mediaType = imageInput.mediaType;
-        validateBase64Image(base64);
-      }
-
-      const prompt = this.buildPrompt(context);
-      const selectedModel = this.selectBedrockModel(context);
-
-      const response = await this.bedrock.send(
-        new InvokeModelCommand({
-          modelId: selectedModel,
-          contentType: 'application/json',
-          accept: 'application/json',
-          body: JSON.stringify({
-            messages: [
-              {
-                role: 'user',
-                content: [
-                  {
-                    type: 'image',
-                    source: {
-                      type: 'base64',
-                      media_type: mediaType,
-                      data: base64,
-                    },
-                  },
-                  {
-                    type: 'text',
-                    text: prompt,
-                  },
-                ],
-              },
-            ],
-            inferenceConfig: {
-              maxTokens: 500,
-              temperature: 0.3, // Low temperature for consistent scoring
-              topP: 0.9,
-            },
-          }),
-        })
-      );
-
-      // Validate response body exists
-      if (!response.body) {
-        throw new Error('Empty response body from Bedrock');
-      }
-
-      // Read and validate response size before parsing
-      const bodyString = await new Response(response.body as any).text();
-
-      if (bodyString.length > this.maxResponseSize) {
-        console.error('[VisionAnalysis] Response too large', {
-          size: bodyString.length,
-          maxSize: this.maxResponseSize,
-        });
-        return this.getDefaultAssessment();
-      }
-
-      // Parse outer response envelope
-      let result: any;
-      try {
-        result = JSON.parse(bodyString);
-      } catch (e) {
-        throw new Error('Failed to parse Bedrock response envelope');
-      }
-
-      // Extract assessment JSON from response content
-      const responseText =
-        result.output?.message?.content?.[0]?.text ||
-        result.content?.[0]?.text ||
-        '';
-
-      if (!responseText) {
-        throw new Error('No assessment text in Bedrock response');
-      }
-
-      // Parse assessment JSON
-      let rawAssessment: any;
-      try {
-        rawAssessment = JSON.parse(responseText);
-      } catch (e) {
-        throw new Error('Failed to parse assessment JSON from Bedrock');
-      }
-
-      // Validate assessment structure with Zod
-      const assessment = BedrockAssessmentSchema.parse(rawAssessment);
-
-      const duration = Date.now() - startTime;
-      console.log('[VisionAnalysis] Bedrock analysis completed', {
-        model: selectedModel,
-        duration,
-        conditionScore: assessment.conditionScore,
-        overallAssessment: assessment.overallAssessment,
-      });
-
-      // Convert assessment to multiplier
-      const multiplier = this.assessmentToMultiplier(assessment);
-
-      return {
-        conditionScore: assessment.conditionScore,
-        photoQualityScore: assessment.photoQualityScore,
-        visibleDefects: assessment.visibleDefects,
-        overallAssessment: assessment.overallAssessment,
-        pricingImpact: assessment.pricingImpact,
-        reasoning: assessment.reasoning,
-        multiplier,
-      };
-    } catch (error) {
-      const duration = Date.now() - startTime;
-      const errorMessage = error instanceof Error ? error.message : String(error);
-
-      console.error('[VisionAnalysis] Error:', {
-        error: errorMessage,
-        duration,
-        type: error instanceof Error ? error.constructor.name : 'unknown',
-      });
-
-      // Graceful degradation - return neutral assessment
-      return this.getDefaultAssessment();
-    }
-  }
-
-  /**
    * Build structured prompt for Nova Lite
-   *
-   * @param context - Optional product context
-   * @returns Formatted prompt string
    */
-  private buildPrompt(context?: ProductContext): string {
+  protected buildPrompt(context?: ProductContext): string {
     const contextInfo = context
       ? `\n\nProduct context:\n- Category: ${context.category || 'Unknown'}\n- Brand: ${context.brand || 'Unknown'}\n- Claimed condition: ${context.claimedCondition || 'Not specified'}`
       : '';
@@ -411,73 +426,139 @@ Return ONLY the JSON object, no additional text.`;
 
   /**
    * Convert assessment to pricing multiplier
-   *
-   * Maps overall assessment to a pricing multiplier with adjustment for photo quality.
-   * All input validation is completed by Zod schema parsing before this method is called.
-   *
-   * @param assessment - Validated assessment object from Nova Lite
-   * @returns Pricing multiplier (0.75-1.15)
    */
-  private assessmentToMultiplier(assessment: BedrockAssessment): number {
-    const multipliers: Record<
-      'excellent' | 'good' | 'fair' | 'poor',
-      number
-    > = {
-      excellent: 1.15, // 15% premium for exceptional condition
-      good: 1.0, // Standard pricing
-      fair: 0.9, // 10% discount for minor issues
-      poor: 0.75, // 25% discount for significant issues
-    };
-
-    const baseMultiplier = multipliers[assessment.overallAssessment];
-
-    // Adjust for photo quality (poor photos reduce confidence)
-    const photoAdjustment =
-      assessment.photoQualityScore < 5 ? 0.95 : 1.0;
-
+  protected assessmentToMultiplier(assessment: BedrockAssessment): number {
+    const baseMultiplier = MULTIPLIERS[assessment.overallAssessment];
+    const photoAdjustment = assessment.photoQualityScore < 5 ? 0.95 : 1.0;
     return baseMultiplier * photoAdjustment;
   }
 
   /**
+   * Assess visual quality using Bedrock Nova Lite
+   */
+  async assessVisualQuality(
+    imageInput: ImageInput | string,
+    context?: ProductContext
+  ): Promise<VisualQualityAssessment> {
+    const startTime = Date.now();
+
+    try {
+      // Handle both legacy string input and new ImageInput interface
+      let base64: string;
+      let mediaType: ImageMediaType;
+
+      if (typeof imageInput === 'string') {
+        base64 = imageInput;
+        validateBase64Image(base64);
+        mediaType = detectImageFormat(base64);
+      } else {
+        base64 = imageInput.base64;
+        mediaType = imageInput.mediaType;
+        validateBase64Image(base64);
+      }
+
+      const prompt = this.buildPrompt(context);
+      const selectedModel = this.selectBedrockModel(context);
+
+      const response = await this.circuitBreaker.execute(() =>
+        this.getBedrockClient().send(
+          new InvokeModelCommand({
+            modelId: selectedModel,
+            contentType: 'application/json',
+            accept: 'application/json',
+            body: JSON.stringify({
+              messages: [{
+                role: 'user',
+                content: [
+                  { type: 'image', source: { type: 'base64', media_type: mediaType, data: base64 } },
+                  { type: 'text', text: prompt },
+                ],
+              }],
+              inferenceConfig: { maxTokens: 500, temperature: 0.3, topP: 0.9 },
+            }),
+          })
+        )
+      );
+
+      if (!response.body) {
+        throw new Error('Empty response body from Bedrock');
+      }
+
+      const bodyString = await new Response(response.body as any).text();
+
+      if (bodyString.length > this.config.maxResponseSize) {
+        this.logger.warn('Response too large, using default assessment', {
+          size: bodyString.length,
+          maxSize: this.config.maxResponseSize,
+        });
+        return this.getDefaultAssessment();
+      }
+
+      const result = JSON.parse(bodyString);
+      const responseText = result.output?.message?.content?.[0]?.text || result.content?.[0]?.text || '';
+
+      if (!responseText) {
+        throw new Error('No assessment text in Bedrock response');
+      }
+
+      const rawAssessment = JSON.parse(responseText);
+      const assessment = BedrockAssessmentSchema.parse(rawAssessment);
+
+      const duration = Date.now() - startTime;
+      this.logger.info('Bedrock analysis completed', {
+        model: selectedModel,
+        duration,
+        conditionScore: assessment.conditionScore,
+        overallAssessment: assessment.overallAssessment,
+        circuitState: this.circuitBreaker.getState(),
+      });
+
+      const multiplier = this.assessmentToMultiplier(assessment);
+
+      return {
+        conditionScore: assessment.conditionScore,
+        photoQualityScore: assessment.photoQualityScore,
+        visibleDefects: assessment.visibleDefects,
+        overallAssessment: assessment.overallAssessment,
+        pricingImpact: assessment.pricingImpact,
+        reasoning: assessment.reasoning,
+        multiplier,
+      };
+    } catch (error) {
+      const duration = Date.now() - startTime;
+      const errorMessage = error instanceof Error ? error.message : String(error);
+
+      this.logger.error('Vision analysis error', {
+        error: errorMessage,
+        duration,
+        circuitState: this.circuitBreaker.getState(),
+      });
+
+      // Graceful degradation - return neutral assessment
+      return this.getDefaultAssessment();
+    }
+  }
+
+  /**
    * Batch assess multiple images
-   *
-   * Analyzes multiple product images and returns the worst-case assessment
-   * with averaged multipliers for conservative pricing.
-   *
-   * @param images - Array of base64 encoded images
-   * @param context - Optional product context
-   * @returns Combined quality assessment
    */
   async assessMultipleImages(
     images: string[],
     context?: ProductContext
   ): Promise<VisualQualityAssessment> {
     if (images.length === 0) {
-      return {
-        conditionScore: 5,
-        photoQualityScore: 5,
-        visibleDefects: [],
-        overallAssessment: 'good',
-        pricingImpact: 'neutral',
-        reasoning: 'No images provided for assessment',
-        multiplier: 1.0,
-      };
+      return this.getDefaultAssessment();
     }
 
-    // Assess all images in parallel
     const assessments = await Promise.all(
       images.map((img) => this.assessVisualQuality(img, context))
     );
 
-    // Take the worst-case assessment (most conservative pricing)
     const worstAssessment = assessments.reduce((worst, current) => {
       return current.conditionScore < worst.conditionScore ? current : worst;
     });
 
-    // Average the multipliers for final pricing impact
-    const avgMultiplier =
-      assessments.reduce((sum, a) => sum + a.multiplier, 0) /
-      assessments.length;
+    const avgMultiplier = assessments.reduce((sum, a) => sum + a.multiplier, 0) / assessments.length;
 
     return {
       ...worstAssessment,
@@ -488,90 +569,61 @@ Return ONLY the JSON object, no additional text.`;
 
   /**
    * Generate embedding for product image using Titan Embeddings
-   *
-   * Converts image to 1024-dimensional vector for visual similarity search.
-   * Uses amazon.titan-embed-image-v1 model for consistent embeddings.
-   *
-   * Cost: ~$0.00006 per request
-   * Latency: ~1-2 seconds per image
-   *
-   * @param imageInput - Image input with base64 and media type, or plain base64 string
-   * @returns 1024-dimensional embedding array
-   * @throws Error if image validation fails or Bedrock call fails
    */
-  async generateEmbedding(
-    imageInput: ImageInput | string
-  ): Promise<number[]> {
+  async generateEmbedding(imageInput: ImageInput | string): Promise<number[]> {
     const startTime = Date.now();
 
     try {
-      // Handle both legacy string input and new ImageInput interface
       let base64: string;
       let mediaType: ImageMediaType;
 
       if (typeof imageInput === 'string') {
-        // Legacy support: validate and auto-detect format
         base64 = imageInput;
         validateBase64Image(base64);
         mediaType = detectImageFormat(base64);
       } else {
-        // New ImageInput interface
         base64 = imageInput.base64;
         mediaType = imageInput.mediaType;
         validateBase64Image(base64);
       }
 
-      const response = await this.bedrock.send(
-        new InvokeModelCommand({
-          modelId: 'amazon.titan-embed-image-v1',
-          contentType: 'application/json',
-          accept: 'application/json',
-          body: JSON.stringify({
-            inputImage: base64,
-          }),
-        })
+      const response = await this.circuitBreaker.execute(() =>
+        this.getBedrockClient().send(
+          new InvokeModelCommand({
+            modelId: this.config.titanEmbedModel,
+            contentType: 'application/json',
+            accept: 'application/json',
+            body: JSON.stringify({ inputImage: base64 }),
+          })
+        )
       );
 
-      // Validate response body exists
       if (!response.body) {
         throw new Error('Empty response body from Bedrock Titan Embeddings');
       }
 
-      // Read response body
       const bodyString = await new Response(response.body as any).text();
-
-      // Parse response
-      let result: any;
-      try {
-        result = JSON.parse(bodyString);
-      } catch (e) {
-        throw new Error('Failed to parse Bedrock Titan response');
-      }
-
-      // Extract embedding from response
+      const result = JSON.parse(bodyString);
       const embedding: number[] = result.embedding;
 
       if (!Array.isArray(embedding)) {
         throw new Error('Response does not contain embedding array');
       }
 
-      // Validate embedding dimensions (must be exactly 1024)
       if (embedding.length !== 1024) {
-        throw new Error(
-          `Invalid embedding dimensions: expected 1024, got ${embedding.length}`
-        );
+        throw new Error(`Invalid embedding dimensions: expected 1024, got ${embedding.length}`);
       }
 
-      // Validate all elements are numbers
       if (!embedding.every((v) => typeof v === 'number')) {
         throw new Error('Embedding contains non-numeric values');
       }
 
       const duration = Date.now() - startTime;
-      console.log('[VisionAnalysis] Embedding generated', {
+      this.logger.info('Embedding generated', {
         duration,
         dimensions: embedding.length,
         magnitude: Math.sqrt(embedding.reduce((sum, v) => sum + v * v, 0)),
+        circuitState: this.circuitBreaker.getState(),
       });
 
       return embedding;
@@ -579,10 +631,9 @@ Return ONLY the JSON object, no additional text.`;
       const duration = Date.now() - startTime;
       const errorMessage = error instanceof Error ? error.message : String(error);
 
-      console.error('[VisionAnalysis] Embedding generation failed', {
+      this.logger.error('Embedding generation failed', {
         error: errorMessage,
         duration,
-        type: error instanceof Error ? error.constructor.name : 'unknown',
       });
 
       throw error;
@@ -591,41 +642,29 @@ Return ONLY the JSON object, no additional text.`;
 
   /**
    * Generate embeddings for multiple images in batch
-   *
-   * Processes multiple images in parallel for efficient batch operations.
-   *
-   * @param images - Array of image inputs (base64 strings or ImageInput objects)
-   * @returns Promise<Array<{image: ImageInput | string, embedding: number[], error?: string}>>
-   *   - Each result contains the original image input and either embedding or error
    */
   async generateBatchEmbeddings(
     images: (ImageInput | string)[]
-  ): Promise<
-    Array<{
-      image: ImageInput | string;
-      embedding?: number[];
-      error?: string;
-    }>
-  > {
+  ): Promise<Array<{ image: ImageInput | string; embedding?: number[]; error?: string }>> {
     const results = await Promise.allSettled(
       images.map((img) => this.generateEmbedding(img))
     );
 
     return results.map((result, index) => {
       if (result.status === 'fulfilled') {
-        return {
-          image: images[index],
-          embedding: result.value,
-        };
+        return { image: images[index], embedding: result.value };
       } else {
         const error = result.reason;
-        const errorMessage =
-          error instanceof Error ? error.message : String(error);
-        return {
-          image: images[index],
-          error: errorMessage,
-        };
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        return { image: images[index], error: errorMessage };
       }
     });
+  }
+
+  /**
+   * Get circuit breaker state for monitoring
+   */
+  getCircuitBreakerState(): string {
+    return this.circuitBreaker.getState();
   }
 }

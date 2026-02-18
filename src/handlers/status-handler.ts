@@ -370,6 +370,15 @@ export class StatusHandler extends BaseHandler {
                 processingTimeMs: img.processingTimeMs || img.metadata?.processingTimeMs || 0,
                 // Add essential metadata for display (lightweight version to avoid 413)
                 productName: img.productName,
+                brand: img.brand || job.brand,
+                material: img.material || job.material,
+                colors: img.colors || job.colors,
+                careInstructions: img.careInstructions || job.careInstructions,
+                conditionRating: img.conditionRating || job.conditionRating,
+                moderationLabels: (img.moderationLabels || job.moderationLabels || []).map((label: any) =>
+                  typeof label === 'string' ? label : label?.name
+                ).filter(Boolean),
+                aiConfidence: img.aiConfidence || job.aiConfidence,
                 bilingualDescription: img.bilingualDescription ? {
                   en: {
                     title: img.bilingualDescription.en?.title,

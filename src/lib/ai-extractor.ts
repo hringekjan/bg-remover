@@ -3,13 +3,18 @@
  * AI Attribute Extractor
  *
  * Extracts structured product attributes from AI-generated descriptions
- * Uses lightweight regex patterns for brand, material, colors, pattern, style,
- * keywords, and hierarchical category classification.
+ * Two modes:
+ * 1. AI-Native Extraction (USE_AI_EXTRACTION=true) - Uses Mistral Pixtral results directly
+ * 2. Regex-Based Extraction (default) - Lightweight regex patterns for backward compatibility
  *
  * All new fields are optional for backwards compatibility.
  */
 
 import type { MultilingualProductDescription, ProductDescription } from './types';
+import type { MistralPixtralAnalysisResult } from './bedrock/mistral-pixtral-analyzer';
+
+// Feature flag: Enable AI-native extraction (default: false for gradual rollout)
+const USE_AI_EXTRACTION = process.env.USE_AI_EXTRACTION === 'true';
 
 // Known brand list for direct matching
 const KNOWN_BRANDS = new Set([
@@ -243,8 +248,15 @@ export interface ExtractionResult {
  * Runs all attribute-extraction rules on the supplied product data
  */
 export function extractAttributes(
-  product: { productName: string; bilingualDescription: MultilingualProductDescription }
+  product: { productName: string; bilingualDescription: MultilingualProductDescription },
+  mistralResult?: MistralPixtralAnalysisResult
 ): ExtractionResult {
+  // If AI extraction is enabled and Mistral results are available, use AI-native path
+  if (USE_AI_EXTRACTION && mistralResult) {
+    return extractFromAI(mistralResult, product);
+  }
+
+  // Otherwise, fall back to regex-based extraction (backward compatibility)
   const enDesc = product.bilingualDescription.en;
   const descriptionEn = enDesc?.long || '';
   const shortEn = enDesc?.short || '';
@@ -254,7 +266,7 @@ export function extractAttributes(
   const fullText = `${title} ${shortEn} ${descriptionEn}`;
 
   // Extract brand
-  const { brand, confidence: brandScore } = extractBrand(title, fullText);
+  const { brand, confidence: brandScore} = extractBrand(title, fullText);
 
   // Extract material
   const { material, confidence: materialScore } = extractMaterial(fullText);
@@ -687,4 +699,91 @@ function extractCategory(params: {
     },
     confidence: 0.60,
   };
+}
+
+/**
+ * Extract attributes from Mistral Pixtral AI results (AI-native extraction)
+ * Replaces regex-based extraction with direct AI-derived attributes
+ *
+ * @param mistralResult - Comprehensive AI analysis from Mistral Pixtral
+ * @param product - Product with bilingual descriptions (for translation fallback)
+ * @returns ExtractionResult with AI-extracted attributes
+ */
+function extractFromAI(
+  mistralResult: MistralPixtralAnalysisResult,
+  product: { productName: string; bilingualDescription: MultilingualProductDescription }
+): ExtractionResult {
+  // Parse category path (Mistral returns "Primary/Secondary/Tertiary" format)
+  const categoryParts = (mistralResult.category || 'General').split('/');
+  const primary = categoryParts[0] || 'Clothing';
+  const secondary = categoryParts[1] || 'General';
+  const tertiary = categoryParts[2] || 'Items';
+
+  return {
+    // Core attributes from AI
+    brand: mistralResult.brand || null,
+    material: mistralResult.material || null,
+    colors: mistralResult.colors || [],
+    pattern: mistralResult.pattern || null,
+    style: mistralResult.style || [],
+
+    // Sustainability: Not extracted by AI yet, return empty array
+    sustainability: [],
+
+    // Keywords from AI
+    keywords: mistralResult.keywords || [],
+
+    // Category hierarchy
+    category: {
+      primary,
+      secondary,
+      tertiary,
+      path: `${primary} > ${secondary} > ${tertiary}`
+    },
+
+    // Care instructions from AI
+    careInstructions: mistralResult.careInstructions || [],
+
+    // Condition rating (map AI condition to 1-5 scale)
+    conditionRating: mapConditionToRating(mistralResult.condition),
+
+    // AI confidence scores (use Mistral's confidence or fallback)
+    aiConfidence: {
+      brand: mistralResult.aiConfidence?.brand || (mistralResult.brand ? 0.8 : 0.0),
+      material: mistralResult.aiConfidence?.material || (mistralResult.material ? 0.8 : 0.0),
+      colors: mistralResult.aiConfidence?.colors || 0.8,
+      pattern: mistralResult.pattern ? 0.8 : 0.0,
+      style: mistralResult.style && mistralResult.style.length > 0 ? 0.8 : 0.0,
+      keywords: mistralResult.aiConfidence?.overall || 0.85,
+      category: mistralResult.aiConfidence?.category || 0.85,
+      careInstructions: mistralResult.careInstructions && mistralResult.careInstructions.length > 0 ? 0.8 : 0.0,
+      conditionRating: mistralResult.aiConfidence?.condition || 0.85
+    },
+
+    // Icelandic translations (fallback to regex-based translation)
+    translations: {
+      is: {
+        material: translateMaterial(mistralResult.material),
+        colors: mistralResult.colors?.map(translateColor) || [],
+        pattern: translatePattern(mistralResult.pattern),
+        style: mistralResult.style?.map(translateStyle) || [],
+        careInstructions: mistralResult.careInstructions?.map(translateCareInstruction) || []
+      }
+    }
+  };
+}
+
+/**
+ * Map AI condition assessment to 1-5 rating scale
+ * @private
+ */
+function mapConditionToRating(condition: string): number {
+  const ratings: Record<string, number> = {
+    new_with_tags: 5,
+    like_new: 4,
+    very_good: 4,
+    good: 3,
+    fair: 2
+  };
+  return ratings[condition] || 3; // Default to 3 (good)
 }

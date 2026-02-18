@@ -57,6 +57,7 @@ import {
   logCreditOperation,
   clearLogContext,
 } from './lib/logger';
+import { extractSizeHint } from './lib/sizing/size-hints';
 
 interface DependencyHealth {
   status: 'healthy' | 'degraded' | 'unhealthy';
@@ -577,6 +578,16 @@ export const process = async (event: any) => {
         { processingTimeMs: Date.now() - processingStartTime },
         requestId
       );
+    }
+
+    const sizeHint = extractSizeHint(
+      `${productName || ''} ${result.productDescription?.short || ''} ${result.productDescription?.long || ''}`
+    );
+    if (sizeHint) {
+      result.metadata = {
+        ...result.metadata,
+        sizing: sizeHint,
+      };
     }
 
     // Upload to S3 and return URL (solves 413 Content Too Large)

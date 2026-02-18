@@ -43,9 +43,6 @@ provider:
     apiGateway: false # API Gateway is shared, tracing configured centrally
   httpApi:
     id: ${ssm:/tf/${sls:stage}/platform/api-gateway/id} # Kept from original
-    # NOTE: JWT authorizer cannot be configured at service level for shared API Gateway
-    # Shared API Gateway authorizers must be configured at platform level
-    # Security relies on Lambda-level JWT validation (defense in depth)
   environment:
     STAGE: ${self:provider.stage} # From original
     NODE_OPTIONS: '--enable-source-maps --expose-gc' # From original
@@ -423,7 +420,7 @@ custom:
     strip: false         # Keep debugging symbols
     layer: false         # Package with function (not as layer)
     zip: true            # Zip the requirements
-    pythonBin: python3.11  # Match Lambda runtime
+    pythonBin: python3.13  # Align with orchestrator's Python environment
 
 params:
   # CloudWatch metrics disabled by default in dev, enabled in prod
@@ -446,6 +443,7 @@ functions:
       - httpApi:
           path: /carousel/bg-remover/health
           method: ANY
+          authorizer: null  # Bypass auth for health checks
 
   metrics:
     handler: src/handlers/metrics-handler.metrics
@@ -459,6 +457,7 @@ functions:
       - httpApi:
           path: /carousel/bg-remover/metrics
           method: OPTIONS
+          authorizer: null
 
   eventStats:
     handler: src/handlers/event-stats-handler.handler
@@ -476,6 +475,7 @@ functions:
       - httpApi:
           path: /carousel/bg-remover/stats
           method: OPTIONS
+          authorizer: null
     iamRoleStatements:
       - Effect: Allow
         Action:
@@ -497,6 +497,7 @@ functions:
       - httpApi:
           path: /carousel/bg-remover/process
           method: OPTIONS
+          authorizer: null
 
   processWorker:
     handler: src/handlers/process-worker-handler.processWorker
@@ -524,6 +525,7 @@ functions:
       - httpApi:
           path: /carousel/bg-remover/status/{jobId}
           method: OPTIONS
+          authorizer: null
 
   batchStatus:
     handler: src/handlers/batch-status-handler.handler
@@ -537,6 +539,7 @@ functions:
       - httpApi:
           path: /carousel/bg-remover/status/batch/{requestId}
           method: OPTIONS
+          authorizer: null
 
   jobs:
     handler: src/handlers/jobs-handler.getJobs
@@ -550,6 +553,7 @@ functions:
       - httpApi:
           path: /carousel/bg-remover/jobs
           method: OPTIONS
+          authorizer: null
 
   settings:
     handler: src/handler.settings
@@ -566,6 +570,7 @@ functions:
       - httpApi:
           path: /carousel/bg-remover/settings
           method: OPTIONS
+          authorizer: null
 
   createProducts:
     handler: src/handlers/create-products-handler.createProducts
@@ -579,6 +584,7 @@ functions:
       - httpApi:
           path: /carousel/bg-remover/create-products
           method: OPTIONS
+          authorizer: null
 
   groupImages:
     handler: src/handlers/group-images-handler.groupImages
@@ -595,6 +601,7 @@ functions:
       - httpApi:
           path: /carousel/bg-remover/group-images
           method: OPTIONS
+          authorizer: null
 
   uploadUrls:
     handler: src/handlers/upload-urls-handler.uploadUrls
@@ -608,6 +615,7 @@ functions:
       - httpApi:
           path: /carousel/bg-remover/upload-urls
           method: OPTIONS
+          authorizer: null
 
   uploadEventRouter:
     handler: src/handlers/upload-events-router.handler
@@ -691,6 +699,7 @@ functions:
       - httpApi:
           path: /carousel/bg-remover/group-status/{jobId}
           method: OPTIONS
+          authorizer: null
 
   processGroups:
     handler: src/handlers/process-groups-handler.processGroups
@@ -704,6 +713,7 @@ functions:
       - httpApi:
           path: /carousel/bg-remover/process-groups
           method: OPTIONS
+          authorizer: null
 
   # streamProcessor:
   #   handler: src/handlers/stream-processor.handler
@@ -733,6 +743,7 @@ functions:
       - httpApi:
           path: /carousel/bg-remover/metadata-approval
           method: OPTIONS
+          authorizer: null
 
   pricingCalculator:
     handler: src/handlers/pricing-calculator.handler
@@ -783,6 +794,7 @@ functions:
       - httpApi:
           path: /carousel/bg-remover/pricing/calculate
           method: OPTIONS
+          authorizer: null
 
   # COMMENTED OUT - API Gateway route limit reached
   # pricingSuggestion:
