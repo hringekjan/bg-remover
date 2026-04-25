@@ -131,7 +131,7 @@ aws logs tail /aws/lambda/bg-remover-dev-process \
 ```bash
 # Invoke function with valid JWT
 curl -X POST https://api.dev.carousellabs.co/bg-remover/health \
-  -H "Authorization: Bearer <your-jwt-token>"
+  -H "Authorization: Bearer <your-jwt-token>```"
 
 # Expected: 200 response
 # Verify in CloudWatch: no token hash in logs
@@ -146,11 +146,11 @@ If issues occur after deployment:
 # Use previous version
 aws lambda update-function-code \
   --function-name bg-remover-dev-process \
-  --s3-bucket <your-deployment-bucket> \
-  --s3-key <previous-version-zip>
+  --s3-bucket <your-deployment-bucket>``` \
+  --s3-key <previous-version-zip>```
 
 # Or redeploy previous commit
-git checkout <previous-commit>
+git checkout <previous-commit>```
 npm run build:handler
 TENANT=carousel-labs npx serverless@4 deploy --stage dev
 ```

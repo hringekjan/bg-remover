@@ -131,7 +131,7 @@ async function invokeTitanBatchEmbedding(
 /**
  * Helper: Split array into chunks
  */
-function chunkArray<T>(array: T[], chunkSize: number): T[][] {
+function chunkArray``<T>``(array: T[], chunkSize: number): T[][] {
   const chunks: T[][] = [];
   for (let i = 0; i < array.length; i += chunkSize) {
     chunks.push(array.slice(i, i + chunkSize));
@@ -259,7 +259,7 @@ export async function storeEmbeddingWithSmartTTL(
   imageId: string,
   embedding: ProductEmbedding,
   usage: 'frequent' | 'normal' | 'rare' = 'normal'
-): Promise<void> {
+): Promise<void>``` {
   const ttlMap = {
     frequent: 7 * 24 * 3600, // 7 days for frequently accessed
     normal: 24 * 3600, // 24 hours (current default)
@@ -328,7 +328,7 @@ export class ImageAnalysisCache {
     imageBuffer: Buffer,
     prompt: string,
     model: string = 'anthropic.claude-3-5-sonnet-20241022-v2:0'
-  ): Promise<any> {
+  ): Promise<any>``` {
     const cacheKey = this.getCacheKey(imageBuffer, prompt, model);
 
     // Check cache
@@ -376,7 +376,7 @@ import { imageAnalysisCache } from './image-analysis-cache';
 export async function processImageFromUrl(
   imageUrl: string,
   options: ProcessOptions = {}
-): Promise<ProcessResult> {
+): Promise``<ProcessResult>`` {
   const imageBuffer = await fetchImage(imageUrl);
 
   // Use cache wrapper
@@ -431,7 +431,7 @@ function getClusteringCacheKey(
 export async function clusterImages(
   images: ImageFeatures[],
   options: ClusteringOptions = {}
-): Promise<ClusteringResult> {
+): Promise``<ClusteringResult>`` {
   const imageIds = images.map((img) => img.imageId);
   const cacheKey = getClusteringCacheKey(imageIds, options);
 
@@ -538,7 +538,7 @@ export async function extractFeaturesParallel(
 export async function batchProcessForClustering(
   images: Array<{ buffer: Buffer; imageId: string }>,
   options: ClusteringOptions = {}
-): Promise<ClusteringResult> {
+): Promise``<ClusteringResult>`` {
   console.log(`🚀 Processing ${images.length} images in parallel...`);
 
   const startTime = Date.now();
@@ -591,7 +591,7 @@ sharp.cache({ memory: 50 }); // Limit memory cache to 50MB
 /**
  * Memory-optimized perceptual hash computation
  */
-async function computePerceptualHash(imageBuffer: Buffer): Promise<string> {
+async function computePerceptualHash(imageBuffer: Buffer): Promise<string>``` {
   // Create Sharp instance with memory limits
   const image = sharp(imageBuffer, {
     limitInputPixels: 268402689, // ~512MB limit
@@ -901,8 +901,8 @@ manager = StatePersistenceManager()
 # Checkpoint after each Quick Win
 manager.save_checkpoint(
     workflow_id='bg-remover-phase-1-implementation',
-    step_number=<step>,
-    step_name='<quick_win_name>',
+    step_number=<step>```,
+    step_name='<quick_win_name>```',
     state_data={
         'files_modified': [...],
         'tests_added': [...],

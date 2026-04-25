@@ -322,6 +322,9 @@ export type ProcessResult = {
   productDescription?: ProductDescription;
   multilingualDescription?: MultilingualProductDescription;
   bilingualDescription?: BilingualProductDescription; // Backwards compatibility
+  tags?: {
+    restricted?: boolean;
+  };
 };
 
 export const createProcessResult = (
@@ -334,6 +337,7 @@ export const createProcessResult = (
   productDescription?: ProductDescription,
   multilingualDescription?: MultilingualProductDescription,
   bilingualDescription?: BilingualProductDescription, // Backwards compatibility
+  tags?: { restricted?: boolean },
 ): ProcessResult => ({
   success,
   jobId,
@@ -344,6 +348,7 @@ export const createProcessResult = (
   productDescription,
   multilingualDescription,
   bilingualDescription,
+  tags,
 });
 
 // Status endpoint validation

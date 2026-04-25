@@ -21,7 +21,7 @@ Successfully migrated admin API keys from environment variables to AWS SSM Param
 
 **Key Functions:**
 ```typescript
-loadSecureString(parameterName: string): Promise<string>
+loadSecureString(parameterName: string): Promise<string>```
 loadAdminApiKeys(stage: string, tenant: string): Promise<string[]>
 clearSecretsCache(parameterName?: string): void
 getSecretsCacheStats(): CacheStats
@@ -98,7 +98,7 @@ async function getAdminApiKeys(): Promise<string[]> {
 
 #### `/services/bg-remover/scripts/test-admin-keys.sh`
 - **Purpose:** Test admin API key authentication
-- **Usage:** `./test-admin-keys.sh dev <api-key>`
+- **Usage:** `./test-admin-keys.sh dev <api-key>````
 - **Tests:**
   - Valid API key → 200 (credit validation bypassed)
   - Invalid API key → 401/402 (rejected)
@@ -198,7 +198,7 @@ c3d4e5f6-a7b8-9012-cdef-3456789012bc
 3. **Test Authentication**
    ```bash
    cd services/bg-remover/scripts
-   ./test-admin-keys.sh dev <your-api-key>
+   ./test-admin-keys.sh dev <your-api-key>```
    # Should show: ✅ PASS for all tests
    ```
 
@@ -252,7 +252,7 @@ describe('secrets-loader', () => {
 ```bash
 # Test 1: Valid API key
 curl -X POST https://api.dev.carousellabs.co/bg-remover/process \
-  -H "X-Api-Key: <valid-key>" \
+  -H "X-Api-Key: <valid-key>```" \
   -H "Content-Type: application/json" \
   -d '{"imageUrl": "...", "skipCreditValidation": true}'
 # Expected: 200 OK

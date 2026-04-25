@@ -261,6 +261,7 @@ export class ProcessGroupsHandler extends BaseHandler {
                 index,
                 s3Key: s3Ref.s3Key,
                 s3Bucket: s3Ref.s3Bucket,
+                rotation: (s3Ref as any).rotation as number | undefined,
               };
             }
             const base64 = originalImages?.[imageId];
@@ -273,7 +274,7 @@ export class ProcessGroupsHandler extends BaseHandler {
             }
             return null;
           })
-          .filter((source): source is { imageId: string; index: number; base64?: string; s3Key?: string; s3Bucket?: string } => Boolean(source));
+          .filter((source): source is { imageId: string; index: number; base64?: string; s3Key?: string; s3Bucket?: string; rotation?: number } => Boolean(source));
 
         if (imageSources.length === 0) {
           console.warn('[ProcessGroups] Group has no valid images', {
@@ -346,6 +347,7 @@ export class ProcessGroupsHandler extends BaseHandler {
                 s3Bucket: this.resolveS3Bucket(source.s3Bucket),
                 s3Key: source.s3Key,
                 filename,
+                rotation: source.rotation,
               };
             }
             const uploadedKey = uploadedKeysByImageId.get(source.imageId);
@@ -357,9 +359,10 @@ export class ProcessGroupsHandler extends BaseHandler {
               s3Bucket: tempImagesBucket,
               s3Key: uploadedKey,
               filename,
+              rotation: source.rotation,
             };
           })
-          .filter((image): image is { imageId: string; s3Bucket: string; s3Key: string; filename: string } => Boolean(image));
+          .filter((image): image is { imageId: string; s3Bucket: string; s3Key: string; filename: string; rotation?: number } => Boolean(image));
 
         // If all uploads failed, update job status and skip this group
         if (resolvedImages.length === 0) {
@@ -483,6 +486,7 @@ export class ProcessGroupsHandler extends BaseHandler {
             s3Key: image.s3Key,
             filename: image.filename,
             isPrimary: index === 0, // First image is primary
+            ...(image.rotation ? { rotation: image.rotation } : {}),
           })),
           productName: group.productName,
           pipeline: pipelineName,
@@ -728,6 +732,44 @@ export class ProcessGroupsHandler extends BaseHandler {
         error: error instanceof Error ? error.message : String(error),
       });
       throw new Error('Failed to decode base64 image data');
+    }
+
+    // Resize down to Nova Canvas limits (2048×2048) before storing via image-optimizer service.
+    // All downstream pipeline steps (Bedrock, Rekognition, Mistral) will use
+    // the scaled image, so we only pay the resize cost once.
+    try {
+      const optimizerUrl = getServiceEndpoint('image-optimizer', tenant);
+      const optimizeResponse = await fetch(optimizerUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          imageBase64: imageBuffer.toString('base64'),
+          targetSize: { width: 1365, height: 1365 },
+          outputFormat: 'jpeg',
+          quality: 85,
+        }),
+        signal: AbortSignal.timeout(30000),
+      });
+      if (optimizeResponse.ok) {
+        const result = await optimizeResponse.json() as { outputBase64?: string };
+        if (result.outputBase64) {
+          const resized = Buffer.from(result.outputBase64, 'base64');
+          console.log('[ProcessGroups] Resized image via image-optimizer', {
+            jobId, filename,
+            originalBytes: imageBuffer.length,
+            resizedBytes: resized.length,
+          });
+          imageBuffer = resized;
+        }
+      } else {
+        console.warn('[ProcessGroups] image-optimizer returned non-OK status, uploading original', {
+          jobId, filename, status: optimizeResponse.status,
+        });
+      }
+    } catch (resizeErr) {
+      console.warn('[ProcessGroups] image-optimizer call failed, uploading original (may fail in Bedrock)', {
+        jobId, filename, error: resizeErr instanceof Error ? resizeErr.message : String(resizeErr),
+      });
     }
 
     // S3 key: temp/{tenant}/{jobId}/{index}_{filename}

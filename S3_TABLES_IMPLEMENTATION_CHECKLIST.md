@@ -31,7 +31,7 @@ All required components have been created and tested. Use this checklist to veri
   - [x] sold_date (TIMESTAMP)
   - [x] season (STRING)
   - [x] image_s3_key (STRING)
-  - [x] embedding (ARRAY<DOUBLE>)
+  - [x] embedding (ARRAY``<DOUBLE>``)
   - [x] description (STRING)
   - [x] source (STRING)
 

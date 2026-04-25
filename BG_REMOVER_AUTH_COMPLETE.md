@@ -133,7 +133,7 @@ validateJWTFromEvent()
 
 ### JWT Validation:
 ```
-Authorization Header: "Bearer <token>"
+Authorization Header: "Bearer <token>```"
     ↓
 Extract Token
     ↓
@@ -225,7 +225,7 @@ TENANT=carousel-labs aws-vault exec carousel-labs-dev-admin -- \
 ## Support
 
 For issues or questions:
-- Service logs: `npx serverless@4 logs --function <name> --stage dev --tail`
+- Service logs: `npx serverless@4 logs --function <name>``` --stage dev --tail`
 - API Gateway logs: CloudWatch Logs
 - Authentication issues: Verify Cognito configuration in SSM
 

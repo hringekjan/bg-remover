@@ -47,7 +47,7 @@ const keys = await loadAdminApiKeys('dev', 'carousel-labs');
 import { loadAdminApiKeys } from '@carousellabs/backend-kit/secrets-loader';
 import { timingSafeEqual } from 'crypto';
 
-async function isValidAdminApiKey(apiKey: string): Promise<boolean> {
+async function isValidAdminApiKey(apiKey: string): Promise<boolean>``` {
   const adminKeys = await loadAdminApiKeys(stage, tenant);
 
   // Timing-safe comparison (prevents timing attacks)
@@ -97,7 +97,7 @@ cd /services/bg-remover/scripts
 cd /services/bg-remover/scripts
 
 # Test with valid key
-./test-admin-keys.sh dev <your-api-key>
+./test-admin-keys.sh dev <your-api-key>```
 
 # Test without key (should fail)
 ./test-admin-keys.sh dev

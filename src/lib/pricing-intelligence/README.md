@@ -91,10 +91,10 @@ console.log('Explanation:', suggestion.explanation);
 
 ### PricingIntelligenceService
 
-#### `getSuggestion(request: PricingRequest): Promise<PricingSuggestion>`
+#### `getSuggestion(request: PricingRequest): Promise``<PricingSuggestion>```
 Generates a pricing suggestion for a product.
 
-#### `getSuggestionWithMockData(request: PricingRequest, mockSales: HistoricalSale[]): Promise<PricingSuggestion>`
+#### `getSuggestionWithMockData(request: PricingRequest, mockSales: HistoricalSale[]): Promise``<PricingSuggestion>```
 Generates a pricing suggestion using mock sales data (for testing).
 
 ### CategoryBaselineAnalyzer

@@ -561,7 +561,7 @@ async function getAdminKeys(tenant: string, stage: string): Promise<string[]> {
 }
 
 // Replace environment variable loading
-async function isValidAdminApiKey(apiKey: string, tenant: string, stage: string): Promise<boolean> {
+async function isValidAdminApiKey(apiKey: string, tenant: string, stage: string): Promise<boolean>``` {
   const adminKeys = await getAdminKeys(tenant, stage);
 
   let isValid = false;
@@ -643,7 +643,7 @@ async function auditAdminKeyUsage(
   keyUsed: string,
   request: NextRequest,
   result: 'success' | 'failure'
-): Promise<void> {
+): Promise<void>``` {
   const auditEvent = {
     timestamp: new Date().toISOString(),
     tenant,

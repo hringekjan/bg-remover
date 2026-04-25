@@ -137,7 +137,7 @@ const [dynamodb, s3, cognito, cacheService] = await Promise.all([
 ### DynamoDB Check
 
 ```typescript
-async function checkDynamoDB(): Promise<DependencyHealth> {
+async function checkDynamoDB(): Promise``<DependencyHealth>`` {
   const startCheck = Date.now();
   try {
     const client = new DynamoDBClient({ region: 'eu-west-1' });
@@ -162,7 +162,7 @@ async function checkDynamoDB(): Promise<DependencyHealth> {
 ### S3 Check
 
 ```typescript
-async function checkS3(): Promise<DependencyHealth> {
+async function checkS3(): Promise``<DependencyHealth>`` {
   const startCheck = Date.now();
   try {
     const client = new S3Client({ region: 'eu-west-1' });
@@ -185,7 +185,7 @@ async function checkS3(): Promise<DependencyHealth> {
 ### Cognito JWKS Check
 
 ```typescript
-async function checkCognito(): Promise<DependencyHealth> {
+async function checkCognito(): Promise``<DependencyHealth>`` {
   const startCheck = Date.now();
   try {
     const config = await loadTenantCognitoConfig(tenant, stage);
@@ -222,7 +222,7 @@ async function checkCognito(): Promise<DependencyHealth> {
 ### Cache Service Check
 
 ```typescript
-async function checkCacheService(): Promise<DependencyHealth> {
+async function checkCacheService(): Promise``<DependencyHealth>`` {
   const startCheck = Date.now();
   try {
     const cacheServiceUrl = process.env.CACHE_SERVICE_URL;

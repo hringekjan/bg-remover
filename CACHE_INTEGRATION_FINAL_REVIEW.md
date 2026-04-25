@@ -542,7 +542,7 @@ After each deployment:
 1. Check circuit breaker state (should be CLOSED)
 2. Check cache write failure rate (should be < 1%)
 3. Check CloudWatch alarms (should not be triggered)
-4. If metrics degraded: `serverless rollback --stage <stage> --region eu-west-1`
+4. If metrics degraded: `serverless rollback --stage <stage>``` --region eu-west-1`
 5. Investigate via CloudWatch Logs Insights
 
 ### 4. Performance Tuning (Optional)

@@ -368,7 +368,7 @@ constructor(tenantId: string, stage: string, embeddingsBucket: string) {
 }
 
 // In pricing calculation
-async getPricingSuggestion(productEmbedding: number[]): Promise<PriceRecommendation> {
+async getPricingSuggestion(productEmbedding: number[]): Promise``<PriceRecommendation>`` {
   const similarProducts = await this.vectorSearch.findSimilarForPricing(
     productEmbedding,
     { limit: 20, minSimilarity: 0.75 }

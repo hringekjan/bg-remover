@@ -65,4 +65,20 @@ logs/
 # Test cache
 .pytest_cache/
 .coverage
-htmlcov/ 
+coverage/
+htmlcov/
+
+# TypeScript incremental build cache
+tsconfig.tsbuildinfo
+*.tsbuildinfo
+
+# Lambda packaging
+*.zip
+.requirements.zip
+
+# Build artifact archives
+*.tar.gz
+artifacts/*.tar.gz
+
+# Secrets
+.claude/settings.json

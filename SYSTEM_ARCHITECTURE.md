@@ -13,30 +13,30 @@ The bg-remover service implements vision-enhanced pricing intelligence using AWS
 ```mermaid
 graph TB
     subgraph "Data Sources"
-        Carousel[Carousel Products<br/>Real-time Events]
+        Carousel[Carousel Products`<br/>`Real-time Events]
     end
 
     subgraph "Event Processing"
-        EB[EventBridge<br/>carousel.products]
+        EB[EventBridge`<br/>`carousel.products]
         DLQ[SQS Dead Letter Queue]
         SNS[SNS Alerts Topic]
     end
 
     subgraph "bg-remover Service"
-        L2[carouselToS3TablesSync<br/>Real-time]
-        L3[s3TablesDataValidator<br/>Daily Validation]
-        L4[pricingSuggestionEngine<br/>On-demand]
+        L2[carouselToS3TablesSync`<br/>`Real-time]
+        L3[s3TablesDataValidator`<br/>`Daily Validation]
+        L4[pricingSuggestionEngine`<br/>`On-demand]
     end
 
     subgraph "Storage Layer"
-        DDB1[DynamoDB<br/>sales-intelligence]
-        DDB2[DynamoDB<br/>embeddings]
-        S3Tables[S3 Tables<br/>Analytics Data Lake]
-        S3Images[S3<br/>Product Images]
+        DDB1[DynamoDB`<br/>`sales-intelligence]
+        DDB2[DynamoDB`<br/>`embeddings]
+        S3Tables[S3 Tables`<br/>`Analytics Data Lake]
+        S3Images[S3`<br/>`Product Images]
     end
 
     subgraph "AI/ML Services"
-        Bedrock[AWS Bedrock<br/>Titan Embeddings<br/>Nova Lite/Pro]
+        Bedrock[AWS Bedrock`<br/>`Titan Embeddings`<br/>`Nova Lite/Pro]
     end
 
     Carousel -->|product.sold Events| EB
@@ -63,9 +63,9 @@ graph TB
 ```mermaid
 sequenceDiagram
     participant EB as EventBridge
-    participant Sync as carouselToS3TablesSync<br/>Lambda
-    participant S3 as S3 Tables<br/>Iceberg
-    participant DDB as DynamoDB<br/>sales-intelligence
+    participant Sync as carouselToS3TablesSync`<br/>`Lambda
+    participant S3 as S3 Tables`<br/>`Iceberg
+    participant DDB as DynamoDB`<br/>`sales-intelligence
 
     EB->>Sync: product.sold Event
     Sync->>S3: Write JSONL Row
@@ -80,22 +80,22 @@ sequenceDiagram
 ```mermaid
 graph LR
     subgraph "Event Sources"
-        CA[Carousel API<br/>Products Service]
+        CA[Carousel API`<br/>`Products Service]
     end
 
     subgraph "EventBridge Rules"
-        Rule1[carousel.products<br/>product.listed]
-        Rule2[carousel.products<br/>product.updated]
-        Rule3[carousel.products<br/>product.sold]
+        Rule1[carousel.products`<br/>`product.listed]
+        Rule2[carousel.products`<br/>`product.updated]
+        Rule3[carousel.products`<br/>`product.sold]
     end
 
     subgraph "bg-remover Service"
-        H4[carouselToS3TablesSync<br/>Dual Write]
+        H4[carouselToS3TablesSync`<br/>`Dual Write]
     end
 
     subgraph "Storage"
-        DDB_SI[DynamoDB<br/>sales-intelligence]
-        S3T[S3 Tables<br/>sales_history]
+        DDB_SI[DynamoDB`<br/>`sales-intelligence]
+        S3T[S3 Tables`<br/>`sales_history]
     end
 
     CA -->|Emit Events| Rule1
@@ -114,22 +114,22 @@ graph LR
 
 ```mermaid
 sequenceDiagram
-    participant Frontend as Carousel Frontend<br/>Pricing UI
-    participant API as bg-remover API<br/>pricing/calculate
+    participant Frontend as Carousel Frontend`<br/>`Pricing UI
+    participant API as bg-remover API`<br/>`pricing/calculate
     participant Engine as VisualSimilarityPricingEngine
-    participant DDB as DynamoDB<br/>sales-intelligence
-    participant S3 as S3<br/>Product Images
+    participant DDB as DynamoDB`<br/>`sales-intelligence
+    participant S3 as S3`<br/>`Product Images
     participant Bedrock as AWS Bedrock
 
-    Frontend->>API: POST /pricing/calculate<br/>{productId, category, images}
+    Frontend->>API: POST /pricing/calculate`<br/>`{productId, category, images}
     API->>Engine: calculatePricing()
 
     Note over Engine: Phase 1: Find Similar Products
-    Engine->>DDB: Query sales-intelligence<br/>GSI-1 (category index)
+    Engine->>DDB: Query sales-intelligence`<br/>`GSI-1 (category index)
     DDB-->>Engine: Recent Sales (90 days)
 
     Note over Engine: Phase 2: Calculate Similarity
-    Engine->>Engine: Cosine Similarity<br/>(1024-dim vectors)
+    Engine->>Engine: Cosine Similarity`<br/>`(1024-dim vectors)
     Engine->>Engine: Filter by threshold (>0.70)
     Engine->>Engine: Sort by similarity DESC
     Engine->>Engine: Take top 20 products
@@ -137,16 +137,16 @@ sequenceDiagram
     Note over Engine: Phase 3: Visual Quality Assessment
     Engine->>S3: Fetch Product Image
     S3-->>Engine: Image Data (base64)
-    Engine->>Bedrock: InvokeModel (Nova Lite)<br/>Assess condition quality
+    Engine->>Bedrock: InvokeModel (Nova Lite)`<br/>`Assess condition quality
     Bedrock-->>Engine: Quality Score + Multiplier
 
     Note over Engine: Phase 4: Calculate Weighted Price
-    Engine->>Engine: Weighted Average<br/>(similarity × recency weights)
+    Engine->>Engine: Weighted Average`<br/>`(similarity × recency weights)
     Engine->>Engine: Apply seasonal adjustment
     Engine->>Engine: Apply quality multiplier
     Engine->>Engine: Calculate confidence score
 
-    Engine-->>API: PricingSuggestion<br/>{price, range, confidence}
+    Engine-->>API: PricingSuggestion`<br/>`{price, range, confidence}
     API-->>Frontend: HTTP 200 JSON Response
 ```
 
@@ -253,7 +253,7 @@ sequenceDiagram
 - sold_date (TIMESTAMP)
 - season (STRING: Q1 | Q2 | Q3 | Q4)
 - image_s3_key (STRING)
-- embedding (ARRAY<DOUBLE> - 1024 dimensions)
+- embedding (ARRAY``<DOUBLE>`` - 1024 dimensions)
 - description (STRING)
 - source (STRING: carousel)
 

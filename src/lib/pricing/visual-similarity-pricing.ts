@@ -435,15 +435,14 @@ export class VisualSimilarityPricingEngine {
         };
       }
 
-      // Step 2: Calculate base price from similar products
+      // Step 2: Calculate base price from similar products (median for robustness)
       const top5Similar = similarProducts.slice(0, 5);
       const weights = top5Similar.map((p) => p.similarity || 0.5);
-      const totalWeight = weights.reduce((a, b) => a + b, 0);
-
-      const weightedSum = top5Similar.reduce((sum, p, i) => {
-        return sum + p.price * weights[i];
-      }, 0);
-      const basePrice = weightedSum / totalWeight;
+      const prices = top5Similar.map((p) => p.price).sort((a, b) => a - b);
+      const mid = Math.floor(prices.length / 2);
+      const basePrice = prices.length % 2 === 0
+        ? (prices[mid - 1] + prices[mid]) / 2
+        : prices[mid];
 
       // Step 3: Apply condition multiplier
       const conditionMultiplier = this.getConditionMultiplier(
@@ -469,14 +468,14 @@ export class VisualSimilarityPricingEngine {
       const visualQualityDetails = visualQuality.reasoning;
 
       // Step 6: Calculate final price
+      // Core pricing formula: median(similar_sale_prices) * seasonal_adjustment
+      const seasonallyAdjustedBase = basePrice * seasonalMultiplier;
       const adjustedPrice =
-        basePrice *
-        seasonalMultiplier *
+        seasonallyAdjustedBase *
         conditionMultiplier *
         visualQualityMultiplier;
 
       // Calculate confidence using weighted formula (needed before price range calculation)
-      const prices = top5Similar.map((p) => p.price);
       const avgSimilarity = weights.reduce((a, b) => a + b, 0) / weights.length;
       const confidence = this.calculateConfidence(
         avgSimilarity,

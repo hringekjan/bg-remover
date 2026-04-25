@@ -3,6 +3,7 @@ import { DynamoDBClient, GetItemCommand, PutItemCommand, UpdateItemCommand } fro
 import { marshall, unmarshall } from '@aws-sdk/util-dynamodb';
 import { SQSClient, SendMessageCommand } from '@aws-sdk/client-sqs';
 import { EventTracker } from '../lib/event-tracking';
+import { isEventProcessed, markEventAsProcessed } from '../lib/idempotency';
 
 type UploadEventMessage = {
   type?: 'object' | 'trigger';
@@ -312,6 +313,12 @@ export const handler = async (event: any): Promise<{ processed: number }> => {
   for (const record of event.Records || []) {
     const message = parseMessageBody(record.body);
     if (message?.bucket && message?.key && message?.tenant) {
+      // Check idempotency for each event
+      const eventId = record.messageId;
+      if (eventId && await isEventProcessed(eventId)) {
+        console.info('[UploadEventConsumer] Skipping already processed event', { eventId });
+        continue;
+      }
       messages.push(message);
     }
   }
@@ -462,6 +469,24 @@ export const handler = async (event: any): Promise<{ processed: number }> => {
         similarityThreshold: 0.92,
         includeExistingEmbeddings: true,
       });
+      
+      // Mark events as processed after successful handling
+      for (const record of event.Records || []) {
+        const message = parseMessageBody(record.body);
+        if (message?.bucket && message?.key && message?.tenant) {
+          const eventId = record.messageId;
+          if (eventId) {
+            try {
+              await markEventAsProcessed(eventId);
+            } catch (error) {
+              console.error('[UploadEventConsumer] Failed to mark event as processed', {
+                eventId,
+                error: error instanceof Error ? error.message : String(error),
+              });
+            }
+          }
+        }
+      }
     } catch (error: any) {
       console.error('[UploadEventConsumer] Failed to process upload group', {
         jobId,

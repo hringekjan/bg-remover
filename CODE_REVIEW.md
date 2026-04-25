@@ -140,7 +140,7 @@ export class CircuitBreaker {
 
 **Issue:**
 ```typescript
-async get<T = any>(tenantId: string, key: string): Promise<CacheGetResponse<T>> {
+async get<T = any>(tenantId: string, key: string): Promise<CacheGetResponse``<T>``> {
   // No validation of tenantId format or sanitization
   const response = await this.fetchWithTimeout(`${CACHE_SERVICE_URL}/${key}`, {
     method: 'GET',
@@ -174,7 +174,7 @@ private validateTenantId(tenantId: string): void {
   }
 }
 
-async get<T = any>(tenantId: string, key: string): Promise<CacheGetResponse<T>> {
+async get<T = any>(tenantId: string, key: string): Promise<CacheGetResponse``<T>``> {
   this.validateTenantId(tenantId);
   // ... rest
 }
@@ -190,10 +190,10 @@ async get<T = any>(tenantId: string, key: string): Promise<CacheGetResponse<T>> 
 ```typescript
 private memoryCache: Map<string, CacheEntry> = new Map();
 
-async set<T = any>(key: string, data: T, options = {}): Promise<void> {
+async set<T = any>(key: string, data: T, options = {}): Promise<void>``` {
   // ... 
   if (this.config.enableMemoryCache) {
-    const memoryEntry: CacheEntry<T> = {
+    const memoryEntry: CacheEntry``<T>`` = {
       data,
       timestamp: now,
       ttl: memoryTtl,
@@ -217,14 +217,14 @@ export class CacheManager {
   private memoryCache: Map<string, CacheEntry> = new Map();
   private readonly MAX_MEMORY_ENTRIES = 1000; // Configurable limit
   
-  async set<T = any>(key: string, data: T, options = {}): Promise<void> {
+  async set<T = any>(key: string, data: T, options = {}): Promise<void>``` {
     if (this.config.enableMemoryCache) {
       // Implement LRU eviction when limit reached
       if (this.memoryCache.size >= this.MAX_MEMORY_ENTRIES) {
         this.evictLRU();
       }
       
-      const memoryEntry: CacheEntry<T> = {
+      const memoryEntry: CacheEntry``<T>`` = {
         data,
         timestamp: now,
         ttl: memoryTtl,
@@ -292,7 +292,7 @@ if (this.config.enableCacheService && this.cacheServiceClient && this.config.ten
 // Add metrics tracking
 private cacheWriteFailures = 0;
 
-async set<T = any>(key: string, data: T, options = {}): Promise<void> {
+async set<T = any>(key: string, data: T, options = {}): Promise<void>``` {
   // ... L1 cache storage ...
   
   // L2 with observability
@@ -509,7 +509,7 @@ try {
 
 **Issue:**
 ```typescript
-private async executeWithRetry(operation: () => Promise<Response>, ...): Promise<Response> {
+private async executeWithRetry(operation: () => Promise``<Response>``, ...): Promise``<Response>`` {
   for (let attempt = 0; attempt <= this.retryConfig.maxRetries; attempt++) {
     // Retries POST requests without idempotency token
   }
@@ -520,7 +520,7 @@ private async executeWithRetry(operation: () => Promise<Response>, ...): Promise
 
 **Fix:** Add idempotency header:
 ```typescript
-async set<T = any>(tenantId: string, key: string, value: T, ttl: number): Promise<CacheSetResponse> {
+async set<T = any>(tenantId: string, key: string, value: T, ttl: number): Promise``<CacheSetResponse>`` {
   const idempotencyKey = `${tenantId}-${key}-${Date.now()}`;
   
   const response = await this.executeWithRetry(
@@ -878,7 +878,7 @@ See `src/lib/cache/constants.ts` for TTL values.
 // Track cache service API call count
 private apiCallCount = 0;
 
-async get<T>(tenantId: string, key: string) {
+async get``<T>``(tenantId: string, key: string) {
   this.apiCallCount++;
   if (this.apiCallCount % 1000 === 0) {
     console.info('Cache API call milestone', { 

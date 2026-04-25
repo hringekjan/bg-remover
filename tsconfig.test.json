@@ -1,0 +1,16 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "types": ["node", "aws-lambda", "jest"],
+    "rootDir": ".",
+    "outDir": "./dist-test"
+  },
+  "include": [
+    "src/**/*",
+    "lib/**/*",
+    "tests/**/*"
+  ],
+  "exclude": [
+    "node_modules"
+  ]
+}

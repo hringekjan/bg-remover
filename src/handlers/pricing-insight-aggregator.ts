@@ -19,11 +19,13 @@ import { EventBridgeEvent } from 'aws-lambda';
 import { DynamoDBClient, QueryCommand } from '@aws-sdk/client-dynamodb';
 import { marshall } from '@aws-sdk/util-dynamodb';
 import { Logger } from '@aws-lambda-powertools/logger';
+import { ContextScope } from '@carousellabs/context-scope';
 
 import { SeasonalAdjustmentService } from '../lib/pricing/seasonal-adjustment';
 import { PatternStorageService } from '../lib/pricing/pattern-storage';
 
 const logger = new Logger({ serviceName: 'PricingInsightAggregator' });
+const scope = new ContextScope();
 
 /**
  * EventBridge scheduled event handler
@@ -72,6 +74,9 @@ export async function handler(event: EventBridgeEvent<'Scheduled Event', any>): 
               brand: pattern.brand,
               seasonalityScore: pattern.seasonalityScore,
             });
+            
+            // Track metric with context scope
+            scope.setMetric('patternStored', 1);
           } catch (storageError) {
             logger.error('Failed to store seasonal pattern', {
               error: storageError instanceof Error ? storageError.message : String(storageError),
@@ -98,6 +103,9 @@ export async function handler(event: EventBridgeEvent<'Scheduled Event', any>): 
                   brand: brandPattern.brand,
                   seasonalityScore: brandPattern.seasonalityScore,
                 });
+                
+                // Track metric with context scope
+                scope.setMetric('brandPatternStored', 1);
               } catch (storageError) {
                 logger.error('Failed to store brand pattern', {
                   error: storageError instanceof Error ? storageError.message : String(storageError),
@@ -117,11 +125,17 @@ export async function handler(event: EventBridgeEvent<'Scheduled Event', any>): 
         }
 
         categoriesProcessed++;
+        
+        // Track progress with context scope
+        scope.setMetric('categoriesProcessed', categoriesProcessed);
       } catch (error) {
         logger.error('[PricingInsightAggregator] Error analyzing category', {
           category,
           error: error instanceof Error ? error.message : String(error),
         });
+        
+        // Track error with context scope
+        scope.setMetric('analysisErrors', 1);
       }
     }
 
@@ -141,11 +155,18 @@ export async function handler(event: EventBridgeEvent<'Scheduled Event', any>): 
       patternsFound,
     });
 
+    // Finalize context scope metrics
+    scope.setMetric('totalPatternsFound', patternsFound);
+    scope.setMetric('aggregationComplete', 1);
+
     return result;
   } catch (error) {
     logger.error('[PricingInsightAggregator] Fatal error', {
       error: error instanceof Error ? error.message : String(error),
     });
+    
+    // Track error with context scope
+    scope.setMetric('aggregationFatalError', 1);
 
     return {
       statusCode: 500,

@@ -89,8 +89,8 @@ cd /Users/davideagle/git/CarouselLabs/enterprise-packages/services/bg-remover
 | Option | Description | Default |
 |--------|-------------|---------|
 | `--stage <dev\|prod>` | Deployment stage | `dev` |
-| `--region <region>` | AWS region | `eu-west-1` |
-| `--tenant <tenant>` | Tenant identifier | `carousel-labs` |
+| `--region <region>```` | AWS region | `eu-west-1` |
+| `--tenant <tenant>```` | Tenant identifier | `carousel-labs` |
 | `--dry-run` | Run checks but skip deployment | `false` |
 | `--verbose` | Enable verbose output | `false` |
 | `--json` | Generate JSON report | `false` |

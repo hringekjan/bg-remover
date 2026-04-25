@@ -1,20 +1,17 @@
 import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
 import { ContextScope } from '@carousellabs/context-scope';
 import { AgentTelemetry } from '@carousel/backend-kit/agent-telemetry';
+import { extendContext } from '../../lib/context/context-manager';
 
 export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> => {
   const startTime = Date.now();
   let isError = false;
   
   try {
-    // Initialize context scope with 15 dimensions
-    ContextScope.initialize({
-      tenant: process.env.TENANT,
-      service: 'bg-remover',
+    // Extend context safely with handler-specific dimensions
+    // This prevents overwriting envelope fields set by middleware
+    extendContext({
       handler: 'process-image',
-      requestId: event.requestContext.requestId,
-      userAgent: event.headers?.['User-Agent'],
-      sourceIp: event.requestContext.identity?.sourceIp,
       stage: process.env.STAGE,
       region: process.env.AWS_REGION,
       functionVersion: process.env.AWS_LAMBDA_FUNCTION_VERSION,
@@ -64,7 +61,7 @@ export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayPr
         invocations: 1,
         duration: Date.now() - startTime,
         errors: isError ? 1 : 0,
-        context: ContextScope.getAll()
+        context: ContextScope.getDimensions()
       }
     });
   }

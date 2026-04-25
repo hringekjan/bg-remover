@@ -269,7 +269,7 @@ python agentic/orchestrator_cli.py status --tag incubator:bg-remover
 
 # Resume from checkpoint
 python agentic/orchestrator_cli.py resume \
-  --workflow-id <id> \
+  --workflow-id <id>``` \
   --from-checkpoint 2
 ```
 

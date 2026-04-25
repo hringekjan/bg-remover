@@ -55,7 +55,7 @@ getMetrics(): EmbeddingStorageMetrics
 resetMetrics(): void
 
 // Cleanup resources
-async close(): Promise<void>
+async close(): Promise<void>```
 ```
 
 **Configuration Options**:

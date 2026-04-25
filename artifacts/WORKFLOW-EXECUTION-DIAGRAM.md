@@ -5,19 +5,19 @@
 
 ```mermaid
 graph TD
-    Start([Start Workflow]) --> Phase1[Phase 1: Validate Images<br/>✅ 56.8s]
+    Start([Start Workflow]) --> Phase1[Phase 1: Validate Images`<br/>`✅ 56.8s]
 
-    Phase1 --> Phase2[Phase 2: Test Batch Embeddings<br/>✅ 256.2s]
-    Phase1 --> Phase3[Phase 3: Test Multi-Level Caching<br/>✅ 55.9s]
-    Phase1 --> Phase4[Phase 4: Test Parallel Clustering<br/>✅ 185.2s]
+    Phase1 --> Phase2[Phase 2: Test Batch Embeddings`<br/>`✅ 256.2s]
+    Phase1 --> Phase3[Phase 3: Test Multi-Level Caching`<br/>`✅ 55.9s]
+    Phase1 --> Phase4[Phase 4: Test Parallel Clustering`<br/>`✅ 185.2s]
 
-    Phase2 --> Phase5[Phase 5: Run Integration Test<br/>✅ 235.1s]
+    Phase2 --> Phase5[Phase 5: Run Integration Test`<br/>`✅ 235.1s]
     Phase3 --> Phase5
     Phase4 --> Phase5
 
-    Phase5 --> Phase6[Phase 6: Generate Performance Report<br/>✅ 117.5s]
+    Phase5 --> Phase6[Phase 6: Generate Performance Report`<br/>`✅ 117.5s]
 
-    Phase2 --> Phase7[Phase 7: Collect Final Artifacts<br/>✅ 294.1s]
+    Phase2 --> Phase7[Phase 7: Collect Final Artifacts`<br/>`✅ 294.1s]
     Phase3 --> Phase7
     Phase4 --> Phase7
     Phase5 --> Phase7
@@ -88,16 +88,16 @@ graph TD
 
 ```mermaid
 graph TD
-    Start2([Start Workflow]) --> Phase1_2[Phase 1: Validate Structure<br/>✅ 17.6s]
+    Start2([Start Workflow]) --> Phase1_2[Phase 1: Validate Structure`<br/>`✅ 17.6s]
 
-    Phase1_2 --> Phase2_2[Phase 2: Extract Test Results<br/>✅ 219.7s]
-    Phase1_2 --> Phase3_2[Phase 3: Verify Implementation<br/>✅ 76.4s]
+    Phase1_2 --> Phase2_2[Phase 2: Extract Test Results`<br/>`✅ 219.7s]
+    Phase1_2 --> Phase3_2[Phase 3: Verify Implementation`<br/>`✅ 76.4s]
 
-    Phase2_2 --> Phase4_2[Phase 4: Generate Report<br/>✅ 7.4s]
+    Phase2_2 --> Phase4_2[Phase 4: Generate Report`<br/>`✅ 7.4s]
     Phase3_2 --> Phase4_2
     Phase1_2 --> Phase4_2
 
-    Phase4_2 --> Phase5_2[Phase 5: Create Summary<br/>✅ 28.2s]
+    Phase4_2 --> Phase5_2[Phase 5: Create Summary`<br/>`✅ 28.2s]
     Phase2_2 --> Phase5_2
     Phase3_2 --> Phase5_2
 

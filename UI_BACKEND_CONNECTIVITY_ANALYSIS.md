@@ -306,13 +306,13 @@ export default function SettingsPage() {
   };
 
   return (
-    <div>
-      <h1>BG-Remover Settings</h1>
+    <div>```
+      <h1>```BG-Remover Settings`</h1>`
 
       {/* Product Identity Detection Settings */}
-      <section>
-        <h2>Product Identity Detection</h2>
-        <label>
+      <section>```
+        <h2>```Product Identity Detection`</h2>`
+        <label>```
           <input
             type="checkbox"
             checked={settings?.productIdentity?.enabled}
@@ -325,9 +325,9 @@ export default function SettingsPage() {
             })}
           />
           Enable Product Identity Detection
-        </label>
+        `</label>`
 
-        <label>
+        <label>```
           Similarity Threshold: {settings?.productIdentity?.threshold}
           <input
             type="range"
@@ -343,18 +343,18 @@ export default function SettingsPage() {
               }
             })}
           />
-        </label>
+        `</label>`
 
         {/* Signal Weights */}
-        <h3>Signal Weights</h3>
-        <label>Spatial (layout): {settings?.productIdentity?.signalWeights?.spatial}</label>
-        <label>Feature (matching): {settings?.productIdentity?.signalWeights?.feature}</label>
-        <label>Semantic (labels): {settings?.productIdentity?.signalWeights?.semantic}</label>
+        <h3>```Signal Weights`</h3>`
+        <label>```Spatial (layout): {settings?.productIdentity?.signalWeights?.spatial}`</label>`
+        <label>```Feature (matching): {settings?.productIdentity?.signalWeights?.feature}`</label>`
+        <label>```Semantic (labels): {settings?.productIdentity?.signalWeights?.semantic}`</label>`
         {/* ... more weight sliders ... */}
-      </section>
+      `</section>`
 
-      <button onClick={handleSave}>Save Settings</button>
-    </div>
+      <button onClick={handleSave}>Save Settings`</button>`
+    `</div>`
   );
 }
 ```
@@ -383,40 +383,40 @@ export default function ClusterPage() {
   };
 
   return (
-    <div>
-      <h1>Product Identity Clustering</h1>
+    <div>```
+      <h1>```Product Identity Clustering`</h1>`
 
       {/* Image Upload */}
       <input type="file" multiple onChange={handleImageUpload} />
       <button onClick={handleAnalyze} disabled={isProcessing}>
         {isProcessing ? 'Analyzing...' : 'Analyze Products'}
-      </button>
+      `</button>`
 
       {/* Display Groups */}
       {groups.map(group => (
         <div key={group.id} className="product-group">
-          <h3>{group.name || `Group ${group.id}`}</h3>
-          <p>Confidence: {(group.confidence * 100).toFixed(1)}%</p>
-          <p>Images: {group.imageIds.length}</p>
+          <h3>```{group.name || `Group ${group.id}`}`</h3>`
+          <p>```Confidence: {(group.confidence * 100).toFixed(1)}%`</p>`
+          <p>```Images: {group.imageIds.length}`</p>`
 
           <div className="image-grid">
             {group.imageIds.map(imageId => (
               <img key={imageId} src={images.find(i => i.id === imageId)?.url} />
             ))}
-          </div>
+          `</div>`
 
-          <button onClick={() => splitGroup(group.id)}>Split Group</button>
-        </div>
+          <button onClick={() => splitGroup(group.id)}>Split Group`</button>`
+        `</div>`
       ))}
 
       {/* Ungrouped Images */}
       {ungroupedImages.length > 0 && (
         <div className="ungrouped">
-          <h3>Ungrouped Images ({ungroupedImages.length})</h3>
+          <h3>```Ungrouped Images ({ungroupedImages.length})`</h3>`
           {/* ... display ungrouped ... */}
-        </div>
+        `</div>`
       )}
-    </div>
+    `</div>`
   );
 }
 ```

@@ -103,7 +103,7 @@ curl https://6b3bf1bqk3.execute-api.eu-west-1.amazonaws.com/dev/bg-remover/healt
 ### Settings Endpoint (GET)
 ```bash
 curl https://6b3bf1bqk3.execute-api.eu-west-1.amazonaws.com/dev/bg-remover/settings \
-  -H "Authorization: Bearer <JWT_TOKEN>"
+  -H "Authorization: Bearer ``<JWT_TOKEN>``"
 
 # Returns default settings (see above structure)
 ```
@@ -111,7 +111,7 @@ curl https://6b3bf1bqk3.execute-api.eu-west-1.amazonaws.com/dev/bg-remover/setti
 ### Settings Endpoint (PUT)
 ```bash
 curl -X PUT https://6b3bf1bqk3.execute-api.eu-west-1.amazonaws.com/dev/bg-remover/settings \
-  -H "Authorization: Bearer <JWT_TOKEN>" \
+  -H "Authorization: Bearer ``<JWT_TOKEN>``" \
   -H "Content-Type: application/json" \
   -d '{
     "settings": {
@@ -160,7 +160,7 @@ curl -X PUT https://6b3bf1bqk3.execute-api.eu-west-1.amazonaws.com/dev/bg-remove
 
 ### 1. Process Scope Collision
 **Problem**: TypeScript compiler interpreted `process.env` as property of `export const process` function
-**Error**: `Property 'env' does not exist on type '(event: any) => Promise<...>'`
+**Error**: `Property 'env' does not exist on type '(event: any) => Promise`<...>`'`
 **Fix**: Changed all `process.env` to `global.process.env` in handler.ts (lines 43, 76, 99)
 
 ### 2. Path Routing
@@ -251,7 +251,7 @@ Create `GroupPreviewPanel.tsx` component to visualize product groups:
 ### 2. AWS Rekognition Integration
 Replace semantic analysis placeholder:
 ```typescript
-private async calculateSemanticSimilarity(urlA: string, urlB: string): Promise<number> {
+private async calculateSemanticSimilarity(urlA: string, urlB: string): Promise<number>``` {
   // TODO: Call AWS Rekognition DetectLabels
   // 1. Fetch labels for both images
   // 2. Calculate Jaccard similarity

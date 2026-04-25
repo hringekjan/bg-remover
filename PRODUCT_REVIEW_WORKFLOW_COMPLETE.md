@@ -300,7 +300,7 @@ const results = await fetchBookings({
 ## Performance Considerations
 
 ### State Management
-- Uses `Set<string>` for efficient O(1) lookups
+- Uses `Set<string>```` for efficient O(1) lookups
 - Minimal re-renders with proper state updates
 - Debounced booking search (300ms) reduces API calls
 

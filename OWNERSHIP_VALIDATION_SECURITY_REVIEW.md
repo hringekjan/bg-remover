@@ -44,7 +44,7 @@ Lambda Handler (re-validates JWT - defense in depth)
     ↓
 Extracts: tenant, userId from JWT
     ↓
-DynamoDB Query: TENANT#<tenant>#JOB → JOB#<jobId>
+DynamoDB Query: TENANT#<tenant>```#JOB → JOB#``<jobId>``
     ↓
 ✅ Tenant isolation enforced (pk scoped to tenant)
 ❌ NO ownership check (job.userId vs authenticated userId)
@@ -104,7 +104,7 @@ if (stage === 'prod' && userId && job.userId !== userId) {
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ jobId: string }> }
-): Promise<NextResponse> {
+): Promise``<NextResponse>`` {
   // ... validation ...
 
   const job = await getJobStatus(jobId);  // ❌ NO userId check
@@ -145,7 +145,7 @@ export async function GET(
 # Strategy: Guess job IDs (low success rate due to 122-bit entropy)
 # OR: Intercept job IDs from network traffic, browser history, logs
 
-curl -H "Authorization: Bearer <user-a-token>" \
+curl -H "Authorization: Bearer <user-a-token>```" \
   https://api.dev.carousellabs.co/bg-remover/status/550e8400-e29b-41d4-a716-446655440000
 
 # Response: Job owned by user-b@tenant.com
@@ -172,8 +172,8 @@ curl -H "Authorization: Bearer <user-a-token>" \
 # Cancels all jobs to cause business disruption
 
 curl -X DELETE \
-  -H "Authorization: Bearer <attacker-token>" \
-  https://api.dev.carousellabs.co/bg-remover/status/<victim-job-id>
+  -H "Authorization: Bearer <attacker-token>```" \
+  https://api.dev.carousellabs.co/bg-remover/status/<victim-job-id>```
 
 # Response: Success (job owned by victim)
 {
@@ -498,7 +498,7 @@ private async getJobStatus(
   jobId: string,
   userId?: string,
   userGroups?: string[]
-): Promise<any> {
+): Promise<any>``` {
 
   // Build authorization context
   const authContext: AuthorizationContext = {
@@ -557,7 +557,7 @@ private async cancelJob(
   jobId: string,
   userId?: string,
   userGroups?: string[]
-): Promise<any> {
+): Promise<any>``` {
 
   const authContext: AuthorizationContext = {
     tenant,
@@ -614,7 +614,7 @@ private async cancelJob(
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ jobId: string }> }
-): Promise<NextResponse> {
+): Promise``<NextResponse>`` {
   const { jobId } = await params;
   const job = await getJobStatus(jobId);  // ❌ No userId check
 
@@ -634,7 +634,7 @@ import { authOptions } from '@/lib/auth';
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ jobId: string }> }
-): Promise<NextResponse> {
+): Promise``<NextResponse>`` {
 
   // ✅ 1. Authenticate user
   const session = await getServerSession(authOptions);
@@ -752,7 +752,7 @@ interface AuditLogEntry {
 // Sort key: timestamp#userId#action
 // TTL: 90 days (compliance retention)
 
-async function auditLog(entry: AuditLogEntry): Promise<void> {
+async function auditLog(entry: AuditLogEntry): Promise<void>``` {
   const pk = `${entry.tenant}#${entry.timestamp.split('T')[0]}`;
   const sk = `${entry.timestamp}#${entry.userId}#${entry.action}`;
 
@@ -1093,7 +1093,7 @@ npm run deploy:prod   # Production rollout
 aws lambda update-function-code \
   --function-name bg-remover-dev-process \
   --s3-bucket bg-remover-deployments \
-  --s3-key deployments/<previous-version>.zip
+  --s3-key deployments/<previous-version>```.zip
 ```
 
 ---

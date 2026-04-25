@@ -219,3 +219,59 @@ class RekognitionAnalyzer:
             rawLabels=labels_raw,
             rawText=text_detections_raw
         )
+
+
+# ============================================================================
+# Companion pydantic-ai Agent (HookedAgent pattern)
+# ============================================================================
+
+try:
+    from pydantic_ai import RunContext
+    from agentic.agents.pydantic.agents.base_hooked_agent import HookedAgent
+    _HOOKED_AGENT_AVAILABLE = True
+except ImportError:
+    _HOOKED_AGENT_AVAILABLE = False
+    HookedAgent = object
+    RunContext = None
+
+
+class RekognitionAnalyzerAgentV2(HookedAgent):
+    """
+    Pydantic-AI companion agent for RekognitionAnalyzer.
+
+    Named V2 to avoid collision with the Marvin wrapper RekognitionAnalyzerAgent.
+    AWS Rekognition does not use a Bedrock LLM — BedrockAdapter is used as
+    the orchestrator model while tools call Rekognition directly.
+    """
+
+    agent_name: str = "RekognitionAnalyzerAgentV2"
+
+    def __init__(
+        self,
+        model: str = "bedrock:us.amazon.nova-micro-v1:0",
+        region_name: str = "us-east-1",
+        workflow_id=None,
+        session_id=None,
+        sentinels_url: str = "http://localhost:8080",
+    ):
+        self._service = RekognitionAnalyzer(region_name=region_name)
+        super().__init__(
+            model=model,
+            workflow_id=workflow_id,
+            session_id=session_id,
+            sentinels_url=sentinels_url,
+        )
+        self._register_tools()
+
+    def _register_tools(self) -> None:
+        service = self._service
+
+        @self.tool
+        async def analyze_with_rekognition(ctx, base64_image: str) -> dict:
+            """
+            Run full Rekognition analysis (labels, text, moderation) on a base64 image.
+
+            Returns RekognitionAnalysisResult as dict.
+            """
+            result = service.analyze_with_rekognition(base64_image=base64_image)
+            return result.model_dump()

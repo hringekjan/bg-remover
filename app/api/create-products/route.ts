@@ -18,7 +18,7 @@ import {
   createProcessResult,
 } from '@/lib/bedrock/image-processor';
 import { uploadProcessedImage, generateOutputKey, getOutputBucket } from '@/lib/s3/client';
-import { createProductInCarouselApi, batchCreateProducts, CreateProductRequest } from '@/lib/carousel-api/client';
+import { createProductInCarouselApi, batchCreateProducts, addProductsToBooking, CreateProductRequest } from '@/lib/carousel-api/client';
 import { BatchResult, ProductCreationResult, setJobStatus } from '@/lib/dynamo/job-store';
 import { validateJWTFromEvent } from '@/src/lib/auth/jwt-validator';
 import { resolveTenantFromRequest } from '@/src/lib/tenant/resolver';
@@ -48,6 +48,7 @@ const ProductGroupSchema = z.object({
 
 const CreateProductsRequestSchema = z.object({
   productGroups: z.array(ProductGroupSchema).min(1).max(50),
+  bookingId: z.string().optional(),
   options: z.object({
     outputFormat: z.enum(['webp', 'png', 'jpeg']).default('webp'),
     quality: z.number().min(1).max(100).default(90),
@@ -148,7 +149,8 @@ async function processProductGroup(
   options: NonNullable<CreateProductsRequest['options']>,
   index: number,
   timeoutMs?: number,
-  authToken?: string
+  authToken?: string,
+  bookingId?: string
 ): Promise<ProductCreationResult> {
   const productGroupId = group.productId || `group-${index}-${randomUUID().substring(0, 8)}`;
   const startTime = Date.now();
@@ -259,6 +261,15 @@ async function processProductGroup(
       carouselApiProductId: product.id,
       imageCount: s3Urls.length,
     });
+
+    if (bookingId && product.id) {
+      const { error: bookingError } = await addProductsToBooking(tenant, userId, bookingId, [product.id], authToken || undefined);
+      if (bookingError) {
+        console.warn('Failed to attach product to booking', { productGroupId, bookingId, productId: product.id, error: bookingError });
+      } else {
+        console.log('Product attached to booking', { productGroupId, bookingId, productId: product.id });
+      }
+    }
 
     return {
       productId: productGroupId,
@@ -581,7 +592,8 @@ export async function POST(request: NextRequest) {
         options,
         index,
         perGroupTimeoutMs,
-        authToken
+        authToken,
+        validatedRequest.bookingId
       )
     );
 

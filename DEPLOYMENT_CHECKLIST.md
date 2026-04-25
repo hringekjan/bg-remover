@@ -90,7 +90,7 @@ aws lambda get-policy \
 cd /Users/davideagle/git/CarouselLabs/enterprise-packages/services/bg-remover/scripts
 
 # Test with valid key (use one from seed script output)
-./test-admin-keys.sh dev <your-api-key>
+./test-admin-keys.sh dev <your-api-key>```
 ```
 
 **Expected Output:**
@@ -141,7 +141,7 @@ aws lambda get-function-configuration \
 ```bash
 # Test image processing with valid admin key
 curl -X POST https://api.dev.carousellabs.co/bg-remover/process \
-  -H "X-Api-Key: <valid-key>" \
+  -H "X-Api-Key: <valid-key>```" \
   -H "X-Tenant-Id: carousel-labs" \
   -H "Content-Type: application/json" \
   -d '{
@@ -159,7 +159,7 @@ curl -X POST https://api.dev.carousellabs.co/bg-remover/process \
 # Make 3 requests in quick succession
 for i in {1..3}; do
   time curl -X POST https://api.dev.carousellabs.co/bg-remover/process \
-    -H "X-Api-Key: <valid-key>" \
+    -H "X-Api-Key: <valid-key>```" \
     -H "Content-Type: application/json" \
     -d '{"imageUrl": "..."}' > /dev/null 2>&1
 done
@@ -182,7 +182,7 @@ cd /Users/davideagle/git/CarouselLabs/enterprise-packages/services/bg-remover/sc
 sleep 300
 
 # Test with new key
-./test-admin-keys.sh dev <new-key>
+./test-admin-keys.sh dev <new-key>```
 
 # Expected: ✅ PASS for all tests
 ```
@@ -227,7 +227,7 @@ aws ssm describe-parameters \
 
 3. **Verify rollback:**
    ```bash
-   ./test-admin-keys.sh dev <old-env-var-key>
+   ./test-admin-keys.sh dev <old-env-var-key>```
    ```
 
 ### If SSM Parameter Missing

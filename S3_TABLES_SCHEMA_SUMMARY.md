@@ -210,7 +210,7 @@ bash scripts/verify-s3-tables.sh dev eu-west-1
 | 7 | sold_date | TIMESTAMP | 8B | Sale date |
 | 8 | season | STRING | 4B | Quarter (Q1-Q4) |
 | 9 | image_s3_key | STRING | VAR | S3 image path |
-| 10 | embedding | ARRAY<DOUBLE> | 8KB | 1024-dim vector |
+| 10 | embedding | ARRAY``<DOUBLE>`` | 8KB | 1024-dim vector |
 | 11 | description | STRING | VAR | Product description |
 | 12 | source | STRING | VAR | Data source |
 

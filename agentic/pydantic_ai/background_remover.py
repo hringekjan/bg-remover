@@ -5,6 +5,14 @@ from typing import Literal, Optional
 
 import boto3
 from pydantic import BaseModel, Field, ValidationError
+from pydantic_ai import RunContext
+
+try:
+    from agentic.agents.pydantic.agents.base_hooked_agent import HookedAgent
+    _HOOKED_AGENT_AVAILABLE = True
+except ImportError:
+    _HOOKED_AGENT_AVAILABLE = False
+    HookedAgent = object  # fallback base so class definition doesn't fail
 
 class RemoveBackgroundOptions(BaseModel):
     """Options for background removal."""
@@ -87,3 +95,74 @@ class BedrockBackgroundRemover:
             processing_time_ms=processing_time_ms,
             metadata=metadata
         )
+
+
+# ============================================================================
+# Companion pydantic-ai Agent (HookedAgent pattern)
+# ============================================================================
+
+
+class BedrockBackgroundRemoverAgent(HookedAgent):
+    """
+    Pydantic-AI companion agent for BedrockBackgroundRemover.
+
+    Wraps the BedrockBackgroundRemover service class as a pydantic-ai Agent
+    with full LocalSentinels observability via HookedAgent hooks.
+
+    Usage:
+        agent = BedrockBackgroundRemoverAgent()
+        result = await agent.run("Remove background from this image: <base64>")
+    """
+
+    agent_name: str = "BedrockBackgroundRemoverAgent"
+
+    def __init__(
+        self,
+        model: str = "bedrock:amazon.nova-canvas-v1:0",
+        region_name: str = "us-east-1",
+        workflow_id: Optional[str] = None,
+        session_id: Optional[str] = None,
+        sentinels_url: str = "http://localhost:8080",
+    ):
+        self._service = BedrockBackgroundRemover(region_name=region_name)
+        super().__init__(
+            model=model,
+            workflow_id=workflow_id,
+            session_id=session_id,
+            sentinels_url=sentinels_url,
+        )
+        self._register_tools()
+
+    def _register_tools(self) -> None:
+        """Register service methods as pydantic-ai tools."""
+        service = self._service
+
+        @self.tool
+        async def remove_background(
+            ctx: RunContext[None],
+            base64_image: str,
+            quality: str = "premium",
+            height: int = 1024,
+            width: int = 1024,
+        ) -> dict:
+            """
+            Remove background from a base64-encoded image using Amazon Nova Canvas.
+
+            Args:
+                base64_image: Base64-encoded input image.
+                quality: 'standard' or 'premium' (default: premium).
+                height: Output image height in pixels (default: 1024).
+                width: Output image width in pixels (default: 1024).
+
+            Returns:
+                Dict with output_buffer_b64, processing_time_ms, and metadata.
+            """
+            options = RemoveBackgroundOptions(
+                quality=quality,  # type: ignore[arg-type]
+                height=height,
+                width=width,
+            )
+            result = service.remove_background(
+                base64_image=base64_image, options=options
+            )
+            return result.model_dump()

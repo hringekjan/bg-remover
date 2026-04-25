@@ -367,3 +367,63 @@ Return ONLY valid JSON (no markdown, no explanation, no code blocks):
 
         # Pydantic will handle further validation and defaults
         return MistralPixtralAnalysisResult(**result_data)
+
+
+# ============================================================================
+# Companion pydantic-ai Agent (HookedAgent pattern)
+# ============================================================================
+
+try:
+    from pydantic_ai import RunContext
+    from agentic.agents.pydantic.agents.base_hooked_agent import HookedAgent
+    _HOOKED_AGENT_AVAILABLE = True
+except ImportError:
+    _HOOKED_AGENT_AVAILABLE = False
+    HookedAgent = object
+    RunContext = None
+
+
+class MistralPixtralAnalyzerAgentV2(HookedAgent):
+    """
+    Pydantic-AI companion agent for MistralPixtralAnalyzer.
+
+    Named V2 to avoid collision with the Marvin wrapper MistralPixtralAnalyzerAgent
+    in mistral_pixtral_analyzer_agent/agent.py.
+    """
+
+    agent_name: str = "MistralPixtralAnalyzerAgentV2"
+
+    def __init__(
+        self,
+        model: str = "bedrock:us.mistral.pixtral-large-2502-v1:0",
+        workflow_id=None,
+        session_id=None,
+        sentinels_url: str = "http://localhost:8080",
+    ):
+        self._service = MistralPixtralAnalyzer()
+        super().__init__(
+            model=model,
+            workflow_id=workflow_id,
+            session_id=session_id,
+            sentinels_url=sentinels_url,
+        )
+        self._register_tools()
+
+    def _register_tools(self) -> None:
+        service = self._service
+
+        @self.tool
+        async def analyze_image(ctx, base64_image: str, rekognition_hints: dict = None) -> dict:
+            """
+            Analyze a product image using Mistral Pixtral Large.
+
+            Args:
+                base64_image: Base64-encoded image.
+                rekognition_hints: Optional dict with Rekognition label hints.
+
+            Returns:
+                MistralPixtralAnalysisResult as dict.
+            """
+            hints = RekognitionHints(**rekognition_hints) if rekognition_hints else None
+            result = service.analyze_image(base64_image=base64_image, rekognition_hints=hints)
+            return result.model_dump()

@@ -161,7 +161,7 @@ private async downloadImageFromS3(
   key: string,
   jobId: string,
   maxRetries: number = 3
-): Promise<string> {
+): Promise<string>``` {
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
       const response = await s3Client.send(new GetObjectCommand({
@@ -230,7 +230,7 @@ TempImagesBucket:
 
 1. **handleUpdateGroup** - Edit group properties
 ```typescript
-const handleUpdateGroup = (groupId: string, updates: Partial<any>) => {
+const handleUpdateGroup = (groupId: string, updates: Partial<any>```) => {
   setGroupingResults({
     ...groupingResults,
     groups: groupingResults.groups.map(group =>
@@ -701,7 +701,7 @@ aws lambda list-versions-by-function \
 
 - [ ] **M1:** Add unit tests for S3 integration
 - [ ] **M2:** Verify vector-search-integration fix
-- [ ] **M3:** Replace `Partial<any>` with typed `Partial<ProductGroup>`
+- [ ] **M3:** Replace `Partial<any>```` with typed `Partial``<ProductGroup>```
 - [ ] **M4:** Add CloudWatch metrics for S3 operations
 
 ### Low Priority (Nice to Have)

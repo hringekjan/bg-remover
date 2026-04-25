@@ -22,6 +22,7 @@ import { Logger } from '@aws-lambda-powertools/logger';
 import { SalesRepository, QueryResult } from './sales-repository';
 import type { SalesRecord } from '../sales-intelligence-types';
 import { EmbeddingStorageService } from './embedding-storage';
+import { getContextBoost } from '../middleware/context-scope';
 
 /**
  * Vector search options
@@ -365,6 +366,25 @@ export class VectorSearchService {
 
     // Clamp to [0, 1] to handle floating-point errors
     return Math.max(0, Math.min(1, similarity));
+  }
+
+  /**
+   * Apply deterministic context boost to similarity score
+   * 
+   * This method enhances the similarity score based on the current context
+   * to prioritize more relevant memory search results.
+   * 
+   * @param similarity - Original cosine similarity score (0-1)
+   * @returns Boosted similarity score (0-1)
+   */
+  private applyContextBoost(similarity: number): number {
+    // Get context boost value
+    const contextBoost = typeof getContextBoost === 'function' ? getContextBoost() : 1.0;
+    
+    // Apply boost - but cap at 1.0
+    const boostedScore = Math.min(similarity * contextBoost, 1.0);
+    
+    return boostedScore;
   }
 
   /**

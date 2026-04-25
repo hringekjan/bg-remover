@@ -358,7 +358,7 @@ x-cache: Miss from cloudfront
 ### Medium Priority (Future Enhancement)
 - [ ] M1: Add unit tests for S3 integration
 - [ ] M2: Verify vector-search-integration fix
-- [ ] M3: Replace `Partial<any>` with typed `Partial<ProductGroup>`
+- [ ] M3: Replace `Partial<any>```` with typed `Partial``<ProductGroup>```
 - [ ] M4: Add CloudWatch metrics for S3 operations
 
 ### Low Priority (Nice to Have)

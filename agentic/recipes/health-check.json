@@ -1,0 +1,40 @@
+{
+  "version": "1.0.0",
+  "name": "BG-Remover Health Check",
+  "scope": "service",
+  "service": "bg-remover",
+  "description": "Verify bg-remover API is healthy: check /health endpoint, validate S3 output bucket access, confirm Bedrock Nova Canvas model is reachable, and return a readiness summary.",
+  "workflow_pattern": "sequential-dag",
+  "parameters": {
+    "tenant_id": "carousel-labs",
+    "stage": "dev",
+    "goal": ""
+  },
+  "steps": [
+    {
+      "name": "bgr_health",
+      "agent_class": "ops",
+      "prompt": "Hit GET /health on the bg-remover service (stage: {stage}, tenant: {tenant_id}). Verify response is 200 with {healthy: true}. Return JSON: { healthy, version, stage, latency_ms }",
+      "dependencies": []
+    },
+    {
+      "name": "bgr_s3_check",
+      "agent_class": "ops",
+      "prompt": "Verify the S3 output bucket for bg-remover exists and is writable (stage: {stage}, tenant: {tenant_id}). Attempt a HEAD request on a test key. Context: {bgr_health}. Return JSON: { bucket_exists, writable, bucket_name }",
+      "dependencies": ["bgr_health"]
+    },
+    {
+      "name": "bgr_bedrock_check",
+      "agent_class": "ops",
+      "prompt": "Verify Bedrock Nova Canvas model access for bg-remover. Confirm model ID is accessible in the configured AWS region. Context: {bgr_health}. Return JSON: { model_accessible, model_id, region }",
+      "dependencies": ["bgr_health"]
+    },
+    {
+      "name": "bgr_readiness_summary",
+      "agent_class": "reviewer",
+      "prompt": "Summarise bg-remover readiness based on:\n- API health: {bgr_health}\n- S3 access: {bgr_s3_check}\n- Bedrock access: {bgr_bedrock_check}\n\nReturn JSON: { ready, blockers[], warnings[], summary }",
+      "dependencies": ["bgr_s3_check", "bgr_bedrock_check"]
+    }
+  ],
+  "tags": ["health", "service", "bg-remover"]
+}

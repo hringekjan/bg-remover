@@ -2,6 +2,7 @@ import { DynamoDBClient, UpdateItemCommand, PutItemCommand } from '@aws-sdk/clie
 import { NodeHttpHandler } from '@smithy/node-http-handler';
 import { marshall } from '@aws-sdk/util-dynamodb';
 import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { BaseHandler } from './base-handler';
 import { randomUUID } from 'crypto';
 import {
@@ -25,10 +26,82 @@ import { bgRemoverTelemetry, calculateBgRemoverCost } from '../lib/telemetry/bg-
 import { addProductsToBooking, createProductInCarouselApi, normalizeSizingInCarouselApi, type CreateProductRequest } from '../../lib/carousel-api/client';
 import { EventTracker } from '../lib/event-tracking';
 import { PricingIntelligenceService, PricingSuggestion } from '../lib/pricing-intelligence';
-import { extractAttributes, type ExtractionResult } from '../lib/ai-extractor';
+import { extractAttributes, seedBrandsFromRegistry, type ExtractionResult } from '../lib/ai-extractor';
 import { ratingGenerator } from '../lib/quality-assessment/rating-generator';
 import { VisionAnalysisService } from '../lib/pricing/vision-analysis';
 import { extractSizeHint } from '../lib/sizing/size-hints';
+import { getBrandRegistry } from '../lib/brand-registry';
+import { getServiceEndpoint } from '../lib/tenant/config';
+
+// Bedrock BACKGROUND_REMOVAL: ≤4,194,304 pixels (2048×2048)
+// Rekognition inline bytes: ≤5,242,880 bytes (5 MB)
+// We target 2/3 of 2048 = 1365px — comfortable headroom under both limits.
+// Uses a presigned S3 URL so the image-optimizer fetches the image directly —
+// avoids sending multi-MB base64 through the API Gateway (413 limit).
+async function resizeImageViaOptimizer(
+  s3Bucket: string,
+  s3Key: string,
+  imageBuffer: Buffer,
+  tenant: string,
+  jobId: string,
+  s3ClientRef: S3Client,
+  rotation?: number
+): Promise<Buffer> {
+  // Bedrock BACKGROUND_REMOVAL limit: 4,194,304 pixels (2048×2048)
+  // File size in bytes is not a reliable proxy — a 4MB JPEG can be 12MP.
+  // Always resize to TARGET_DIMENSION to guarantee pixel count compliance.
+  const TARGET_DIMENSION = Math.round(2048 * (2 / 3)); // 1365px
+
+  try {
+    // Generate a short-lived presigned URL so the optimizer fetches the image itself
+    const presignedUrl = await getSignedUrl(
+      s3ClientRef,
+      new GetObjectCommand({ Bucket: s3Bucket, Key: s3Key }),
+      { expiresIn: 120 }
+    );
+
+    const optimizerUrl = getServiceEndpoint('image-optimizer', tenant);
+    const response = await fetch(optimizerUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        imageUrl: presignedUrl,
+        targetSize: { width: TARGET_DIMENSION, height: TARGET_DIMENSION },
+        outputFormat: 'jpeg',
+        quality: 85,
+        ...(rotation ? { rotate: rotation } : {}),
+      }),
+      signal: AbortSignal.timeout(30000),
+    });
+
+    if (!response.ok) {
+      console.warn('[Worker] image-optimizer resize returned non-OK status, using original', {
+        jobId, status: response.status,
+      });
+      return imageBuffer;
+    }
+
+    const result = await response.json() as { outputBase64?: string };
+    if (!result.outputBase64) {
+      console.warn('[Worker] image-optimizer resize returned no outputBase64, using original', { jobId });
+      return imageBuffer;
+    }
+
+    const resized = Buffer.from(result.outputBase64, 'base64');
+    console.log('[Worker] Resized image via image-optimizer', {
+      jobId,
+      originalBytes: imageBuffer.length,
+      resizedBytes: resized.length,
+      targetDimension: TARGET_DIMENSION,
+    });
+    return resized;
+  } catch (err) {
+    console.warn('[Worker] image-optimizer resize failed, using original (may fail downstream)', {
+      jobId, error: err instanceof Error ? err.message : String(err),
+    });
+    return imageBuffer;
+  }
+}
 
 const dynamoDB = new DynamoDBClient({
   requestHandler: new NodeHttpHandler({
@@ -51,6 +124,22 @@ const eventBridgeClient = new EventBridgeClient({
   }),
 });
 const tableName = process.env.DYNAMODB_TABLE || `carousel-main-${process.env.STAGE || 'dev'}`;
+
+// Cold-start: load tenant brand registry into ai-extractor's KNOWN_BRANDS
+// Runs once per Lambda execution environment; failures are non-blocking
+const defaultTenant = process.env.TENANT || 'carousel-labs';
+getBrandRegistry(dynamoDB, tableName, defaultTenant)
+  .loadRegisteredBrands()
+  .then((brands) => {
+    if (brands.size > 0) {
+      seedBrandsFromRegistry(brands);
+      console.info(`[BrandRegistry] Seeded ${brands.size} brands from registry`);
+    }
+  })
+  .catch((err) => {
+    console.warn('[BrandRegistry] Cold-start load failed (non-blocking):', err);
+  });
+
 const GARMENT_TYPES = new Set([
   'TSHIRT_KNIT_TOP',
   'SHIRT_BUTTONDOWN',
@@ -96,6 +185,7 @@ interface GroupProcessingPayload {
     s3Key?: string;            // NEW: S3 object key
     filename: string;
     isPrimary: boolean;
+    rotation?: number;         // Clockwise rotation in degrees (0, 90, 180, 270)
   }>;
   productName?: string;
   pipeline: string;
@@ -158,7 +248,9 @@ export class ProcessWorkerHandler extends BaseHandler {
     bucket: string,
     key: string,
     jobId: string,
-    maxRetries: number = 3
+    maxRetries: number = 3,
+    tenant: string,
+    rotation?: number,
   ): Promise<string> {
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
@@ -168,6 +260,7 @@ export class ProcessWorkerHandler extends BaseHandler {
           key,
           attempt,
           maxRetries,
+          rotation,
         });
 
         const response = await s3Client.send(new GetObjectCommand({
@@ -180,7 +273,7 @@ export class ProcessWorkerHandler extends BaseHandler {
         for await (const chunk of response.Body as any) {
           chunks.push(chunk);
         }
-        const buffer = Buffer.concat(chunks);
+        let buffer = Buffer.concat(chunks);
 
         console.log('[Worker] Image downloaded from S3', {
           jobId,
@@ -188,6 +281,9 @@ export class ProcessWorkerHandler extends BaseHandler {
           key,
           attempt,
         });
+
+        // Resize (and optionally rotate) via image-optimizer before sending to Bedrock
+        buffer = await resizeImageViaOptimizer(bucket, key, buffer, tenant, jobId, s3Client, rotation);
 
         // Convert to base64
         return buffer.toString('base64');
@@ -651,7 +747,7 @@ export class ProcessWorkerHandler extends BaseHandler {
               s3Key: image.s3Key,
               filename: image.filename,
             });
-            imageBase64 = await this.downloadImageFromS3(image.s3Bucket, image.s3Key, jobId);
+            imageBase64 = await this.downloadImageFromS3(image.s3Bucket, image.s3Key, jobId, 3, tenant, image.rotation);
           } else if (!imageBase64) {
             throw new Error(`Image data missing: neither imageBase64 nor S3 location provided for ${image.filename}`);
           }
@@ -1150,6 +1246,7 @@ export class ProcessWorkerHandler extends BaseHandler {
         const productData: CreateProductRequest = {
           productId: randomUUID(),
           sku: `${groupId}-${Date.now()}`,
+          name: productName || `Product ${groupId}`, // Top-level name required by crud handler validation
           content: {
             en: {
               name: productName || `Product ${groupId}`,
@@ -1217,10 +1314,13 @@ export class ProcessWorkerHandler extends BaseHandler {
             specifications: {
               ...(extractedAttributes?.pattern && { pattern: extractedAttributes.pattern }),
               ...(extractedAttributes?.season && { season: extractedAttributes.season }),
+              ...(extractedAttributes?.occasion && extractedAttributes.occasion.length > 0 && { occasion: extractedAttributes.occasion }),
+              ...(extractedAttributes?.imageAltText && { imageAltText: extractedAttributes.imageAltText }),
             },
           },
           colorAnalysis: {
-            dominantColors: [], // TODO: Extract from image analysis
+            // Use extracted color names as dominant colors (Mistral vision provides these directly)
+            dominantColors: extractedAttributes?.colors || primaryDescription?.colors || [],
             colorPalette: extractedAttributes?.colors || primaryDescription?.colors || [], // Auto-detected color names
           },
           imageMetadata: processedImages[0] ? {
@@ -1303,6 +1403,11 @@ export class ProcessWorkerHandler extends BaseHandler {
         style: extractedAttributes?.style,
         sustainability: extractedAttributes?.sustainability,
         aiConfidence: extractedAttributes?.aiConfidence,
+        // Season/occasion/pricing forwarded from Mistral vision analysis
+        season: extractedAttributes?.season,
+        occasion: extractedAttributes?.occasion,
+        pricingHints: extractedAttributes?.pricingHints,
+        imageAltText: extractedAttributes?.imageAltText,
         moderationLabels: primaryResult?.rekognitionAnalysis?.moderationLabels,
         rekognitionLabels: primaryResult?.rekognitionAnalysis?.labels,
         // Store processedImages array with full metadata for frontend display
@@ -1346,9 +1451,25 @@ export class ProcessWorkerHandler extends BaseHandler {
           pattern: extractedAttributes?.pattern,
           style: extractedAttributes?.style,
           sustainability: extractedAttributes?.sustainability,
+          season: extractedAttributes?.season,
+          occasion: extractedAttributes?.occasion,
+          imageAltText: extractedAttributes?.imageAltText,
           moderationLabels: (img as any)?.rekognitionAnalysis?.moderationLabels,
         })),
       });
+
+      // Fire-and-forget: persist detected brand to registry for future detection
+      if (extractedAttributes?.brand) {
+        const brandRegistry = getBrandRegistry(
+          dynamoDB,
+          tableName,
+          tenant,
+        );
+        // Do not await — brand registration must never block job completion
+        brandRegistry.registerBrand(extractedAttributes.brand).catch((err) => {
+          console.warn('[Worker] Brand registry write failed (non-blocking):', err);
+        });
+      }
 
       // Record batch telemetry with concurrency metrics
       // Convert quality number (1-100) to 'low' | 'medium' | 'high' for telemetry
@@ -1906,9 +2027,14 @@ export class ProcessWorkerHandler extends BaseHandler {
       };
 
       // Map additional fields to update expression
-      Object.entries(additionalFields).forEach(([key, value], index) => {
+      // Skip keys already handled above (status, updatedAt) to avoid duplicate/reserved-word conflicts
+      const reservedKeys = new Set(['status', 'updatedAt']);
+      let fieldIndex = 0;
+      Object.entries(additionalFields).forEach(([key, value]) => {
         if (value === undefined || value === null) return;
+        if (reservedKeys.has(key)) return;
 
+        const index = fieldIndex++;
         const attrName = `#field${index}`;
         const valName = `:val${index}`;
         

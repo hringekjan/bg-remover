@@ -107,7 +107,7 @@ interface ProcessingResult {
   };
 }
 
-async function processImage(imagePath: string, imageId: string): Promise<ProcessingResult> {
+async function processImage(imagePath: string, imageId: string): Promise``<ProcessingResult>`` {
   const startTime = Date.now();
   const imageBuffer = readFileSync(imagePath);
   
@@ -309,7 +309,7 @@ Your bg-remover service already has Nova Canvas integration. To add Rekognition:
 2. **Add Rekognition analysis function**:
    ```typescript
    // services/bg-remover/src/lib/rekognition/product-analysis.ts
-   export async function analyzeProductImage(imageBuffer: Buffer): Promise<ProductAnalysis>
+   export async function analyzeProductImage(imageBuffer: Buffer): Promise``<ProductAnalysis>``
    ```
 
 3. **Modify main handler** to call both:

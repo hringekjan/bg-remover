@@ -27,6 +27,7 @@ import { validateAndDebitCredits, refundCredits } from '@/src/lib/credits/client
 import { loadAdminApiKeys } from '@carousellabs/backend-kit';
 import { jwtVerify, createRemoteJWKSet } from 'jose';
 import { errors as joseErrors } from 'jose';
+import { ingestContextHeaders } from '../../lib/middleware/context-scope';
 
 /**
  * Load admin API keys from SSM Parameter Store (SecureString)
@@ -325,6 +326,9 @@ export async function POST(request: NextRequest): Promise<NextResponse<ProcessRe
     // Resolve tenant from request (header, domain, or default)
     const stage = process.env.STAGE || 'dev';
     const tenant = await resolveTenantFromRequest(request, stage);
+    
+    // Ingest context headers from request (if present) for Mem0 writes
+    ingestContextHeaders(request);
 
     // Parse and validate request body
     const body = await request.json();

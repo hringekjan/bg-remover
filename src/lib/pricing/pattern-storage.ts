@@ -46,6 +46,12 @@ export class PatternStorageService {
   }
 
   /**
+   * Security Note: API keys are loaded securely from environment variables
+   * configured via SSM Parameter Store to avoid hardcoding.
+   * See SECURITY_NOTICE.md for implementation details.
+   */
+
+  /**
    * Store seasonal pattern in mem0
    *
    * Creates a memory record with pattern details that can be referenced

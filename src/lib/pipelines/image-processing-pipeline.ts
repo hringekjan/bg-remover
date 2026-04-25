@@ -8,6 +8,50 @@ import { removeBackground, type RemoveBackgroundOptions } from '../bedrock/backg
 import { analyzeWithRekognition } from '../rekognition/analyzer';
 import { analyzeWithMistralPixtral } from '../bedrock/mistral-pixtral-analyzer';
 import { type ProductDescription, type BilingualProductDescription } from '../types';
+import { getServiceEndpoint } from '../tenant/config';
+
+/**
+ * Center the main subject of a background-removed PNG on a square transparent canvas
+ * using the deployed image-optimizer service (avoids bundling sharp native binaries).
+ * Returns the original buffer if the service call fails for any reason.
+ */
+async function centerSubjectOnCanvas(pngBuffer: Buffer, tenant: string): Promise<Buffer> {
+  try {
+    const optimizerUrl = getServiceEndpoint('image-optimizer', tenant);
+    const response = await fetch(optimizerUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        imageBase64: pngBuffer.toString('base64'),
+        autoTrim: true,
+        centerSubject: true,
+        outputFormat: 'png',
+      }),
+      signal: AbortSignal.timeout(30000),
+    });
+
+    if (!response.ok) {
+      console.warn('[Pipeline] image-optimizer returned non-OK status, using original', { status: response.status });
+      return pngBuffer;
+    }
+
+    const result = await response.json() as { outputBase64?: string };
+    if (!result.outputBase64) {
+      console.warn('[Pipeline] image-optimizer returned no outputBase64, using original');
+      return pngBuffer;
+    }
+
+    const centered = Buffer.from(result.outputBase64, 'base64');
+    console.log('[Pipeline] Subject centered via image-optimizer', {
+      origBytes: pngBuffer.length,
+      centeredBytes: centered.length,
+    });
+    return centered;
+  } catch (err) {
+    console.warn('[Pipeline] Subject centering failed, using original:', err instanceof Error ? err.message : String(err));
+    return pngBuffer;
+  }
+}
 
 export interface ProcessImageInput {
   base64Image: string;
@@ -57,7 +101,7 @@ export interface ProcessImageResult {
  * - Single Nova Pro call with Rekognition context
  */
 export async function processImage(input: ProcessImageInput): Promise<ProcessImageResult> {
-  const { base64Image, options, tenant } = input;
+  const { base64Image, options, tenant = 'carousel-labs' } = input;
   const { format, quality, targetSize, generateDescription, productName } = options;
 
   console.log('✨ Pipeline: Background removal + Rekognition in parallel', {
@@ -69,6 +113,7 @@ export async function processImage(input: ProcessImageInput): Promise<ProcessIma
   const imageBuffer = Buffer.from(base64Image, 'base64');
 
   // Step 1: Parallel execution - Background removal + Rekognition analysis
+  // Note: images are pre-scaled to ≤2048×2048 at upload time (process-groups-handler)
   const bgOptions: RemoveBackgroundOptions = {
     quality: quality === 'high' ? 'premium' : 'standard',
     height: targetSize?.height,
@@ -85,11 +130,17 @@ export async function processImage(input: ProcessImageInput): Promise<ProcessIma
     throw new Error(`Image rejected: ${rekResult.reason || 'Content moderation failed'}`);
   }
 
+  // Step 2.5: Center the subject on a square transparent canvas
+  const centeredBuffer = await centerSubjectOnCanvas(bgResult.outputBuffer, tenant);
+
+  // Replace bgResult output with centered version
+  const finalOutputBuffer = centeredBuffer;
+
   const resultMetadata = {
     width: bgResult.metadata.width,
     height: bgResult.metadata.height,
     originalSize: (base64Image.length * 3) / 4,
-    processedSize: bgResult.outputBuffer.length,
+    processedSize: finalOutputBuffer.length,
     processingTimeMs: bgResult.processingTimeMs
   };
 
@@ -104,7 +155,7 @@ export async function processImage(input: ProcessImageInput): Promise<ProcessIma
 
       // Single Mistral Pixtral Large call with Rekognition context (faster, cheaper, better)
       mistralResult = await analyzeWithMistralPixtral(
-        bgResult.outputBuffer,
+        finalOutputBuffer,
         productName,
         {
           labels: rekResult.labels,
@@ -157,7 +208,7 @@ export async function processImage(input: ProcessImageInput): Promise<ProcessIma
   }
 
   return {
-    outputBuffer: bgResult.outputBuffer,
+    outputBuffer: finalOutputBuffer,
     metadata: resultMetadata,
     productDescription,
     bilingualDescription,

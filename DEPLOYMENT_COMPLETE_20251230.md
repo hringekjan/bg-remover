@@ -95,7 +95,7 @@ private async downloadImageFromS3(
   key: string,
   jobId: string,
   maxRetries: number = 3
-): Promise<string> {
+): Promise<string>``` {
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
       // Download logic
@@ -301,7 +301,7 @@ classifier: 16 MB
 ### Medium Priority (Future Enhancements)
 - [ ] M1: Add unit tests for S3 integration
 - [ ] M2: Verify vector-search-integration fix
-- [ ] M3: Replace `Partial<any>` with typed `Partial<ProductGroup>`
+- [ ] M3: Replace `Partial<any>```` with typed `Partial``<ProductGroup>```
 - [ ] M4: Add CloudWatch metrics for S3 operations
 
 ### Low Priority (Nice to Have)

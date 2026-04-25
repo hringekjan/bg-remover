@@ -659,3 +659,64 @@ class ProductIdentityGrouper:
             'existingMatched': existing_matched,
             'multiSignalEnabled': settings.enabled,
         }
+
+
+# ============================================================================
+# Companion pydantic-ai Agent (HookedAgent pattern)
+# ============================================================================
+
+try:
+    from pydantic_ai import RunContext
+    from agentic.agents.pydantic.agents.base_hooked_agent import HookedAgent
+    _HOOKED_AGENT_AVAILABLE = True
+except ImportError:
+    _HOOKED_AGENT_AVAILABLE = False
+    HookedAgent = object
+    RunContext = None
+
+
+class ProductIdentityGrouperAgentV2(HookedAgent):
+    """
+    Pydantic-AI companion agent for ProductIdentityGrouper.
+
+    Named V2 to avoid collision with the Marvin wrapper ProductGrouperAgent.
+    Uses Titan Multimodal Embeddings + DynamoDB for similarity-based product grouping.
+    """
+
+    agent_name: str = "ProductIdentityGrouperAgentV2"
+
+    def __init__(
+        self,
+        model: str = "bedrock:us.amazon.nova-micro-v1:0",
+        workflow_id=None,
+        session_id=None,
+        sentinels_url: str = "http://localhost:8080",
+    ):
+        self._service = ProductIdentityGrouper()
+        super().__init__(
+            model=model,
+            workflow_id=workflow_id,
+            session_id=session_id,
+            sentinels_url=sentinels_url,
+        )
+        self._register_tools()
+
+    def _register_tools(self) -> None:
+        service = self._service
+
+        @self.tool
+        async def group_products(ctx, images: list, settings: dict = None) -> dict:
+            """
+            Generate embeddings for product images and group similar items.
+
+            Args:
+                images: List of image input dicts (id, base64_image or image_url).
+                settings: Optional MultiSignalSettings dict for grouping thresholds.
+
+            Returns:
+                Dict with groups, ungrouped, processed, existingMatched, multiSignalEnabled.
+            """
+            image_inputs = [ImageInput(**img) for img in images]
+            ms_settings = MultiSignalSettings(**settings) if settings else None
+            result = service.group_products(images=image_inputs, settings=ms_settings)
+            return result

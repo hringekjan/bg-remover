@@ -233,7 +233,7 @@ If you need custom authorization logic (e.g., role-based access, tenant validati
 # Configure routes to use request authorizer
 aws apigatewayv2 update-route \
   --api-id 6b3bf1bqk3 \
-  --route-id <route-id> \
+  --route-id <route-id>``` \
   --authorization-type CUSTOM \
   --authorizer-id zeixc1 \  # webhook-authorizer ID
   --region eu-west-1

@@ -28,7 +28,7 @@ Examples:
 All protected endpoints require:
 
 ```http
-Authorization: Bearer <your-jwt-token>
+Authorization: Bearer <your-jwt-token>```
 Content-Type: application/json
 ```
 
@@ -46,7 +46,7 @@ Generate pre-signed S3 URLs for uploading images.
 
 ```http
 POST /bg-remover/upload-urls
-Authorization: Bearer <jwt>
+Authorization: Bearer <jwt>```
 Content-Type: application/json
 
 {
@@ -82,7 +82,7 @@ Remove background from uploaded image.
 
 ```http
 POST /bg-remover/process
-Authorization: Bearer <jwt>
+Authorization: Bearer <jwt>```
 Content-Type: application/json
 
 {
@@ -101,7 +101,7 @@ Group similar images together.
 
 ```http
 POST /bg-remover/group-images
-Authorization: Bearer <jwt>
+Authorization: Bearer <jwt>```
 Content-Type: application/json
 
 {
@@ -116,7 +116,7 @@ Create products from processed images.
 
 ```http
 POST /bg-remover/create-products
-Authorization: Bearer <jwt>
+Authorization: Bearer <jwt>```
 Content-Type: application/json
 
 {
@@ -137,7 +137,7 @@ Process multiple image groups.
 
 ```http
 POST /bg-remover/process-groups
-Authorization: Bearer <jwt>
+Authorization: Bearer <jwt>```
 Content-Type: application/json
 
 {
@@ -157,7 +157,7 @@ Calculate pricing for products.
 
 ```http
 POST /bg-remover/pricing/calculate
-Authorization: Bearer <jwt>
+Authorization: Bearer <jwt>```
 Content-Type: application/json
 
 {
@@ -173,7 +173,7 @@ Approve or reject product metadata.
 
 ```http
 POST /bg-remover/metadata-approval
-Authorization: Bearer <jwt>
+Authorization: Bearer <jwt>```
 Content-Type: application/json
 
 {
@@ -190,7 +190,7 @@ Get status of a background job.
 
 ```http
 GET /bg-remover/status/{jobId}
-Authorization: Bearer <jwt>
+Authorization: Bearer <jwt>```
 ```
 
 **Response:**
@@ -210,7 +210,7 @@ Get status of an image grouping job.
 
 ```http
 GET /bg-remover/group-status/{jobId}
-Authorization: Bearer <jwt>
+Authorization: Bearer <jwt>```
 ```
 
 ---
@@ -220,12 +220,12 @@ Get or update service settings.
 
 ```http
 GET /bg-remover/settings
-Authorization: Bearer <jwt>
+Authorization: Bearer <jwt>```
 ```
 
 ```http
 PUT /bg-remover/settings
-Authorization: Bearer <jwt>
+Authorization: Bearer <jwt>```
 Content-Type: application/json
 
 {
@@ -241,7 +241,7 @@ Get service metrics and statistics.
 
 ```http
 GET /bg-remover/metrics
-Authorization: Bearer <jwt>
+Authorization: Bearer <jwt>```
 ```
 
 ---
@@ -280,8 +280,8 @@ GET /bg-remover/stats
 # Get token from Cognito (replace with your credentials)
 JWT_TOKEN=$(aws cognito-idp initiate-auth \
   --auth-flow USER_PASSWORD_AUTH \
-  --client-id <your-client-id> \
-  --auth-parameters USERNAME=<username>,PASSWORD=<password> \
+  --client-id <your-client-id>``` \
+  --auth-parameters USERNAME=<username>```,PASSWORD=<password>``` \
   --query 'AuthenticationResult.AccessToken' \
   --output text)
 ```

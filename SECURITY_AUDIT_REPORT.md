@@ -148,8 +148,8 @@ BgRemoverTable:
 **Partition Key Pattern (inferred from serverless.yml comments):**
 ```yaml
 # Key schema:
-#   pk: TENANT#<tenant>#JOB or TENANT#<tenant>#RATELIMIT
-#   sk: JOB#<jobId> or ACTION#<action>#WINDOW#<timestamp>
+#   pk: TENANT#<tenant>```#JOB or TENANT#<tenant>```#RATELIMIT
+#   sk: JOB#``<jobId>`` or ACTION#<action>```#WINDOW#<timestamp>```
 ```
 
 **Expected Query Pattern:**
@@ -533,7 +533,7 @@ provider:
 
 ```typescript
 // ❌ CRITICAL VULNERABILITY: Wildcard CORS in OPTIONS handler
-export async function OPTIONS(): Promise<NextResponse> {
+export async function OPTIONS(): Promise``<NextResponse>`` {
   return new NextResponse(null, {
     status: 200,
     headers: {
@@ -574,7 +574,7 @@ export async function OPTIONS(): Promise<NextResponse> {
 **Attack Scenario:**
 ```html
 <!-- Malicious website: attacker.com -->
-<script>
+<script>```
 // Attacker can make authenticated requests to bg-remover API
 // because CORS allows ANY origin
 fetch('https://api.dev.carousellabs.co/bg-remover/process', {
@@ -596,14 +596,14 @@ fetch('https://api.dev.carousellabs.co/bg-remover/process', {
     body: JSON.stringify(data)
   });
 });
-</script>
+`</script>`
 ```
 
 ### Secure vs Insecure Examples
 
 ```typescript
 // ❌ INSECURE: Current implementation
-export async function OPTIONS(): Promise<NextResponse> {
+export async function OPTIONS(): Promise``<NextResponse>`` {
   return new NextResponse(null, {
     headers: {
       'Access-Control-Allow-Origin': '*', // Allows ANY origin
@@ -624,7 +624,7 @@ const ALLOWED_ORIGINS = {
   ],
 };
 
-export async function OPTIONS(request: NextRequest): Promise<NextResponse> {
+export async function OPTIONS(request: NextRequest): Promise``<NextResponse>`` {
   const origin = request.headers.get('origin') || '';
   const stage = process.env.STAGE || 'dev';
   const allowedOrigins = ALLOWED_ORIGINS[stage] || [];
@@ -952,7 +952,7 @@ interface TokenRevocation {
   expiresAt: number;  // When to remove from list (cleanup)
 }
 
-async function isTokenRevoked(jti: string): Promise<boolean> {
+async function isTokenRevoked(jti: string): Promise<boolean>``` {
   // Check DynamoDB table for revoked tokens
   const item = await dynamodb.get({
     TableName: 'RevokedTokens',
@@ -1200,7 +1200,7 @@ export async function POST(request: NextRequest) {
 }
 
 // ❌ CRITICAL VULNERABILITY: Wildcard CORS in OPTIONS handler (lines 397-406)
-export async function OPTIONS(): Promise<NextResponse> {
+export async function OPTIONS(): Promise``<NextResponse>`` {
   return new NextResponse(null, {
     status: 200,
     headers: {

@@ -498,3 +498,66 @@ class AIAttributeExtractor:
             **base_result.model_dump(),
             translations={"is": icelandic_translations}
         )
+
+
+# ============================================================================
+# Companion pydantic-ai Agent (HookedAgent pattern)
+# ============================================================================
+
+try:
+    from pydantic_ai import RunContext
+    from agentic.agents.pydantic.agents.base_hooked_agent import HookedAgent
+    _HOOKED_AGENT_AVAILABLE = True
+except ImportError:
+    _HOOKED_AGENT_AVAILABLE = False
+    HookedAgent = object
+    RunContext = None
+
+
+class AIAttributeExtractorAgentV2(HookedAgent):
+    """
+    Pydantic-AI companion agent for AIAttributeExtractor.
+
+    Named V2 to avoid collision with the Marvin wrapper AIExtractorAgent.
+    """
+
+    agent_name: str = "AIAttributeExtractorAgentV2"
+
+    def __init__(
+        self,
+        model: str = "bedrock:us.amazon.nova-micro-v1:0",
+        workflow_id=None,
+        session_id=None,
+        sentinels_url: str = "http://localhost:8080",
+    ):
+        self._service = AIAttributeExtractor()
+        super().__init__(
+            model=model,
+            workflow_id=workflow_id,
+            session_id=session_id,
+            sentinels_url=sentinels_url,
+        )
+        self._register_tools()
+
+    def _register_tools(self) -> None:
+        service = self._service
+
+        @self.tool
+        async def extract_attributes(ctx, description: str, bilingual_description: dict = None, mistral_analysis: dict = None) -> dict:
+            """
+            Extract structured product attributes from AI-generated descriptions.
+
+            Args:
+                description: Raw product description text.
+                bilingual_description: Optional BilingualProductDescription dict.
+                mistral_analysis: Optional MistralPixtralAnalysisResult dict.
+
+            Returns:
+                ExtractionResult as dict.
+            """
+            result = service.extract_attributes(
+                description=description,
+                bilingual_description=bilingual_description,
+                mistral_analysis=mistral_analysis,
+            )
+            return result.model_dump()

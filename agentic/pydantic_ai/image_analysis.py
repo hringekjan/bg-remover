@@ -5,6 +5,14 @@ from typing import Literal, Optional, List, Dict, Any, get_args
 
 import boto3
 from pydantic import BaseModel, Field, ValidationError
+from pydantic_ai import RunContext
+
+try:
+    from agentic.agents.pydantic.agents.base_hooked_agent import HookedAgent
+    _HOOKED_AGENT_AVAILABLE = True
+except ImportError:
+    _HOOKED_AGENT_AVAILABLE = False
+    HookedAgent = object
 
 # --- Data Models ---
 
@@ -185,41 +193,83 @@ Format your response as JSON with keys: short, long, category, colors, condition
             keywords=keywords
         )
 
-    def translate_to_icelandic(
+    # Language-specific grammar hints injected into the system prompt.
+    # Keeps quality high for morphologically complex languages without
+    # hardcoding the whole service to a single locale.
+    _LANGUAGE_HINTS: Dict[str, str] = {
+        "icelandic": (
+            "Rules specific to Icelandic:\n"
+            "- Use correct noun case declension (nf/þf/þgf/ef) — non-negotiable.\n"
+            "- Conjugate verbs for formal written Icelandic (formlegt skrifmál).\n"
+            "- Prefer native compound words over anglicisms "
+            "(e.g. 'léttjakki' not 'light jacket', 'hálsmál' not 'neckline').\n"
+            "- Colour names: 'svartur', 'hvítur', 'grár', 'blár', 'rauður', "
+            "'grænn', 'gulur', 'brúnn', 'bleikur', 'fjólublár', 'appelsínugulur', "
+            "'beige' (accepted loanword)."
+        ),
+        "german": (
+            "Rules specific to German:\n"
+            "- Capitalise all nouns.\n"
+            "- Use formal Sie register for marketing copy.\n"
+            "- Prefer compound nouns over multi-word phrases where natural."
+        ),
+        "french": (
+            "Rules specific to French:\n"
+            "- Use the formal 'vous' register.\n"
+            "- Apply correct gender agreement on adjectives and articles.\n"
+            "- Use typographic guillemets « » for any quoted text."
+        ),
+    }
+
+    def translate_description(
         self,
-        description: ProductDescription = Field(..., description="Product description to translate.")
+        description: ProductDescription = Field(..., description="Product description to translate."),
+        target_language: str = Field("icelandic", description="Target language name in English, e.g. 'icelandic', 'german', 'french'.")
     ) -> ProductDescription:
         """
-        Translates a ProductDescription object into Icelandic using an LLM.
+        Translate a ProductDescription into any target language.
 
         Args:
             description: The ProductDescription object to translate.
+            target_language: Target language name in English (default: 'icelandic').
 
         Returns:
-            A new ProductDescription object with translated fields.
+            A new ProductDescription with translated fields.
+            Falls back to the original on failure.
         """
+        lang = target_language.lower().strip()
+        lang_hints = self._LANGUAGE_HINTS.get(lang, "")
+
+        system_instruction = (
+            f"You are a professional translator specialising in fashion and lifestyle retail copy. "
+            f"Translate product listing content into {target_language.title()}.\n"
+            f"{lang_hints}\n"
+            "Additional rules for all languages:\n"
+            "- Keep brand names, model numbers, and condition values "
+            "(new_with_tags, like_new, very_good, good, fair) unchanged.\n"
+            "- Return ONLY valid JSON — no markdown fences, no commentary."
+        )
+
+        prompt = (
+            f"Translate the following product listing fields into {target_language.title()}.\n\n"
+            f"Input:\n"
+            f"Short: {description.short}\n"
+            f"Long: {description.long}\n"
+            f"Category: {description.category or 'General'}\n"
+            f"Colors: {', '.join(description.colors) if description.colors else ''}\n"
+            f"Condition: {description.condition or ''}\n"
+            f"Keywords: {', '.join(description.keywords) if description.keywords else ''}\n"
+            f"Styling Tip: {description.stylingTip or ''}\n\n"
+            f"Output as JSON with exactly these keys: short, long, category, colors (array), "
+            f"condition, keywords (array), stylingTip"
+        )
+
         try:
-            prompt = f"""Translate this product description to Icelandic. Keep the same structure and format.
-
-Short: {description.short}
-Long: {description.long}
-Category: {description.category or 'General'}
-Colors: {', '.join(description.colors) if description.colors else ''}
-Condition: {description.condition or ''}
-Keywords: {', '.join(description.keywords) if description.keywords else ''}
-Styling Tip: {description.stylingTip or ''}
-
-Provide the response in the same JSON format with keys: short, long, category, colors, condition, keywords, stylingTip"""
-
             request_body = {
-                "messages": [
-                    {
-                        "role": "user",
-                        "content": prompt
-                    }
-                ],
+                "system": system_instruction,
+                "messages": [{"role": "user", "content": prompt}],
                 "max_tokens": 1000,
-                "temperature": 0.3
+                "temperature": 0.2,
             }
 
             response = self.translation_client.invoke_model(
@@ -230,14 +280,17 @@ Provide the response in the same JSON format with keys: short, long, category, c
             )
 
             response_body = json.loads(response['body'].read().decode('utf-8'))
-            translation_text = response_body.get('choices', [{}])[0].get('message', {}).get('content', '') or response_body.get('content', '')
+            translation_text = (
+                response_body.get('choices', [{}])[0].get('message', {}).get('content', '')
+                or response_body.get('content', '')
+            )
 
             json_match = re.search(r'\{[\s\S]*\}', translation_text)
             if json_match:
                 translation_text = json_match.group(0)
-            
+
             translation_data = json.loads(translation_text)
-            
+
             return ProductDescription(
                 short=translation_data.get('short', description.short),
                 long=translation_data.get('long', description.long),
@@ -248,27 +301,165 @@ Provide the response in the same JSON format with keys: short, long, category, c
                 stylingTip=translation_data.get('stylingTip', description.stylingTip)
             )
         except Exception as e:
-            print(f"Translation failed, returning original: {e}")
+            print(f"Translation to {target_language} failed, returning original: {e}")
             return description
+
+    # Backwards-compatible alias so existing callers don't break.
+    def translate_to_icelandic(
+        self,
+        description: ProductDescription = Field(..., description="Product description to translate.")
+    ) -> ProductDescription:
+        """Translate to Icelandic. Use translate_description(target_language=...) for other languages."""
+        return self.translate_description(description, target_language="icelandic")
 
     def generate_bilingual_description(
         self,
         image_buffer_b64: str = Field(..., description="Base64 encoded input image buffer."),
         product_name: Optional[str] = Field(None, description="Optional name of the product for context."),
-        metadata: Optional[ImageMetadata] = Field(None, description="Optional image metadata for routing.")
+        metadata: Optional[ImageMetadata] = Field(None, description="Optional image metadata for routing."),
+        target_language: str = Field("icelandic", description="Target language for the second description (default: icelandic).")
     ) -> BilingualProductDescription:
         """
-        Generates a bilingual (English and Icelandic) product description from an image.
+        Generate a bilingual product description from an image.
 
         Args:
             image_buffer_b64: Base64 encoded string of the input image.
-            product_name: Optional name of the product for additional context.
-            metadata: Optional image metadata (e.g., size, complexity) for dynamic model routing.
+            product_name: Optional product name for context.
+            metadata: Optional image metadata for model routing.
+            target_language: Language for the translated version (default: 'icelandic').
 
         Returns:
-            A BilingualProductDescription object.
+            BilingualProductDescription with 'en' and translated version keyed by language code.
         """
         english_description = self.analyze_image_for_description(image_buffer_b64, product_name, metadata)
-        icelandic_description = self.translate_to_icelandic(english_description)
+        translated_description = self.translate_description(english_description, target_language=target_language)
 
-        return BilingualProductDescription(en=english_description, is_=icelandic_description)
+        return BilingualProductDescription(en=english_description, is_=translated_description)
+
+
+# ============================================================================
+# Companion pydantic-ai Agent (HookedAgent pattern)
+# ============================================================================
+
+
+class BedrockImageAnalyzerAgent(HookedAgent):
+    """
+    Pydantic-AI companion agent for BedrockImageAnalyzer.
+
+    Wraps analyze_image_for_description, translate_to_icelandic, and
+    generate_bilingual_description as pydantic-ai tools with full
+    LocalSentinels observability via HookedAgent hooks.
+
+    Usage:
+        agent = BedrockImageAnalyzerAgent()
+        result = await agent.run("Describe this product image: <base64>")
+    """
+
+    agent_name: str = "BedrockImageAnalyzerAgent"
+
+    def __init__(
+        self,
+        model: str = "bedrock:us.mistral.pixtral-large-2502-v1:0",
+        vision_region: str = "us-east-1",
+        translation_region: str = "eu-west-1",
+        workflow_id: Optional[str] = None,
+        session_id: Optional[str] = None,
+        sentinels_url: str = "http://localhost:8080",
+    ):
+        self._service = BedrockImageAnalyzer(
+            vision_region=vision_region,
+            translation_region=translation_region,
+        )
+        super().__init__(
+            model=model,
+            workflow_id=workflow_id,
+            session_id=session_id,
+            sentinels_url=sentinels_url,
+        )
+        self._register_tools()
+
+    def _register_tools(self) -> None:
+        """Register service methods as pydantic-ai tools."""
+        service = self._service
+
+        @self.tool
+        async def analyze_image_for_description(
+            ctx: RunContext[None],
+            image_buffer_b64: str,
+            product_name: Optional[str] = None,
+        ) -> dict:
+            """
+            Analyze a base64-encoded product image and return a structured description.
+
+            Args:
+                image_buffer_b64: Base64-encoded image buffer.
+                product_name: Optional product name for additional context.
+
+            Returns:
+                ProductDescription as a dict (short, long, category, colors, condition, keywords, stylingTip).
+            """
+            result = service.analyze_image_for_description(
+                image_buffer_b64=image_buffer_b64,
+                product_name=product_name,
+            )
+            return result.model_dump()
+
+        @self.tool
+        async def translate_to_icelandic(
+            ctx: RunContext[None],
+            short: str,
+            long: str,
+            category: str,
+            colors: List[str],
+            condition: str,
+            keywords: List[str],
+            styling_tip: Optional[str] = None,
+        ) -> dict:
+            """
+            Translate a product description to Icelandic.
+
+            Args:
+                short: Short product name.
+                long: Marketing description.
+                category: Product category.
+                colors: List of colors.
+                condition: Product condition.
+                keywords: SEO keywords.
+                styling_tip: Optional styling tip.
+
+            Returns:
+                Translated ProductDescription as a dict.
+            """
+            desc = ProductDescription(
+                short=short,
+                long=long,
+                category=category,
+                colors=colors,
+                condition=condition,  # type: ignore[arg-type]
+                keywords=keywords,
+                stylingTip=styling_tip,
+            )
+            result = service.translate_to_icelandic(description=desc)
+            return result.model_dump()
+
+        @self.tool
+        async def generate_bilingual_description(
+            ctx: RunContext[None],
+            image_buffer_b64: str,
+            product_name: Optional[str] = None,
+        ) -> dict:
+            """
+            Generate English + Icelandic product description from an image in one step.
+
+            Args:
+                image_buffer_b64: Base64-encoded image buffer.
+                product_name: Optional product name for context.
+
+            Returns:
+                BilingualProductDescription as a dict with 'en' and 'is' keys.
+            """
+            result = service.generate_bilingual_description(
+                image_buffer_b64=image_buffer_b64,
+                product_name=product_name,
+            )
+            return result.model_dump(by_alias=True)

@@ -346,6 +346,17 @@ export class BatchStatusHandler extends BaseHandler {
                 keywords: job.seoKeywords?.slice(0, 5), // First 5 SEO keywords only
                 category: job.category,
                 rating: job.predictedRating,
+                // AI-extracted attributes (brand, material, colors, care, etc.)
+                brand: img.brand || job.brand,
+                material: img.material || job.material,
+                colors: img.colors || job.colors,
+                careInstructions: img.careInstructions || job.careInstructions,
+                conditionRating: img.conditionRating || job.conditionRating,
+                pattern: img.pattern || job.pattern,
+                style: img.style || job.style,
+                aiConfidence: job.aiConfidence,
+                moderationLabels: img.moderationLabels || job.moderationLabels,
+                rekognitionLabels: job.rekognitionLabels,
               };
             })
           );

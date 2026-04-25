@@ -56,6 +56,31 @@ class BedrockImageProcessor:
     Agent for processing images, including background removal and description generation,
     orchestrating other Pydantic-AI agents.
     """
+
+    _LANGUAGE_HINTS: Dict[str, str] = {
+        "icelandic": (
+            "Rules specific to Icelandic:\n"
+            "1. Use correct noun case declension (nf/þf/þgf/ef) — this is non-negotiable.\n"
+            "2. Conjugate verbs correctly for formal written Icelandic (formlegt skrifmál).\n"
+            "3. Prefer native Icelandic compound words over anglicisms where a natural equivalent exists "
+            "(e.g. 'léttjakki' not 'light jacket', 'hálsmál' not 'neckline').\n"
+            "4. Colour names must use standard Icelandic: 'svartur', 'hvítur', 'grár', 'blár', 'rauður', "
+            "'grænn', 'gulur', 'brúnn', 'bleikur', 'fjólublár', 'appelsínugulur', 'beige' (accepted loanword)."
+        ),
+        "german": (
+            "Rules specific to German:\n"
+            "1. Capitalise all nouns.\n"
+            "2. Use formal register (Sie, nicht du).\n"
+            "3. Prefer native German compound words over anglicisms where possible."
+        ),
+        "french": (
+            "Rules specific to French:\n"
+            "1. Use the formal 'vous' register.\n"
+            "2. Apply correct gender agreement for all adjectives and nouns.\n"
+            "3. Use typographic guillemets (« ») for quotations."
+        ),
+    }
+
     def __init__(self,
                  vision_region: str = 'us-east-1',
                  translation_region: str = 'eu-west-1',
@@ -178,10 +203,22 @@ Format your response as JSON with keys: short, long, category, colors, condition
             stylingTip=parsed_json.get('stylingTip')
         )
     
-    def _translate_description(self, description: ProductDescription) -> ProductDescription:
-        """Internal method to translate description."""
-        prompt = f"""Translate this product description to Icelandic. Keep the same structure and format.
+    def _translate_description(self, description: ProductDescription, target_language: str = "icelandic") -> ProductDescription:
+        """Internal method to translate a product description into the target language."""
+        lang = target_language.lower().strip()
+        lang_hints = self._LANGUAGE_HINTS.get(lang, "")
+        system_instruction = (
+            f"You are a professional translator specialising in fashion and lifestyle retail copy. "
+            f"Translate product listing content into {target_language.title()}.\n"
+            + (f"{lang_hints}\n" if lang_hints else "")
+            + "Rules that apply to ALL languages:\n"
+            "- Keep brand names, model numbers, and condition values (new_with_tags, like_new, etc.) unchanged.\n"
+            "- Return ONLY valid JSON — no markdown fences, no commentary."
+        )
 
+        prompt = f"""Translate the following product listing fields into {target_language.title()}.
+
+Input:
 Short: {description.short}
 Long: {description.long}
 Category: {description.category or 'General'}
@@ -190,9 +227,10 @@ Condition: {description.condition or ''}
 Keywords: {', '.join(description.keywords) if description.keywords else ''}
 Styling Tip: {description.stylingTip or ''}
 
-Provide the response in the same JSON format with keys: short, long, category, colors, condition, keywords, stylingTip"""
+Output as JSON with exactly these keys: short, long, category, colors (array), condition, keywords (array), stylingTip"""
 
         request_body = {
+            "system": system_instruction,
             "messages": [
                 {
                     "role": "user",
@@ -200,7 +238,7 @@ Provide the response in the same JSON format with keys: short, long, category, c
                 }
             ],
             "max_tokens": 1000,
-            "temperature": 0.3
+            "temperature": 0.2
         }
 
         response = self._translation_client.invoke_model(
@@ -234,7 +272,8 @@ Provide the response in the same JSON format with keys: short, long, category, c
         self,
         image_url: str = Field(..., description="URL of the image to process."),
         options: ImageProcessingOptions = Field(ImageProcessingOptions(), description="Processing options."),
-        product_name: Optional[str] = Field(None, description="Optional name of the product for context.")
+        product_name: Optional[str] = Field(None, description="Optional name of the product for context."),
+        target_language: str = Field("icelandic", description="Target language for description translation.")
     ) -> ProcessImageResult:
         """
         Downloads an image from a URL and processes it, optionally removing the background
@@ -244,6 +283,7 @@ Provide the response in the same JSON format with keys: short, long, category, c
             image_url: The URL of the image.
             options: Image processing options.
             product_name: Optional name of the product for context.
+            target_language: Language to translate the product description into.
 
         Returns:
             A ProcessImageResult object.
@@ -252,15 +292,16 @@ Provide the response in the same JSON format with keys: short, long, category, c
         response.raise_for_status()  # Raise an exception for HTTP errors
         base64_image = base64.b64encode(response.content).decode('utf-8')
         content_type = response.headers.get('content-type', 'image/png')
-        
-        return self.process_image_from_base64(base64_image, content_type, options, product_name)
+
+        return self.process_image_from_base64(base64_image, content_type, options, product_name, target_language)
 
     def process_image_from_base64(
         self,
         base64_image: str = Field(..., description="Base64 encoded image string."),
         content_type: str = Field(..., description="Content type of the image (e.g., 'image/png')."),
         options: ImageProcessingOptions = Field(ImageProcessingOptions(), description="Processing options."),
-        product_name: Optional[str] = Field(None, description="Optional name of the product for context.")
+        product_name: Optional[str] = Field(None, description="Optional name of the product for context."),
+        target_language: str = Field("icelandic", description="Target language for description translation.")
     ) -> ProcessImageResult:
         """
         Processes a base64 encoded image, optionally removing the background
@@ -271,6 +312,7 @@ Provide the response in the same JSON format with keys: short, long, category, c
             content_type: The content type of the image (e.g., 'image/png').
             options: Image processing options.
             product_name: Optional name of the product for context.
+            target_language: Language to translate the product description into.
 
         Returns:
             A ProcessImageResult object.
@@ -286,16 +328,15 @@ Provide the response in the same JSON format with keys: short, long, category, c
                 output_buffer_b64 = bg_removal_res.output_buffer_b64
             except Exception as e:
                 print(f"Background removal failed: {e}")
-                output_buffer_b64 = base64_image # Fallback to original image
+                output_buffer_b64 = base64_image  # Fallback to original image
         else:
             output_buffer_b64 = base64_image
 
         if options.generate_description:
             try:
                 product_desc = self._invoke_vision_model_for_description(output_buffer_b64, product_name)
-                # Assuming bilingual description is always desired if description generation is on
-                icelandic_desc = self._translate_description(product_desc)
-                bilingual_desc = BilingualProductDescription(en=product_desc, is_=icelandic_desc)
+                translated_desc = self._translate_description(product_desc, target_language=target_language)
+                bilingual_desc = BilingualProductDescription(en=product_desc, is_=translated_desc)
             except Exception as e:
                 print(f"Description generation failed: {e}")
 
@@ -307,3 +348,77 @@ Provide the response in the same JSON format with keys: short, long, category, c
             background_removal_result=bg_removal_res
         )
 
+
+
+# ============================================================================
+# Companion pydantic-ai Agent (HookedAgent pattern)
+# ============================================================================
+
+try:
+    from pydantic_ai import RunContext
+    from agentic.agents.pydantic.agents.base_hooked_agent import HookedAgent
+    _HOOKED_AGENT_AVAILABLE = True
+except ImportError:
+    _HOOKED_AGENT_AVAILABLE = False
+    HookedAgent = object
+    RunContext = None
+
+
+class BedrockImageProcessorAgent(HookedAgent):
+    """
+    Pydantic-AI companion agent for BedrockImageProcessor.
+
+    Orchestrates background removal + bilingual description generation
+    in a single pydantic-ai Agent with LocalSentinels observability.
+    """
+
+    agent_name: str = "BedrockImageProcessorAgent"
+
+    def __init__(
+        self,
+        model: str = "bedrock:us.mistral.pixtral-large-2502-v1:0",
+        workflow_id=None,
+        session_id=None,
+        sentinels_url: str = "http://localhost:8080",
+    ):
+        self._service = BedrockImageProcessor()
+        super().__init__(
+            model=model,
+            workflow_id=workflow_id,
+            session_id=session_id,
+            sentinels_url=sentinels_url,
+        )
+        self._register_tools()
+
+    def _register_tools(self) -> None:
+        service = self._service
+
+        @self.tool
+        async def process_image_from_url(
+            ctx,
+            image_url: str,
+            product_name: str = None,
+            target_language: str = "icelandic",
+        ) -> dict:
+            """Process an image from a URL: remove background and generate a translated description."""
+            result = service.process_image_from_url(
+                image_url=image_url,
+                product_name=product_name,
+                target_language=target_language,
+            )
+            return result.model_dump()
+
+        @self.tool
+        async def process_image_from_base64(
+            ctx,
+            base64_image: str,
+            product_name: str = None,
+            target_language: str = "icelandic",
+        ) -> dict:
+            """Process a base64-encoded image: remove background and generate a translated description."""
+            result = service.process_image_from_base64(
+                base64_image=base64_image,
+                product_name=product_name,
+                target_language=target_language,
+            )
+            return result.model_dump()

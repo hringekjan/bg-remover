@@ -37,7 +37,7 @@ class BgRemoverTelemetry {
 ### Change 3: recordImageProcessing() Method
 
 ```diff
-  async recordImageProcessing(params: {...}): Promise<void> {
+  async recordImageProcessing(params: {...}): Promise<void>``` {
 +   if (!this.telemetry) {
 +     console.warn('[BgRemoverTelemetry] Telemetry not initialized, skipping image processing metric');
 +     return;
@@ -64,7 +64,7 @@ class BgRemoverTelemetry {
 ### Change 4: recordBatchJob() Method
 
 ```diff
-  async recordBatchJob(params: BatchJobMetadata): Promise<void> {
+  async recordBatchJob(params: BatchJobMetadata): Promise<void>``` {
 +   if (!this.telemetry) {
 +     console.warn('[BgRemoverTelemetry] Telemetry not initialized, skipping batch job metric');
 +     return;
@@ -165,7 +165,7 @@ class BgRemoverTelemetry {
 ### Change 7: publishMetrics() Method
 
 ```diff
-  async publishMetrics(timeWindow: '1h' | '24h' | '7d' = '1h'): Promise<void> {
+  async publishMetrics(timeWindow: '1h' | '24h' | '7d' = '1h'): Promise<void>``` {
 +   if (!this.telemetry) {
 +     console.warn('[BgRemoverTelemetry] Telemetry not initialized, skipping metrics publish');
 +     return;

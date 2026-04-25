@@ -15,6 +15,7 @@
 
 import { VectorSearchService, type SimilarProduct } from './vector-search';
 import { Logger } from '@aws-lambda-powertools/logger';
+import { getContextBoost } from '../middleware/context-scope';
 
 /**
  * Integration example for VisualSimilarityPricingEngine
@@ -91,18 +92,26 @@ export class VectorSearchIntegration {
     } = options;
 
     try {
+      // Get context boost value
+      const contextBoost = getContextBoost();
+      
+      // Apply context boost to similarity threshold for more relevant results
+      const boostedMinSimilarity = Math.min(minSimilarity * contextBoost, 1.0);
+
       this.logger.info('Starting similar product search for pricing', {
         category,
         limit,
         minSimilarity,
+        boostedMinSimilarity,
         daysBack,
+        contextBoost,
       });
 
       const startTime = Date.now();
 
       const results = await this.vectorSearch.findSimilar(queryEmbedding, {
         limit,
-        minSimilarity,
+        minSimilarity: boostedMinSimilarity,
         category,
         daysBack,
       });
@@ -113,6 +122,7 @@ export class VectorSearchIntegration {
         resultCount: results.length,
         duration,
         ...this.vectorSearch.getMetrics(),
+        contextBoost,
       });
 
       return results;

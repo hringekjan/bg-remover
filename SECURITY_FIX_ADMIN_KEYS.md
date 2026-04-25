@@ -172,14 +172,14 @@ sleep 300
 sleep 300
 
 # Test with new key
-./scripts/test-admin-keys.sh dev <NEW_KEY_FROM_ROTATION>
+./scripts/test-admin-keys.sh dev ``<NEW_KEY_FROM_ROTATION>``
 ```
 
 ### 3. Verify Cache TTL Behavior
 ```bash
 # Make API call (cold start - loads keys)
 curl -X POST https://api.dev.carousellabs.co/bg-remover/process \
-  -H "X-Api-Key: <CURRENT_KEY>" \
+  -H "X-Api-Key: ``<CURRENT_KEY>``" \
   -H "Content-Type: application/json" \
   -d '{"imageUrl": "...", "skipCreditValidation": true}'
 
@@ -188,7 +188,7 @@ curl -X POST https://api.dev.carousellabs.co/bg-remover/process \
 
 # Make API call within 5 min (old keys still work - cache)
 curl -X POST https://api.dev.carousellabs.co/bg-remover/process \
-  -H "X-Api-Key: <OLD_KEY>" \
+  -H "X-Api-Key: ``<OLD_KEY>``" \
   -H "Content-Type: application/json" \
   -d '{"imageUrl": "...", "skipCreditValidation": true}'
 
@@ -197,7 +197,7 @@ sleep 300
 
 # Make API call with new key (cache refreshed)
 curl -X POST https://api.dev.carousellabs.co/bg-remover/process \
-  -H "X-Api-Key: <NEW_KEY>" \
+  -H "X-Api-Key: ``<NEW_KEY>``" \
   -H "Content-Type: application/json" \
   -d '{"imageUrl": "...", "skipCreditValidation": true}'
 ```

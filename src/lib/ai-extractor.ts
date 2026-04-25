@@ -16,14 +16,29 @@ import type { MistralPixtralAnalysisResult } from './bedrock/mistral-pixtral-ana
 // Feature flag: Enable AI-native extraction (default: false for gradual rollout)
 const USE_AI_EXTRACTION = process.env.USE_AI_EXTRACTION === 'true';
 
-// Known brand list for direct matching
+// Known brand list for direct matching (mutable so registry brands can be added at cold start)
 const KNOWN_BRANDS = new Set([
   'abercrombie', 'adidas', 'armani', 'balenciaga', 'burberry', 'calvin klein',
   'cartier', 'chanel', 'coach', 'dior', 'dolce & gabbana', 'fendi', 'gap',
-  'gucci', 'h&m', 'hermès', 'hugo boss', 'lacoste', 'levi', 'louis vuitton',
-  'mango', 'michael kors', 'nike', 'prada', 'puma', 'ralph lauren', 'rolex',
-  'tiffany', 'tommy hilfiger', 'uniqlo', 'versace', 'zara', '&otherstories',
-  'cos', 'mango', 'massimo dutti', 'pull & bear', 'bershka', 'stradivarius',
+  'gucci', 'h&m', 'hermès', 'hugo boss', 'lacoste', 'levi', "levi's", 'levis',
+  'louis vuitton', 'mango', 'michael kors', 'nike', 'prada', 'puma',
+  'ralph lauren', 'rolex', 'tiffany', 'tommy hilfiger', 'uniqlo', 'versace',
+  'zara', '&otherstories', 'cos', 'massimo dutti', 'pull & bear', 'bershka',
+  'stradivarius',
+  // Denim & casualwear
+  'wrangler', 'lee', 'diesel', 'g-star', 'g-star raw', 'nudie jeans',
+  'acne studios', 'weekday', 'dr. denim', 'scotch & soda',
+  // Sportswear
+  'reebok', 'under armour', 'new balance', 'asics', 'converse', 'vans',
+  'timberland', 'columbia', 'the north face', 'patagonia', 'fjallraven',
+  'salomon', 'arc\'teryx',
+  // Mid-market
+  'moncler', 'stone island', 'barbour', 'hackett', 'gant', 'superdry',
+  'hollister', 'jack & jones', 'selected', 'only', 'vero moda', 'vila',
+  'pieces', 'noisy may', 'object', 'free people', 'anthropologie',
+  // Luxury
+  'saint laurent', 'givenchy', 'celine', 'loewe', 'bottega veneta',
+  'alexander mcqueen', 'valentino', 'moschino', 'off-white', 'acne',
 ]);
 
 // Material keywords
@@ -238,6 +253,19 @@ export interface ExtractionResult {
   careInstructions?: string[];
   conditionRating?: number; // 1-5 star rating
   aiConfidence?: AIConfidence;
+  // Season/occasion from Mistral vision analysis
+  season?: string | null;
+  occasion?: string[];
+  // Pricing intelligence hints from Mistral
+  pricingHints?: {
+    rarity?: string;
+    craftsmanship?: string;
+    marketDemand?: string;
+    estimatedAgeYears?: number;
+    brandTier?: string;
+  };
+  // Image alt text for SEO (generated from extracted attributes)
+  imageAltText?: string | null;
   translations?: {
     is?: IcelandicTranslations; // Icelandic translations
   };
@@ -333,6 +361,14 @@ export function extractAttributes(
     careInstructions,
     conditionRating,
     aiConfidence,
+    // Generate image alt text from extracted attributes for SEO
+    imageAltText: generateImageAltText({
+      brand,
+      material,
+      colors,
+      category: category?.path,
+      productName: title,
+    }),
   };
 
   // Add Icelandic translations
@@ -373,10 +409,23 @@ function extractBrand(title: string, description: string): { brand: string | nul
   }
 
   // Fallback: extract capitalized words from title (brand entity heuristic)
-  const capitalizedMatch = title.match(/\b([A-Z][a-z]+(?:\s[A-Z][a-z]+)?)\b/);
-  if (capitalizedMatch) {
+  // Skip generic adjectives/colors/conditions that are not brand names
+  const NON_BRAND_WORDS = new Set([
+    'classic', 'vintage', 'new', 'used', 'good', 'great', 'nice', 'black',
+    'white', 'blue', 'red', 'green', 'brown', 'grey', 'gray', 'pink',
+    'yellow', 'orange', 'purple', 'navy', 'beige', 'cream', 'dark', 'light',
+    'slim', 'regular', 'relaxed', 'fitted', 'oversized', 'skinny', 'straight',
+    'bootcut', 'flare', 'cropped', 'wide', 'high', 'low', 'mid',
+    'men', 'women', 'kids', 'boys', 'girls', 'unisex', 'ladies',
+    'denim', 'jeans', 'jacket', 'shirt', 'dress', 'skirt', 'pants',
+    'trousers', 'shorts', 'coat', 'blazer', 'sweater', 'hoodie', 'top',
+    'condition', 'minimal', 'signs', 'wear', 'very',
+  ]);
+  const capitalizedWords = title.match(/\b([A-Z][a-z]+(?:\s[A-Z][a-z]+)?)\b/g) || [];
+  const brandCandidate = capitalizedWords.find(word => !NON_BRAND_WORDS.has(word.toLowerCase()));
+  if (brandCandidate) {
     return {
-      brand: capitalizedMatch[1],
+      brand: brandCandidate,
       confidence: 0.70, // Lower confidence for inferred brands
     };
   }
@@ -719,9 +768,12 @@ function extractFromAI(
   const secondary = categoryParts[1] || 'General';
   const tertiary = categoryParts[2] || 'Items';
 
+  // Brand normalization: canonicalize Mistral's brand output against KNOWN_BRANDS
+  const normalizedBrand = normalizeBrand(mistralResult.brand);
+
   return {
     // Core attributes from AI
-    brand: mistralResult.brand || null,
+    brand: normalizedBrand,
     material: mistralResult.material || null,
     colors: mistralResult.colors || [],
     pattern: mistralResult.pattern || null,
@@ -747,6 +799,23 @@ function extractFromAI(
     // Condition rating (map AI condition to 1-5 scale)
     conditionRating: mapConditionToRating(mistralResult.condition),
 
+    // Season and occasion from Mistral vision analysis
+    season: mistralResult.season || null,
+    occasion: mistralResult.occasion || [],
+
+    // Pricing intelligence hints from Mistral
+    pricingHints: mistralResult.pricingHints || undefined,
+
+    // Generate image alt text from extracted attributes for SEO
+    imageAltText: generateImageAltText({
+      brand: mistralResult.brand,
+      material: mistralResult.material,
+      colors: mistralResult.colors,
+      category: `${primary} ${secondary}`.trim(),
+      condition: mistralResult.condition,
+      productName: product.productName,
+    }),
+
     // AI confidence scores (use Mistral's confidence or fallback)
     aiConfidence: {
       brand: mistralResult.aiConfidence?.brand || (mistralResult.brand ? 0.8 : 0.0),
@@ -771,6 +840,95 @@ function extractFromAI(
       }
     }
   };
+}
+
+// Canonical display names for brands that need special casing
+// (ampersands, apostrophes, acronyms, etc.) — only brands that title-casing
+// alone cannot handle correctly. KNOWN_BRANDS keys are the lookup keys.
+const BRAND_DISPLAY_NAME: Record<string, string> = {
+  'h&m': 'H&M',
+  "levi's": "Levi's",
+  'levis': "Levi's",
+  'levi': "Levi's",
+  'g-star raw': 'G-Star Raw',
+  'g-star': 'G-Star',
+  'nudie jeans': 'Nudie Jeans',
+  '&otherstories': '&Other Stories',
+  'cos': 'COS',
+  'dr. denim': 'Dr. Denim',
+  'arc\'teryx': 'Arc\'teryx',
+};
+
+/**
+ * Normalize a brand name against KNOWN_BRANDS for canonical display casing.
+ * Mistral may return "ZARA", "zara", or "Zara" — we canonicalize using
+ * BRAND_DISPLAY_NAME for special cases, or title case for everything else.
+ */
+function normalizeBrand(brand?: string | null): string | null {
+  if (!brand) return null;
+  const lower = brand.toLowerCase().trim();
+  // Check special display-name overrides first
+  if (BRAND_DISPLAY_NAME[lower]) return BRAND_DISPLAY_NAME[lower];
+  // If it's a known brand, title-case it
+  if (KNOWN_BRANDS.has(lower)) {
+    return lower.split(/\s+/).map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+  }
+  // Unknown brand — return as-is with first letter capitalised
+  return brand.trim().charAt(0).toUpperCase() + brand.trim().slice(1);
+}
+
+/**
+ * Seed KNOWN_BRANDS and BRAND_DISPLAY_NAME from the DynamoDB brand registry.
+ * Call this once during Lambda cold start to supplement the hardcoded lists.
+ * Safe to call multiple times — skips brands already present.
+ *
+ * @param registeredBrands - Map of brandLower → displayName from BrandRegistry.loadRegisteredBrands()
+ */
+export function seedBrandsFromRegistry(registeredBrands: Map<string, string>): void {
+  for (const [lower, display] of registeredBrands) {
+    KNOWN_BRANDS.add(lower);
+    // Only add to BRAND_DISPLAY_NAME when title-casing would be wrong
+    // (i.e. the display name differs from a naive title-case)
+    const titleCased = lower.split(/\s+/).map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+    if (display !== titleCased) {
+      BRAND_DISPLAY_NAME[lower] = display;
+    }
+  }
+}
+
+/**
+ * Generate descriptive alt text for product images (SEO)
+ * Combines brand, material, color, category, and condition for rich descriptions
+ */
+function generateImageAltText(attrs: {
+  brand?: string | null;
+  material?: string | null;
+  colors?: string[];
+  category?: string;
+  condition?: string;
+  productName?: string;
+}): string {
+  const parts: string[] = [];
+
+  if (attrs.colors && attrs.colors.length > 0) parts.push(attrs.colors[0]);
+  if (attrs.brand) parts.push(attrs.brand);
+  if (attrs.material) parts.push(attrs.material);
+  if (attrs.category) parts.push(attrs.category);
+
+  // Map condition to human-readable label
+  const conditionLabels: Record<string, string> = {
+    new_with_tags: 'new with tags',
+    like_new: 'like new',
+    very_good: 'very good condition',
+    good: 'good condition',
+    fair: 'fair condition',
+  };
+  if (attrs.condition && conditionLabels[attrs.condition]) {
+    parts.push(`in ${conditionLabels[attrs.condition]}`);
+  }
+
+  if (parts.length > 0) return parts.join(' ');
+  return attrs.productName || 'Product image';
 }
 
 /**

@@ -1,5 +1,5 @@
 // Test setup file
-import { jest } from '@jest/globals';
+import { jest, beforeEach } from '@jest/globals';
 
 // Mock environment variables
 process.env.STAGE = 'test';
@@ -24,7 +24,7 @@ jest.mock('@aws-sdk/client-ssm', () => ({
 
 // Mock crypto (only override randomUUID; keep real crypto for hashing/HMAC)
 jest.mock('crypto', () => {
-  const actual = jest.requireActual('crypto');
+  const actual = jest.requireActual('crypto') as Record<string, unknown>;
   return {
     ...actual,
     randomUUID: jest.fn(() => 'test-uuid-123'),

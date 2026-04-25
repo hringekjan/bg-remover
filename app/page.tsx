@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useCallback } from 'react';
+import styles from './page.module.css';
 
 interface ProcessResult {
   success: boolean;
@@ -167,12 +168,7 @@ export default function Home() {
               Result
             </h2>
 
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: '1fr 1fr',
-              gap: '20px',
-              marginBottom: '20px',
-            }}>
+            <div className={styles.imageGrid}>
               <div>
                 <h3 style={{ fontSize: '1rem', color: '#666', marginBottom: '10px' }}>
                   Original

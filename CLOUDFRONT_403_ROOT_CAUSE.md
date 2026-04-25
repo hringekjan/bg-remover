@@ -283,7 +283,7 @@ If Solution 2 causes issues, you can quickly rollback by:
 
 1. **Revert frontend changes**
    ```bash
-   git revert <commit-hash>
+   git revert <commit-hash>```
    ```
 
 2. **CloudFront will still work for other routes**

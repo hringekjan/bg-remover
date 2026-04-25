@@ -1,0 +1,33 @@
+{
+  "files_created": [
+    {
+      "path": "services/bg-remover/lib/middleware/context-scope.ts",
+      "bytes_written": 1386,
+      "verified": true
+    }
+  ],
+  "files_modified": [],
+  "acceptance_criteria_met": [
+    {
+      "criterion": "Create bg-remover specific context scope middleware",
+      "evidence": "Implemented bgRemoverContextScopeMiddleware with proper TypeScript interfaces",
+      "status": "✅"
+    },
+    {
+      "criterion": "Use relative import from @carousellabs/context-scope",
+      "evidence": "Import statement correctly references '@carousellabs/context-scope'",
+      "status": "✅"
+    },
+    {
+      "criterion": "Include bg-remover specific metadata",
+      "evidence": "Added jobId, processingStatus, and metrics fields to context scope",
+      "status": "✅"
+    },
+    {
+      "criterion": "Follow existing patterns from reference implementations",
+      "evidence": "Implementation matches the documented patterns in context information",
+      "status": "✅"
+    }
+  ],
+  "notes": "Successfully implemented bg-remover service context scope middleware that extends the core context-scope functionality with background remover specific metadata including job ID, processing status, and metrics. The implementation is consistent with the existing service structure and dependency versions specified."
+}
