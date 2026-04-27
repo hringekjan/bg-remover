@@ -1,3 +1,7 @@
+---
+title: "Sales Intelligence DynamoDB - Complete Index"
+---
+
 # Sales Intelligence DynamoDB - Complete Index
 
 ## Navigation Guide

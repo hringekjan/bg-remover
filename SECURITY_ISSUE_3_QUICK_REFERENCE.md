@@ -1,3 +1,7 @@
+---
+title: "Security Issue #3: Admin Keys - Quick Reference"
+---
+
 # Security Issue #3: Admin Keys - Quick Reference
 
 **Status:** CRITICAL - REQUIRES IMMEDIATE ACTION

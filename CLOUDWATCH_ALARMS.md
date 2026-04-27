@@ -1,3 +1,7 @@
+---
+title: "CloudWatch Alarms Configuration"
+---
+
 # CloudWatch Alarms Configuration
 
 **Service:** bg-remover (Vision-Enhanced Pricing Intelligence)

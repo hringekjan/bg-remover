@@ -1,3 +1,7 @@
+---
+title: "Secrets Management - Admin API Keys"
+---
+
 # Secrets Management - Admin API Keys
 
 ## Overview

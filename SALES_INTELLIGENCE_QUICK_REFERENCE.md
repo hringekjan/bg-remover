@@ -1,3 +1,7 @@
+---
+title: "Sales Intelligence DynamoDB - Quick Reference"
+---
+
 # Sales Intelligence DynamoDB - Quick Reference
 
 ## Files Created

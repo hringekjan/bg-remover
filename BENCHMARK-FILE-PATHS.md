@@ -1,3 +1,7 @@
+---
+title: "bg-remover Performance Benchmarking - File Paths Reference"
+---
+
 # bg-remover Performance Benchmarking - File Paths Reference
 
 **Purpose:** Quick reference for all file paths needed for end-to-end integration testing and performance benchmarking.

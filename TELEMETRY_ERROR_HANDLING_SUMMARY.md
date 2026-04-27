@@ -1,3 +1,7 @@
+---
+title: "BG-Remover Telemetry Error Handling Implementation"
+---
+
 # BG-Remover Telemetry Error Handling Implementation
 
 ## Summary

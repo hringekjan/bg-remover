@@ -1,3 +1,7 @@
+---
+title: "Carousel to S3 Tables Sync Lambda - Phase 5 Implementation"
+---
+
 # Carousel to S3 Tables Sync Lambda - Phase 5 Implementation
 
 ## Overview

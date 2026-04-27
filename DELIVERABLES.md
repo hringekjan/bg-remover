@@ -1,3 +1,7 @@
+---
+title: "Sales Intelligence DynamoDB Schema - Deliverables Summary"
+---
+
 # Sales Intelligence DynamoDB Schema - Deliverables Summary
 
 **Completion Date**: December 29, 2025

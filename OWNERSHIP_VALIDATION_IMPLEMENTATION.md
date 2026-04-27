@@ -1,3 +1,7 @@
+---
+title: "Ownership Validation Implementation - Security Fix #2"
+---
+
 # Ownership Validation Implementation - Security Fix #2
 
 **Status:** COMPLETE

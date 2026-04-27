@@ -1,3 +1,7 @@
+---
+title: "S3 Tables Technical Reference"
+---
+
 # S3 Tables Technical Reference
 
 ## Complete API and Configuration Reference

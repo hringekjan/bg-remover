@@ -1,3 +1,7 @@
+---
+title: "S3 Tables (Apache Iceberg) Implementation Guide"
+---
+
 # S3 Tables (Apache Iceberg) Implementation Guide
 
 ## Overview

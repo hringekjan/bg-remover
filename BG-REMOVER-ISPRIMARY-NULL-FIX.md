@@ -1,3 +1,7 @@
+---
+title: "BG-Remover isPrimary Null Reference Fix"
+---
+
 # BG-Remover isPrimary Null Reference Fix
 
 ## Issue

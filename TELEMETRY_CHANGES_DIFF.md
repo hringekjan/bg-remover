@@ -1,3 +1,7 @@
+---
+title: "BG-Remover Telemetry Error Handling - Changes Diff"
+---
+
 # BG-Remover Telemetry Error Handling - Changes Diff
 
 ## File: src/lib/telemetry/bg-remover-telemetry.ts

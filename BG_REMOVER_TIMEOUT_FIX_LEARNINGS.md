@@ -1,3 +1,7 @@
+---
+title: "BG Remover Timeout Fix - Learning Summary"
+---
+
 # BG Remover Timeout Fix - Learning Summary
 
 ## Problem Identification

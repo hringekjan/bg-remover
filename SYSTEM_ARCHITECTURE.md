@@ -1,3 +1,7 @@
+---
+title: "System Architecture - Vision-Enhanced Pricing Intelligence"
+---
+
 # System Architecture - Vision-Enhanced Pricing Intelligence
 
 ## Overview

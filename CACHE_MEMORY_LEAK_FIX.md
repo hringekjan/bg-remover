@@ -1,3 +1,7 @@
+---
+title: "BG-Remover Cache Memory Leak and Observability Fix"
+---
+
 # BG-Remover Cache Memory Leak and Observability Fix
 
 ## Overview

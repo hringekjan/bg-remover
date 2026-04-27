@@ -1,3 +1,7 @@
+---
+title: "BG-Remover Telemetry Un-Stub Implementation - COMPLETE"
+---
+
 # BG-Remover Telemetry Un-Stub Implementation - COMPLETE
 
 ## Summary

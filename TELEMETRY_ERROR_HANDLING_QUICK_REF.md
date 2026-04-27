@@ -1,3 +1,7 @@
+---
+title: "BG-Remover Telemetry Error Handling - Quick Reference"
+---
+
 # BG-Remover Telemetry Error Handling - Quick Reference
 
 ## Overview

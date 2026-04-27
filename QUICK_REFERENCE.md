@@ -1,3 +1,7 @@
+---
+title: "🚀 BG Remover - Quick Reference Guide"
+---
+
 # 🚀 BG Remover - Quick Reference Guide
 
 **Last Updated:** 2025-12-30 03:12 UTC

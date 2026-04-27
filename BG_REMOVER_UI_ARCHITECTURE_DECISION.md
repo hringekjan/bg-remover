@@ -1,3 +1,7 @@
+---
+title: "BG-Remover UI Architecture Decision"
+---
+
 # BG-Remover UI Architecture Decision
 
 ## Current State Analysis

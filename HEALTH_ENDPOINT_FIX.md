@@ -1,3 +1,7 @@
+---
+title: "Health Endpoint HTTP Status Code Fix"
+---
+
 # Health Endpoint HTTP Status Code Fix
 
 ## Summary

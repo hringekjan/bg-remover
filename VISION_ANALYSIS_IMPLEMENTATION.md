@@ -1,3 +1,7 @@
+---
+title: "Vision Analysis Implementation Guide"
+---
+
 # Vision Analysis Implementation Guide
 
 ## Overview

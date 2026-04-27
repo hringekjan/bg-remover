@@ -1,3 +1,7 @@
+---
+title: "Security Fix #3: Deployment Checklist"
+---
+
 # Security Fix #3: Deployment Checklist
 
 ## Pre-Deployment Verification

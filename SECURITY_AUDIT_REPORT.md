@@ -1,3 +1,7 @@
+---
+title: "Background Remover Service - Security Audit Report"
+---
+
 # Background Remover Service - Security Audit Report
 
 **Service:** bg-remover

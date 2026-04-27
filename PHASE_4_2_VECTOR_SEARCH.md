@@ -1,3 +1,7 @@
+---
+title: "Phase 4.2: DynamoDB Vector Search Implementation"
+---
+
 # Phase 4.2: DynamoDB Vector Search Implementation
 
 ## Overview

@@ -1,3 +1,7 @@
+---
+title: "bg-remover Phase 1 Quick Wins - Implementation Complete"
+---
+
 # bg-remover Phase 1 Quick Wins - Implementation Complete
 
 **Date:** 2026-01-10

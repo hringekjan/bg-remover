@@ -1,3 +1,7 @@
+---
+title: "Sales Intelligence DynamoDB Schema"
+---
+
 # Sales Intelligence DynamoDB Schema
 
 Complete production-ready DynamoDB implementation for pricing intelligence and sales analytics with multi-tenant isolation, TTL-based retention, and optimized access patterns.

@@ -1,3 +1,7 @@
+---
+title: "Documentation Fixes & Operational Runbook - Delivery Summary"
+---
+
 # Documentation Fixes & Operational Runbook - Delivery Summary
 
 **Date:** 2025-12-30

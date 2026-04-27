@@ -1,3 +1,7 @@
+---
+title: "S3 Tables Deployment Guide"
+---
+
 # S3 Tables Deployment Guide
 
 ## Complete Step-by-Step Deployment

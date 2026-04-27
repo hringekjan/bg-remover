@@ -1,3 +1,7 @@
+---
+title: "BG Remover Lambda Handler Paths Fix Summary"
+---
+
 # BG Remover Lambda Handler Paths Fix Summary
 
 **Date:** 2026-01-02

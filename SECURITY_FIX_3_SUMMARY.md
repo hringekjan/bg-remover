@@ -1,3 +1,7 @@
+---
+title: "Security Fix #3: Admin API Keys Migration to SSM SecureString"
+---
+
 # Security Fix #3: Admin API Keys Migration to SSM SecureString
 
 ## Status: ✅ COMPLETE

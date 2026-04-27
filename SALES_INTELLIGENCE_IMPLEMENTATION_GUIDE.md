@@ -1,3 +1,7 @@
+---
+title: "Sales Intelligence DynamoDB Schema - Implementation Guide"
+---
+
 # Sales Intelligence DynamoDB Schema - Implementation Guide
 
 ## Executive Summary

@@ -1,3 +1,7 @@
+---
+title: "Background Remover Service"
+---
+
 # Background Remover Service
 
 A TypeScript microservice for automatically removing backgrounds from images using AWS Bedrock AI models.

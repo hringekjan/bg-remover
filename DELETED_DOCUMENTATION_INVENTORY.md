@@ -1,3 +1,7 @@
+---
+title: "BG-Remover Deleted Documentation Inventory"
+---
+
 # BG-Remover Deleted Documentation Inventory
 
 ## When Deleted

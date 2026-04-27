@@ -1,3 +1,7 @@
+---
+title: "JWT Token Hash Collision Vulnerability - Security Fix Verification"
+---
+
 # JWT Token Hash Collision Vulnerability - Security Fix Verification
 
 ## Executive Summary

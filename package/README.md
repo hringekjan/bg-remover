@@ -1,3 +1,7 @@
+---
+title: "`@img/sharp-linux-arm64`"
+---
+
 # `@img/sharp-linux-arm64`
 
 Prebuilt sharp for use with Linux (glibc) 64-bit ARM.

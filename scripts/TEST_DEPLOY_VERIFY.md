@@ -1,3 +1,7 @@
+---
+title: "Testing deploy-and-verify.sh"
+---
+
 # Testing deploy-and-verify.sh
 
 Quick verification checklist for the deployment verification script.

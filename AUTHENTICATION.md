@@ -1,3 +1,7 @@
+---
+title: "BG-Remover Authentication Implementation"
+---
+
 # BG-Remover Authentication Implementation
 
 **Status:** 🟡 **PARTIAL** - JWT validation code created, dependency installation pending

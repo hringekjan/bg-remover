@@ -1,3 +1,7 @@
+---
+title: "S3 Tables Data Validator - Implementation Guide"
+---
+
 # S3 Tables Data Validator - Implementation Guide
 
 ## Overview

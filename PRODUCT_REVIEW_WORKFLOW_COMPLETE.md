@@ -1,3 +1,7 @@
+---
+title: "Product Review and Booking Registration Workflow - Implementation Complete"
+---
+
 # Product Review and Booking Registration Workflow - Implementation Complete
 
 **Date:** 2025-12-30

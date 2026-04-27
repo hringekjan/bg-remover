@@ -1,3 +1,7 @@
+---
+title: "JWT Token Hash Collision Security Fix - Complete"
+---
+
 # JWT Token Hash Collision Security Fix - Complete
 
 **Status**: FIXED AND VERIFIED ✓

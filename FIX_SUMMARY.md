@@ -1,3 +1,7 @@
+---
+title: "BG-Remover 403 Error - Root Cause & Fix Summary"
+---
+
 # BG-Remover 403 Error - Root Cause & Fix Summary
 
 ## 🔍 Root Cause: Wrong URL Pattern

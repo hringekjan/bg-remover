@@ -1,3 +1,7 @@
+---
+title: "CloudFront 403 Error - Root Cause Analysis & Solutions"
+---
+
 # CloudFront 403 Error - Root Cause Analysis & Solutions
 
 ## Investigation Summary

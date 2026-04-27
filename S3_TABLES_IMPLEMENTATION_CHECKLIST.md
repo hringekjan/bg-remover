@@ -1,3 +1,7 @@
+---
+title: "S3 Tables Implementation Checklist"
+---
+
 # S3 Tables Implementation Checklist
 
 ## Completion Status: 100%

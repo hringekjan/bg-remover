@@ -1,3 +1,7 @@
+---
+title: "Security Issue #3: Hardcoded Admin Keys - Comprehensive Review"
+---
+
 # Security Issue #3: Hardcoded Admin Keys - Comprehensive Review
 
 **Review Date:** 2026-01-02

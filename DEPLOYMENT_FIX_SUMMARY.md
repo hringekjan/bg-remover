@@ -1,3 +1,7 @@
+---
+title: "BG-Remover Lambda Packaging Fix - Deployment Summary"
+---
+
 # BG-Remover Lambda Packaging Fix - Deployment Summary
 
 ## Problem

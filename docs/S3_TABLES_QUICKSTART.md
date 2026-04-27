@@ -1,3 +1,7 @@
+---
+title: "S3 Tables Quick Start Guide"
+---
+
 # S3 Tables Quick Start Guide
 
 ## TL;DR - Deploy in 5 Minutes

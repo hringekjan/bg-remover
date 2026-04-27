@@ -1,3 +1,7 @@
+---
+title: "Security Fix: Admin Keys Cache Race Condition + SSM Path Mismatch"
+---
+
 # Security Fix: Admin Keys Cache Race Condition + SSM Path Mismatch
 
 **Date:** 2026-01-02

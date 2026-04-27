@@ -1,3 +1,7 @@
+---
+title: "Embedding Cache Implementation Guide"
+---
+
 # Embedding Cache Implementation Guide
 
 **Phase 2.4 Implementation Summary**

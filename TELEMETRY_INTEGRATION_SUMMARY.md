@@ -1,3 +1,7 @@
+---
+title: "BG-Remover Telemetry Integration Summary"
+---
+
 # BG-Remover Telemetry Integration Summary
 
 ## Overview

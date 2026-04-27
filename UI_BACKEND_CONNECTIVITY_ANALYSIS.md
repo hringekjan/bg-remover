@@ -1,3 +1,7 @@
+---
+title: "BG-Remover UI/Backend Connectivity Analysis"
+---
+
 # BG-Remover UI/Backend Connectivity Analysis
 
 ## 🚨 **CRITICAL FINDING: Dual Architecture - Disconnected Systems**

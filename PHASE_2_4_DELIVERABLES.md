@@ -1,3 +1,7 @@
+---
+title: "Phase 2.4: Embedding Cache Integration - Complete Deliverables"
+---
+
 # Phase 2.4: Embedding Cache Integration - Complete Deliverables
 
 **Project**: bg-remover Service

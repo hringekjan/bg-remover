@@ -1,3 +1,7 @@
+---
+title: "Vision Analysis Quick Reference"
+---
+
 # Vision Analysis Quick Reference
 
 ## Quick Start

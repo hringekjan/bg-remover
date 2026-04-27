@@ -1,3 +1,7 @@
+---
+title: "BG Remover Maintenance Scripts"
+---
+
 # BG Remover Maintenance Scripts
 
 ## cleanup-jobs-without-gsi2.ts

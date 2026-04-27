@@ -1,3 +1,7 @@
+---
+title: "BG-Remover Telemetry Quick Start"
+---
+
 # BG-Remover Telemetry Quick Start
 
 ## Usage Examples

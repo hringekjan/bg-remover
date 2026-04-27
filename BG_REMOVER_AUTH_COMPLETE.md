@@ -1,3 +1,7 @@
+---
+title: "BG-Remover Authentication Implementation - COMPLETE"
+---
+
 # BG-Remover Authentication Implementation - COMPLETE
 
 **Date**: 2025-12-14

@@ -1,3 +1,7 @@
+---
+title: "Mistral_pixtral_analyzer Agent"
+---
+
 # Mistral_pixtral_analyzer Agent
 
 ## Description

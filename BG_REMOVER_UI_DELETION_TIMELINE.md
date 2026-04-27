@@ -1,3 +1,7 @@
+---
+title: "BG-Remover UI Deletion Timeline"
+---
+
 # BG-Remover UI Deletion Timeline
 
 ## Discovery

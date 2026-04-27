@@ -1,3 +1,7 @@
+---
+title: "CloudWatch Insights Queries for bg-remover Service"
+---
+
 # CloudWatch Insights Queries for bg-remover Service
 
 **Purpose:** Debug request flows, performance issues, and errors across the entire bg-remover pipeline.

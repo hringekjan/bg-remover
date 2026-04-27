@@ -1,3 +1,7 @@
+---
+title: "Security Fix: Ownership Validation userId Fallback Bypass"
+---
+
 # Security Fix: Ownership Validation userId Fallback Bypass
 
 ## Issue Summary

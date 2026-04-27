@@ -1,3 +1,7 @@
+---
+title: "Carousel to S3 Tables Sync - Quick Start Guide"
+---
+
 # Carousel to S3 Tables Sync - Quick Start Guide
 
 ## TL;DR

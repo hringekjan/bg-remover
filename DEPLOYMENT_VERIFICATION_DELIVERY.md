@@ -1,3 +1,7 @@
+---
+title: "BG Remover Deployment Verification Script - Delivery Summary"
+---
+
 # BG Remover Deployment Verification Script - Delivery Summary
 
 Comprehensive deployment verification script for the BG Remover service with pre-flight checks, deployment execution, and post-deployment testing.

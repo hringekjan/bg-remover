@@ -1,3 +1,7 @@
+---
+title: "bg-remover Incubator Work - Status Summary"
+---
+
 # bg-remover Incubator Work - Status Summary
 
 **Date:** 2026-01-10

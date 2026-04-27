@@ -1,3 +1,7 @@
+---
+title: "Phase 4.3: Bedrock Nova Lite Vision Analysis - Delivery Summary"
+---
+
 # Phase 4.3: Bedrock Nova Lite Vision Analysis - Delivery Summary
 
 **Status:** Complete ✅

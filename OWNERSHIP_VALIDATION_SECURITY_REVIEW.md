@@ -1,3 +1,7 @@
+---
+title: "Security Review: Missing Ownership Validation (P0 - CRITICAL)"
+---
+
 # Security Review: Missing Ownership Validation (P0 - CRITICAL)
 
 **Reviewer:** Security & RBAC Reviewer Agent #2

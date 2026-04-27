@@ -1,3 +1,7 @@
+---
+title: "BG Remover Deployment & Verification Script"
+---
+
 # BG Remover Deployment & Verification Script
 
 Comprehensive deployment script with pre-flight checks, deployment execution, and post-deployment verification including cache testing.

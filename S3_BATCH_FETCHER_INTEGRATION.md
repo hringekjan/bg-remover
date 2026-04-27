@@ -1,3 +1,7 @@
+---
+title: "S3 Batch Fetcher Integration - Phase 2.3 Verification"
+---
+
 # S3 Batch Fetcher Integration - Phase 2.3 Verification
 
 **Date**: 2025-12-30

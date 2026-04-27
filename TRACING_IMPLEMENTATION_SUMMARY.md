@@ -1,3 +1,7 @@
+---
+title: "Request Tracing Implementation Summary"
+---
+
 # Request Tracing Implementation Summary
 
 **Service:** bg-remover

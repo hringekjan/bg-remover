@@ -1,3 +1,7 @@
+---
+title: "Operational Runbook: Vision-Enhanced Pricing Intelligence"
+---
+
 # Operational Runbook: Vision-Enhanced Pricing Intelligence
 
 **Service:** bg-remover (pricing-intelligence)

@@ -1,3 +1,7 @@
+---
+title: "Request Tracing Quick Start Guide"
+---
+
 # Request Tracing Quick Start Guide
 
 **5-Minute Guide to Debugging with Traces**

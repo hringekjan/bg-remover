@@ -1,3 +1,7 @@
+---
+title: "Phase 2.4: Embedding Cache Integration - Delivery Report"
+---
+
 # Phase 2.4: Embedding Cache Integration - Delivery Report
 
 **Status**: COMPLETE

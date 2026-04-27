@@ -1,3 +1,7 @@
+---
+title: "BG Remover Deploy & Verify - Quick Start"
+---
+
 # BG Remover Deploy & Verify - Quick Start
 
 Comprehensive deployment verification script with pre-flight checks, deployment execution, and post-deployment testing.

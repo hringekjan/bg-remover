@@ -1,3 +1,7 @@
+---
+title: "JWT Security Fix - Deployment Guide"
+---
+
 # JWT Security Fix - Deployment Guide
 
 ## Prerequisites

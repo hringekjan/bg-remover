@@ -1,3 +1,7 @@
+---
+title: "Seasonal Adjustment Algorithm - Quick Reference"
+---
+
 # Seasonal Adjustment Algorithm - Quick Reference
 
 ## File Locations

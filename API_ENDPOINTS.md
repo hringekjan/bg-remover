@@ -1,3 +1,7 @@
+---
+title: "BG-Remover API Endpoints Reference"
+---
+
 # BG-Remover API Endpoints Reference
 
 ## ✅ Correct URL Format

@@ -1,3 +1,7 @@
+---
+title: "Sales Intelligence DynamoDB Implementation"
+---
+
 # Sales Intelligence DynamoDB Implementation
 
 **Status**: ✅ Production Ready | **Date**: December 29, 2025
