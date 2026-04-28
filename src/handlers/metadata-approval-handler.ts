@@ -67,7 +67,9 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
     await ddbDocClient.send(new UpdateCommand({
       TableName: TABLE_NAME,
       Key: { PK: pkValue, SK: skValue },
-      UpdateExpression: 'SET #status = :status, updatedAt = :updatedAt, GSI2PK = :gsi2pk, #enrichment = :enrichment',
+      // GSI2SK written as approvedAt timestamp so date-range queries can filter by approval date:
+      //   GSI2PK = TENANT#{t}#PRODUCT_STATUS#APPROVED, GSI2SK BETWEEN :start AND :end
+      UpdateExpression: 'SET #status = :status, updatedAt = :updatedAt, GSI2PK = :gsi2pk, GSI2SK = :gsi2sk, #enrichment = :enrichment',
       ExpressionAttributeNames: {
         '#status': 'status',
         '#enrichment': 'enrichment'
@@ -76,6 +78,7 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
         ':status': newStatus,
         ':updatedAt': updatedAt,
         ':gsi2pk': `TENANT#${tenantId}#PRODUCT_STATUS#${newStatus}`,
+        ':gsi2sk': updatedAt, // ISO timestamp — enables range key filtering by approval date
         ':enrichment': {
             ...existing.Item.enrichment,
             approvalStatus: status === 'approve' ? 'approved' : 'rejected',
