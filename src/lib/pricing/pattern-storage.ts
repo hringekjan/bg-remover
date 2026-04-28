@@ -33,11 +33,12 @@ export class PatternStorageService {
       apiKey?: string;
     } = {}
   ) {
-    this.mem0ApiUrl = options.apiUrl || process.env.MEM0_API_URL || '';
+    // Prefer MEM0_API_ENDPOINT (internal gateway) over MEM0_API_URL (SaaS fallback)
+    this.mem0ApiUrl = options.apiUrl || process.env.MEM0_API_ENDPOINT || process.env.MEM0_API_URL || '';
     this.mem0ApiKey = options.apiKey || process.env.MEM0_API_KEY || '';
 
     if (!this.mem0ApiUrl) {
-      console.warn('[PatternStorage] MEM0_API_URL not configured, storage disabled');
+      console.warn('[PatternStorage] MEM0_API_ENDPOINT not configured, storage disabled');
     }
 
     if (!this.mem0ApiKey) {
@@ -60,12 +61,17 @@ export class PatternStorageService {
       return;
     }
 
+    if (process.env.MEM0_CLOUD_WRITES_ENABLED !== 'true') {
+      console.debug('[PatternStorage] mem0 writes disabled (MEM0_CLOUD_WRITES_ENABLED != true), skipping');
+      return;
+    }
+
     try {
       const content = this.formatPatternContent(pattern);
+      const agentId = `${this.tenantId}:seasonal-analyzer`;
 
       const payload = {
-        user_id: `${this.tenantId}:seasonal-analyzer`,
-        messages: [content],
+        content,
         metadata: {
           category: 'pricing:seasonal_pattern',
           productCategory: pattern.category,
@@ -79,10 +85,10 @@ export class PatternStorageService {
         },
       };
 
-      const response = await fetch(`${this.mem0ApiUrl}/v1/memories/`, {
+      const response = await fetch(`${this.mem0ApiUrl}/agents/${agentId}/memory`, {
         method: 'POST',
         headers: {
-          Authorization: `Token ${this.mem0ApiKey}`,
+          Authorization: `Bearer ${this.mem0ApiKey}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(payload),
