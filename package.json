@@ -60,7 +60,7 @@
   },
   "devDependencies": {
     "@carousellabs/serverless-backend-kit": "^0.1.5",
-    "@carousellabs/serverless-ssm-json-env": "^0.1.50",
+    "@carousellabs/serverless-ssm-json-env": "^0.2.6",
     "@next/swc-darwin-arm64": "^15.5.7",
     "@playwright/test": "^1.57.0",
     "@types/aws-lambda": "^8.10.145",
