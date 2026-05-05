@@ -305,6 +305,22 @@ resources:
           BlockPublicPolicy: true
           IgnorePublicAcls: true
           RestrictPublicBuckets: true
+        CorsConfiguration:
+          CorsRules:
+            - AllowedOrigins:
+                - https://carousel.hringekjan.is
+                - https://carousel.carousellabs.co
+                - https://carousel.dev.hringekjan.is
+                - https://carousel.dev.carousellabs.co
+              AllowedMethods:
+                - PUT
+                - GET
+                - HEAD
+              AllowedHeaders:
+                - '*'
+              ExposedHeaders:
+                - ETag
+              MaxAge: 3600
 
     ProcessWorkerDLQ:
       Type: AWS::SQS::Queue
