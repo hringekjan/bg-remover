@@ -129,15 +129,18 @@ async function checkDynamoDB(): Promise<DependencyHealth> {
 }
 
 /**
- * Check S3 health by listing buckets
+ * Check S3 health by probing the temp-images bucket (which the role IS authorized for)
+ * ListAllMyBuckets is not granted — use HeadBucket on the known bucket instead
  */
 async function checkS3(): Promise<DependencyHealth> {
   const startCheck = Date.now();
   try {
-    const { S3Client, ListBucketsCommand } = await import('@aws-sdk/client-s3');
+    const { S3Client, HeadBucketCommand } = await import('@aws-sdk/client-s3');
     const client = new S3Client({ region: global.process.env.AWS_REGION || 'eu-west-1' });
+    const stage = global.process.env.STAGE || 'dev';
+    const bucket = `bg-remover-temp-images-${stage}`;
 
-    await client.send(new ListBucketsCommand({}));
+    await client.send(new HeadBucketCommand({ Bucket: bucket }));
 
     return {
       status: 'healthy',

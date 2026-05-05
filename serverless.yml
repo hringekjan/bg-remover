@@ -3,12 +3,6 @@ service: bg-remover
 frameworkVersion: '4'
 configValidationMode: warn
 
-# NOTE: serverless-python-requirements is now built-in in Serverless Framework v4
-# Removed from plugins list as it's automatically activated by custom.pythonRequirements
-
-# No extends, manually merge base.yml properties
-
-# Using built-in ESBuild support in Serverless Framework v4
 plugins: []
 
 build:
@@ -22,7 +16,6 @@ build:
     target: node22
     platform: node
     format: cjs
-    # External packages (provided by Lambda runtime)
     external:
       - '@aws-sdk/*'
       - 'aws-sdk'
@@ -30,108 +23,74 @@ build:
 
 provider:
   name: aws
-  runtime: nodejs22.x # User requested Node 22, overrides base.yml's nodejs20.x
-  region: eu-west-1 # Inherited from base.yml, can be overridden by env:AWS_REGION
-  stage: ${opt:stage, 'dev'} # Inherited from base.yml
+  runtime: nodejs22.x
+  region: eu-west-1
+  stage: ${opt:stage, 'dev'}
   architecture: arm64
-  memorySize: 2048 # P1 Fix: Increased from 1536 to handle 5MB+ images without OOM
-  timeout: 90      # P1 Fix: Increased from 60s to handle complex edge-case processing
+  memorySize: 2048
+  timeout: 90
   logRetentionInDays: 7
   logs:
-    httpApi: false # Disabled as HTTP API is externally configured
+    httpApi: false
   tracing:
-    lambda: true # Enable X-Ray tracing for distributed request tracking
-    apiGateway: false # API Gateway is shared, tracing configured centrally
+    lambda: true
   httpApi:
-    id: ${ssm:/tf/${sls:stage}/platform/api-gateway/id} # Kept from original
+    cors:
+      allowedOrigins:
+        - '*'
+      allowedHeaders:
+        - Content-Type
+        - Authorization
+        - X-Tenant-Id
+        - X-User-Id
+        - X-Trace-Id
+        - X-Job-Token
+      allowedMethods:
+        - GET
+        - POST
+        - OPTIONS
   environment:
-    STAGE: ${self:provider.stage} # From original
-    NODE_OPTIONS: '--enable-source-maps --expose-gc' # From original
-
-    # Request Tracing Configuration
-    AWS_XRAY_TRACING_ENABLED: 'true' # Enable X-Ray SDK tracing
-    AWS_XRAY_CONTEXT_MISSING: LOG_ERROR # Log errors when trace context is missing
-
-    # DynamoDB Single Table (jobs + rate limits)
-    # Shared carousel-main table with PK/SK and tenant isolation
+    STAGE: ${self:provider.stage}
+    NODE_OPTIONS: '--enable-source-maps --expose-gc'
+    AWS_XRAY_TRACING_ENABLED: 'true'
+    AWS_XRAY_CONTEXT_MISSING: LOG_ERROR
     DYNAMODB_TABLE: carousel-main-${sls:stage}
     JOB_STORE_TABLE_NAME: carousel-main-${sls:stage}
-
-    # Multi-Tenant Runtime Configuration
-    # Cognito config loaded at RUNTIME using ConfigLoader from @carousellabs/backend-kit
-    # Tenant extracted from request host domain via extractTenantFromEvent()
-    CONFIG_CACHE_TTL: '300000'  # 5 minutes cache for tenant configs
-    REQUIRE_AUTH: 'true'  # Authentication required for all environments
-    LOG_LEVEL: DEBUG  # Enable detailed logging for diagnosis
+    CONFIG_CACHE_TTL: '300000'
+    REQUIRE_AUTH: 'true'
+    LOG_LEVEL: DEBUG
     ALLOW_DEV_AUTH: ${self:custom.devAuth.${self:provider.stage}, 'false'}
-
-    # Credits Service Integration
-    # Uses shared HTTP API Gateway for credits service communication
     CREDITS_API_URL: https://api.${sls:stage}.carousellabs.co/carousel/credits
-    REQUIRE_CREDITS: ${env:REQUIRE_CREDITS, 'false'}  # Set to 'true' for production
-
-    # Mem0 Service Integration (for classification memories)
-    # Uses shared HTTP API Gateway with IAM authentication
+    REQUIRE_CREDITS: ${env:REQUIRE_CREDITS, 'false'}
     MEM0_API_ENDPOINT: https://api.${sls:stage}.carousellabs.co/mem0
     TENANT: ${env:TENANT, 'carousel-labs'}
-
-    # CloudWatch metrics toggle (OFF in dev, ON in prod)
     ENABLE_CLOUDWATCH_METRICS: ${param:enableCloudWatchMetrics, 'false'}
-
-    # Mem0 cloud write gate — must be explicitly opted in (DLP / dev-data isolation)
-    # Off in dev/stage; on in prod. Never fires without this flag.
     MEM0_CLOUD_WRITES_ENABLED: ${param:mem0CloudWritesEnabled, 'false'}
-
-    # Cache Service Integration (distributed L2 cache)
-    # Uses shared HTTP API Gateway for cross-Lambda caching
     CACHE_SERVICE_URL: https://api.${sls:stage}.carousellabs.co/cache
-
-    # Cache Key Secret (HMAC for secure cache key generation)
-    # CRITICAL: Prevents cache poisoning attacks by using HMAC instead of plain SHA-256
-    # Loaded from tenant-specific SecureString SSM parameter (auto-decrypted)
     CACHE_KEY_SECRET: ${ssm:/tf/${sls:stage}/${env:TENANT, 'carousel-labs'}/services/bg-remover/cache-key-secret}
-    # Job Token Secret (HMAC for short-lived polling tokens)
-    # Loaded from platform-level SecureString SSM parameter (auto-decrypted)
     JOB_TOKEN_SECRET: ${ssm:/tf/${sls:stage}/platform/bg-remover/job-token-secret}
-
-    # Layer 2 Dual-Write Configuration (LCP-API secondary writes)
-    # Validation window: 2026-04-29 to 2026-05-01 (48h comparison)
-    # Success criteria: < 1% divergence between carousel-main and LCP-API
     LCP_API_BASE_URL: https://api.${sls:stage}.carousellabs.co/lcp-api
     LCP_API_AUTH_TOKEN: ${ssm:/tf/${sls:stage}/platform/bg-remover/lcp-api-auth-token}
     LCP_API_DLQ_URL: ${ssm:/tf/${sls:stage}/platform/bg-remover/lcp-api-dlq-url}
-
-    # Worker Lambda Function Name (for async job pattern)
     WORKER_FUNCTION_NAME: ${self:service}-${self:provider.stage}-processWorker
-
-    # Temporary S3 Bucket for image storage (solves Lambda 1MB payload limit)
     TEMP_IMAGES_BUCKET: bg-remover-temp-images-${self:provider.stage}
-
-    # Embedding Storage Service Configuration
-    # Batch-based S3 GetObject calls for improved performance
     EMBEDDINGS_BUCKET: ${env:EMBEDDINGS_BUCKET, 'bg-remover-embeddings-${self:provider.stage}'}
-    EMBEDDINGS_BATCH_SIZE: '10'           # Keys per batch request
-    EMBEDDINGS_MAX_CONCURRENT: '5'        # Max parallel batch requests
-    EMBEDDINGS_RETRY_ATTEMPTS: '3'        # Retry failed S3 calls
-    EMBEDDINGS_RETRY_DELAY_MS: '1000'     # Initial retry delay
-
-    # Event Tracking Table (observability metrics)
+    EMBEDDINGS_BATCH_SIZE: '10'
+    EMBEDDINGS_MAX_CONCURRENT: '5'
+    EMBEDDINGS_RETRY_ATTEMPTS: '3'
+    EMBEDDINGS_RETRY_DELAY_MS: '1000'
     EVENT_TRACKING_TABLE: event-tracking-${sls:stage}
-
-    # Bedrock Regions (Pixtral in us-east-1, GPT-OSS in eu-west-1)
     BEDROCK_VISION_REGION: us-east-1
     BEDROCK_TRANSLATION_REGION: eu-west-1
 
   iam:
     role:
       statements:
-        # X-Ray tracing permissions
         - Effect: Allow
           Action:
             - xray:PutTraceSegments
             - xray:PutTelemetryRecords
           Resource: "*"
-        # SSM Parameter Access - Platform config + All tenant configs
         - Effect: Allow
           Action:
             - ssm:GetParameter
@@ -140,14 +99,12 @@ provider:
             - "arn:aws:ssm:${aws:region}:${aws:accountId}:parameter/tf/${self:provider.stage}/platform/bg-remover/*"
             - "arn:aws:ssm:${aws:region}:${aws:accountId}:parameter/tf/${self:provider.stage}/*/services/bg-remover/*"
             - "arn:aws:ssm:${aws:region}:${aws:accountId}:parameter/tf/${self:provider.stage}/*/services/carousel/cognito_config"
-        # SSM SecureString access for admin API keys
         - Effect: Allow
           Action:
             - ssm:GetParameter
             - ssm:GetParameters
           Resource:
-            - "arn:aws:ssm:${aws:region}:${aws:accountId}:parameter/tf/${self:provider.stage}/${env:TENANT}/services/bg-remover/admin-api-keys"
-        # KMS decrypt for SSM SecureString
+            - "arn:aws:ssm:${aws:region}:${aws:accountId}:parameter/tf/${self:provider.stage}/${env:TENANT, 'carousel-labs'}/services/bg-remover/admin-api-keys"
         - Effect: Allow
           Action:
             - kms:Decrypt
@@ -158,26 +115,12 @@ provider:
             - ssm:GetParameter
             - ssm:GetParameters
           Resource: "arn:aws:ssm:${aws:region}:${aws:accountId}:parameter/tf/${sls:stage}/*"
-        # LCP-API credentials
-        - Effect: Allow
-          Action:
-            - ssm:GetParameter
-            - ssm:GetParameters
-          Resource:
-            - "arn:aws:ssm:${aws:region}:${aws:accountId}:parameter/tf/${sls:stage}/platform/bg-remover/lcp-api-auth-token"
-            - "arn:aws:ssm:${aws:region}:${aws:accountId}:parameter/tf/${sls:stage}/platform/bg-remover/lcp-api-dlq-url"
-        # Writing settings
         - Effect: Allow
           Action:
             - ssm:PutParameter
           Resource:
-            - "arn:aws:ssm:${aws:region}:${aws:accountId}:parameter/tf/${self:provider.stage}/${env:TENANT}/services/bg-remover/settings"
-            - "arn:aws:ssm:${aws:region}:${aws:accountId}:parameter/tf/${self:provider.stage}/${env:TENANT}/services/bg-remover/admin-api-keys"
-        - Effect: Deny
-          Action:
-            - ssm:PutParameter
-          Resource: "arn:aws:ssm:${aws:region}:${aws:accountId}:parameter/tf/${sls:stage}/${env:TENANT, 'carousel-labs'}/services/${self:service}/secrets"
-        # Bedrock models (us-east-1)
+            - "arn:aws:ssm:${aws:region}:${aws:accountId}:parameter/tf/${self:provider.stage}/${env:TENANT, 'carousel-labs'}/services/bg-remover/settings"
+            - "arn:aws:ssm:${aws:region}:${aws:accountId}:parameter/tf/${self:provider.stage}/${env:TENANT, 'carousel-labs'}/services/bg-remover/admin-api-keys"
         - Effect: Allow
           Action:
             - bedrock:InvokeModel
@@ -187,7 +130,6 @@ provider:
             - "arn:aws:bedrock:us-east-1::foundation-model/amazon.nova-canvas-v1:0"
             - "arn:aws:bedrock:us-east-1:${aws:accountId}:inference-profile/us.mistral.pixtral-large-2502-v1:0"
             - "arn:aws:bedrock:us-east-1::foundation-model/mistral.pixtral-large-2502-v1:0"
-        # Bedrock models (eu-west-1)
         - Effect: Allow
           Action:
             - bedrock:InvokeModel
@@ -197,7 +139,7 @@ provider:
             - "arn:aws:bedrock:eu-west-1::foundation-model/openai.gpt-oss-120b-1:0"
             - "arn:aws:bedrock:eu-west-1:${aws:accountId}:inference-profile/eu.amazon.nova-lite-v1:0"
             - "arn:aws:bedrock:eu-west-1:${aws:accountId}:inference-profile/eu.amazon.nova-pro-v1:0"
-        # S3 surgical access for image storage
+        # Refined Surgical S3 Access
         - Effect: Allow
           Action:
             - s3:ListBucket
@@ -210,8 +152,9 @@ provider:
             - "arn:aws:s3:::bg-remover-temp-images-${self:provider.stage}"
             - "arn:aws:s3:::bg-remover-temp-images-${self:provider.stage}/*"
             - "arn:aws:s3:::carousel-processed-images-${self:provider.stage}"
-            - "arn:aws:s3:::carousel-processed-images-${self:provider.stage}/*"
-        # S3 access for embeddings (read-only)
+            - "arn:aws:s3:::carousel-processed-images-${self:provider.stage}/${env:TENANT, 'carousel-labs'}/*"
+            - "arn:aws:s3:::smartgo-s3tables-${self:provider.stage}-${env:TENANT, 'carousel-labs'}"
+            - "arn:aws:s3:::smartgo-s3tables-${self:provider.stage}-${env:TENANT, 'carousel-labs'}/*"
         - Effect: Allow
           Action:
             - s3:ListBucket
@@ -219,7 +162,6 @@ provider:
           Resource:
             - "arn:aws:s3:::bg-remover-embeddings-${self:provider.stage}"
             - "arn:aws:s3:::bg-remover-embeddings-${self:provider.stage}/*"
-        # API Gateway IAM auth
         - Effect: Allow
           Action:
             - execute-api:Invoke
@@ -229,21 +171,17 @@ provider:
             - "arn:aws:execute-api:${aws:region}:${aws:accountId}:*/*/POST/mem0/*"
             - "arn:aws:execute-api:${aws:region}:${aws:accountId}:*/*/POST/carousel/credits/*"
             - "arn:aws:execute-api:${aws:region}:${aws:accountId}:*/*/POST/carousel/products"
-            - "arn:aws:execute-api:${aws:region}:${aws:accountId}:*/*/POST/lcp-api/learning/outcomes/*"
-        # Rekognition
         - Effect: Allow
           Action:
             - rekognition:DetectLabels
             - rekognition:DetectModerationLabels
             - rekognition:DetectText
           Resource: "*"
-        # EventBridge
         - Effect: Allow
           Action:
             - events:PutEvents
           Resource:
             - "arn:aws:events:${aws:region}:${aws:accountId}:event-bus/default"
-        # DynamoDB Single Table (with DescribeTable)
         - Effect: Allow
           Action:
             - dynamodb:DescribeTable
@@ -262,7 +200,6 @@ provider:
             - "arn:aws:dynamodb:${aws:region}:${aws:accountId}:table/${self:service}-${self:provider.stage}-sales-intelligence/index/*"
             - "arn:aws:dynamodb:${aws:region}:${aws:accountId}:table/event-tracking-${sls:stage}"
             - "arn:aws:dynamodb:${aws:region}:${aws:accountId}:table/event-tracking-${sls:stage}/index/*"
-        # SQS for workers
         - Effect: Allow
           Action:
             - sqs:SendMessage
@@ -271,7 +208,6 @@ provider:
             - sqs:GetQueueAttributes
           Resource:
             - "arn:aws:sqs:${aws:region}:${aws:accountId}:${self:service}-${self:provider.stage}-*"
-        # S3 access for analytics lake
         - Effect: Allow
           Action:
             - s3:ListBucket
@@ -327,6 +263,7 @@ functions:
 
   process:
     handler: src/handlers/process-handler.process
+    reservedConcurrency: 5
     events:
       - httpApi:
           path: /carousel/bg-remover/process
@@ -341,6 +278,7 @@ functions:
 
   status:
     handler: src/handlers/status-handler.status
+    reservedConcurrency: 5
     events:
       - httpApi:
           path: /carousel/bg-remover/status/{jobId}
@@ -349,6 +287,7 @@ functions:
 
   uploadUrls:
     handler: src/handlers/upload-urls-handler.uploadUrls
+    reservedConcurrency: 5
     events:
       - httpApi:
           path: /carousel/bg-remover/upload-urls

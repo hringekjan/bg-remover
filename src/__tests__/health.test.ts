@@ -17,7 +17,7 @@ jest.mock('@aws-sdk/client-dynamodb', () => ({
 
 jest.mock('@aws-sdk/client-s3', () => ({
   S3Client: jest.fn(),
-  ListBucketsCommand: jest.fn(),
+  HeadBucketCommand: jest.fn(),
 }));
 
 // Mock tenant resolver
