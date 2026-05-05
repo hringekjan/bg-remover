@@ -285,6 +285,25 @@ functions:
           method: GET
           authorizer: null
 
+  processGroups:
+    handler: src/handlers/process-groups-handler.processGroups
+    memorySize: 2048
+    timeout: 90
+    reservedConcurrency: 5
+    events:
+      - httpApi:
+          path: /carousel/bg-remover/process-groups
+          method: POST
+
+  batchStatus:
+    handler: src/handlers/batch-status-handler.handler
+    reservedConcurrency: 5
+    events:
+      - httpApi:
+          path: /carousel/bg-remover/status/batch/{requestId}
+          method: GET
+          authorizer: null
+
   uploadUrls:
     handler: src/handlers/upload-urls-handler.uploadUrls
     reservedConcurrency: 5
