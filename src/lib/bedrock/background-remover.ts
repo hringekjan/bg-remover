@@ -2,8 +2,8 @@ import { BedrockRuntimeClient, InvokeModelCommand } from '@aws-sdk/client-bedroc
 
 const bedrockClient = new BedrockRuntimeClient({ region: 'us-east-1' });
 
-// Nova Canvas (amazon.nova-canvas-v1:0) is LEGACY — replaced by Stability AI
-const BG_REMOVAL_MODEL = 'stability.stable-image-remove-background-v1:0';
+// Nova Canvas (amazon.nova-canvas-v1:0) is LEGACY — replaced by Stability AI cross-region inference profile
+const BG_REMOVAL_MODEL = 'us.stability.stable-image-remove-background-v1:0';
 
 export interface RemoveBackgroundOptions {
   quality?: 'standard' | 'premium';
