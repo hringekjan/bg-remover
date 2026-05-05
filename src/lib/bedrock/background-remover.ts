@@ -2,6 +2,9 @@ import { BedrockRuntimeClient, InvokeModelCommand } from '@aws-sdk/client-bedroc
 
 const bedrockClient = new BedrockRuntimeClient({ region: 'us-east-1' });
 
+// Nova Canvas (amazon.nova-canvas-v1:0) is LEGACY — replaced by Stability AI
+const BG_REMOVAL_MODEL = 'stability.stable-image-remove-background-v1:0';
+
 export interface RemoveBackgroundOptions {
   quality?: 'standard' | 'premium';
   height?: number;
@@ -19,8 +22,8 @@ export interface RemoveBackgroundResult {
 }
 
 /**
- * Remove background using Amazon Nova Canvas
- * Single Responsibility: Background removal only
+ * Remove background using Stability AI stable-image-remove-background.
+ * Replaces Nova Canvas (now LEGACY on Bedrock since 2026-05).
  */
 export async function removeBackground(
   base64Image: string,
@@ -28,32 +31,26 @@ export async function removeBackground(
 ): Promise<RemoveBackgroundResult> {
   const startTime = Date.now();
 
+  // Stability AI remove-background takes multipart/form-data via Bedrock's
+  // InvokeModel — body is JSON with base64-encoded image field.
   const command = new InvokeModelCommand({
-    modelId: 'amazon.nova-canvas-v1:0',
+    modelId: BG_REMOVAL_MODEL,
     contentType: 'application/json',
     accept: 'application/json',
     body: JSON.stringify({
-      taskType: 'BACKGROUND_REMOVAL',
-      backgroundRemovalParams: {
-        image: base64Image
-      },
-      imageGenerationConfig: {
-        numberOfImages: 1,
-        quality: options.quality || 'premium',
-        height: options.height || 1024,
-        width: options.width || 1024
-      }
-    })
+      image: base64Image,
+    }),
   });
 
   const response = await bedrockClient.send(command);
   const result = JSON.parse(new TextDecoder().decode(response.body));
 
-  if (!result.images || result.images.length === 0) {
-    throw new Error('Nova Canvas failed to return a processed image');
+  // Stability response: { image: "<base64>", finish_reason: "SUCCESS" }
+  if (!result.image) {
+    throw new Error(`Stability background removal failed: ${result.finish_reason || 'no image returned'}`);
   }
 
-  const outputBuffer = Buffer.from(result.images[0], 'base64');
+  const outputBuffer = Buffer.from(result.image, 'base64');
 
   return {
     outputBuffer,
@@ -61,7 +58,7 @@ export async function removeBackground(
     metadata: {
       width: options.width || 1024,
       height: options.height || 1024,
-      format: 'png'
-    }
+      format: 'png',
+    },
   };
 }

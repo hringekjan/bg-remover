@@ -70,15 +70,15 @@ export const BEDROCK_MODELS: Record<string, ModelConfig> = {
     priority: 1, // Cheapest for text-only
   },
 
-  // Nova Canvas - Image generation / background removal
-  'amazon.nova-canvas-v1:0': {
-    id: 'amazon.nova-canvas-v1:0',
-    name: 'Amazon Nova Canvas',
-    family: 'amazon',
+  // Stability AI - Background removal (replaces Nova Canvas which is LEGACY on Bedrock since 2026-05)
+  'stability.stable-image-remove-background-v1:0': {
+    id: 'stability.stable-image-remove-background-v1:0',
+    name: 'Stability AI Remove Background',
+    family: 'stability',
     tasks: ['image_generation'],
     supportsImages: true,
-    maxTokens: 2048,
-    costPer1kTokens: 0.0008,
+    maxTokens: 0,
+    costPer1kTokens: 0.0,
     priority: 1,
   },
 
@@ -282,7 +282,7 @@ export const DEFAULT_MODELS = {
   text_generation: 'us.mistral.pixtral-large-2502-v1:0', // Pixtral - descriptions (cross-region)
   translation: 'amazon.nova-lite-v1:0',         // Nova Lite - translation
   embedding: 'amazon.titan-embed-image-v1',     // Titan - best for image embeddings
-  image_generation: 'amazon.nova-canvas-v1:0',  // Nova Canvas - image generation
+  image_generation: 'stability.stable-image-remove-background-v1:0',  // Stability AI (Nova Canvas is LEGACY)
 };
 
 /**
