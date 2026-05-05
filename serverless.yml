@@ -127,7 +127,7 @@ provider:
           Resource:
             - "arn:aws:bedrock:us-east-1::foundation-model/us.amazon.nova-lite-v1:0"
             - "arn:aws:bedrock:us-east-1::foundation-model/us.amazon.nova-pro-v1:0"
-            - "arn:aws:bedrock:us-east-1::foundation-model/amazon.nova-canvas-v1:0"
+            - "arn:aws:bedrock:us-east-1:${aws:accountId}:inference-profile/us.stability.stable-image-remove-background-v1:0"
             - "arn:aws:bedrock:us-east-1:${aws:accountId}:inference-profile/us.mistral.pixtral-large-2502-v1:0"
             - "arn:aws:bedrock:us-east-1::foundation-model/mistral.pixtral-large-2502-v1:0"
         - Effect: Allow
@@ -139,6 +139,11 @@ provider:
             - "arn:aws:bedrock:eu-west-1::foundation-model/openai.gpt-oss-120b-1:0"
             - "arn:aws:bedrock:eu-west-1:${aws:accountId}:inference-profile/eu.amazon.nova-lite-v1:0"
             - "arn:aws:bedrock:eu-west-1:${aws:accountId}:inference-profile/eu.amazon.nova-pro-v1:0"
+        - Effect: Allow
+          Action:
+            - lambda:InvokeFunction
+          Resource:
+            - "arn:aws:lambda:${aws:region}:${aws:accountId}:function:${self:service}-${self:provider.stage}-*"
         # Refined Surgical S3 Access
         - Effect: Allow
           Action:
