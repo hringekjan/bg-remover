@@ -378,6 +378,7 @@ export class ProcessGroupsHandler extends BaseHandler {
             status: 'failed',
             createdAt: new Date().toISOString(),
             requestId,
+            userId: authResult.userId,
             error: `Upload failed for ${failedUploads.length} image(s). Please check the images are valid and retry.`,
             errorDetails: {
               failedCount: failedUploads.length,
@@ -443,6 +444,7 @@ export class ProcessGroupsHandler extends BaseHandler {
           status: 'pending',
           createdAt: new Date().toISOString(),
           requestId,
+          userId: authResult.userId,
           // Resumable state
           images: imageStates,
           progress: {
