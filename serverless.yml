@@ -56,6 +56,7 @@ provider:
     AWS_XRAY_CONTEXT_MISSING: LOG_ERROR
     DYNAMODB_TABLE: carousel-main-${sls:stage}
     JOB_STORE_TABLE_NAME: carousel-main-${sls:stage}
+    S3_OUTPUT_BUCKET: carousel-processed-images-${sls:stage}
     CONFIG_CACHE_TTL: '300000'
     REQUIRE_AUTH: 'true'
     LOG_LEVEL: DEBUG
