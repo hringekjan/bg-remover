@@ -8,6 +8,7 @@ import { removeBackground, type RemoveBackgroundOptions } from '../bedrock/backg
 import { analyzeWithRekognition } from '../rekognition/analyzer';
 import { analyzeWithMistralPixtral } from '../bedrock/mistral-pixtral-analyzer';
 import { type ProductDescription, type BilingualProductDescription } from '../types';
+import { optimizeImage } from '../../../lib/image-optimizer/client';
 
 export interface ProcessImageInput {
   base64Image: string;
@@ -21,6 +22,9 @@ export interface ProcessImageInput {
     };
     generateDescription?: boolean;
     productName?: string;
+    autoTrim?: boolean;
+    enhanceColors?: boolean;
+    centerSubject?: boolean;
   };
   tenant: string;
   stage?: string;
@@ -58,7 +62,7 @@ export interface ProcessImageResult {
  */
 export async function processImage(input: ProcessImageInput): Promise<ProcessImageResult> {
   const { base64Image, options, tenant } = input;
-  const { format, quality, targetSize, generateDescription, productName } = options;
+  const { format, quality, targetSize, generateDescription, productName, autoTrim, enhanceColors, centerSubject } = options;
 
   console.log('✨ Pipeline: Background removal + Rekognition in parallel', {
     tenant,
@@ -85,11 +89,39 @@ export async function processImage(input: ProcessImageInput): Promise<ProcessIma
     throw new Error(`Image rejected: ${rekResult.reason || 'Content moderation failed'}`);
   }
 
+  // Step 2: Sharp post-processing via image-optimizer /optimize
+  // Runs after rembg so we trim/enhance/center the already-transparent image.
+  let finalBuffer = bgResult.outputBuffer;
+  let finalWidth = bgResult.metadata.width;
+  let finalHeight = bgResult.metadata.height;
+
+  if (autoTrim || enhanceColors || centerSubject) {
+    try {
+      console.log('✨ Pipeline: Sharp post-processing', { autoTrim, enhanceColors, centerSubject, tenant });
+      const optimized = await optimizeImage({
+        imageBase64: bgResult.outputBuffer.toString('base64'),
+        outputFormat: 'png', // preserve transparency
+        autoTrim,
+        enhanceColors,
+        centerSubject,
+        targetSize,
+      });
+      finalBuffer = Buffer.from(optimized.outputBase64, 'base64');
+      finalWidth = optimized.metadata.width;
+      finalHeight = optimized.metadata.height;
+    } catch (optimizeError) {
+      // Non-fatal — use the unenhanced bg-removed image if Sharp post-processing fails
+      console.warn('Sharp post-processing failed, using unenhanced image', {
+        error: optimizeError instanceof Error ? optimizeError.message : String(optimizeError),
+      });
+    }
+  }
+
   const resultMetadata = {
-    width: bgResult.metadata.width,
-    height: bgResult.metadata.height,
+    width: finalWidth,
+    height: finalHeight,
     originalSize: (base64Image.length * 3) / 4,
-    processedSize: bgResult.outputBuffer.length,
+    processedSize: finalBuffer.length,
     processingTimeMs: bgResult.processingTimeMs
   };
 
@@ -104,7 +136,7 @@ export async function processImage(input: ProcessImageInput): Promise<ProcessIma
 
       // Single Mistral Pixtral Large call with Rekognition context (faster, cheaper, better)
       mistralResult = await analyzeWithMistralPixtral(
-        bgResult.outputBuffer,
+        finalBuffer,
         productName,
         {
           labels: rekResult.labels,
@@ -157,7 +189,7 @@ export async function processImage(input: ProcessImageInput): Promise<ProcessIma
   }
 
   return {
-    outputBuffer: bgResult.outputBuffer,
+    outputBuffer: finalBuffer,
     metadata: resultMetadata,
     productDescription,
     bilingualDescription,
