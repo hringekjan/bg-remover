@@ -1,24 +1,26 @@
 /**
- * Pattern Storage Service - mem0 Integration
+ * Pattern Storage Service - DynamoDB Integration
  *
- * Stores detected seasonal patterns in mem0 for persistence and future reference.
+ * Stores detected seasonal patterns in DynamoDB for persistence and future reference.
  * Enables the system to learn and improve over time without manual configuration.
  *
  * Key Features:
- * - Formats seasonal patterns as human-readable memories
- * - Stores metadata for filtering and retrieval
- * - Integrates with mem0 API for long-term learning
+ * - Formats seasonal patterns as human-readable summaries
+ * - Stores structured key-value data in DynamoDB
+ * - Deterministic key schema for consistent retrieval
  * - Handles errors gracefully with logging
  */
 
+import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
+import { DynamoDBDocumentClient, PutCommand } from '@aws-sdk/lib-dynamodb';
 import type { SeasonalPattern } from './seasonal-adjustment';
 
 /**
- * PatternStorageService - Persist seasonal patterns to mem0
+ * PatternStorageService - Persist seasonal patterns to DynamoDB
  */
 export class PatternStorageService {
-  private mem0ApiUrl: string;
-  private mem0ApiKey: string;
+  private tableName: string;
+  private docClient: DynamoDBDocumentClient;
 
   /**
    * Initialize pattern storage service
@@ -28,85 +30,66 @@ export class PatternStorageService {
    */
   constructor(
     private tenantId: string,
-    private options: {
-      apiUrl?: string;
-      apiKey?: string;
-    } = {}
+    private options: { tableName?: string; stage?: string } = {}
   ) {
-    // Prefer MEM0_API_ENDPOINT (internal gateway) over MEM0_API_URL (SaaS fallback)
-    this.mem0ApiUrl = options.apiUrl || process.env.MEM0_API_ENDPOINT || process.env.MEM0_API_URL || '';
-    this.mem0ApiKey = options.apiKey || process.env.MEM0_API_KEY || '';
+    this.tableName = options.tableName || process.env.PRICING_PATTERNS_TABLE || `bg-remover-${options.stage || process.env.STAGE || 'dev'}-pricing-patterns`;
 
-    if (!this.mem0ApiUrl) {
-      console.warn('[PatternStorage] MEM0_API_ENDPOINT not configured, storage disabled');
-    }
+    const ddbClient = new DynamoDBClient({
+      region: process.env.AWS_REGION || 'eu-west-1',
+    });
 
-    if (!this.mem0ApiKey) {
-      console.warn('[PatternStorage] MEM0_API_KEY not configured, storage disabled');
-    }
+    this.docClient = DynamoDBDocumentClient.from(ddbClient);
   }
 
   /**
-   * Store seasonal pattern in mem0
+   * Store seasonal pattern in DynamoDB
    *
-   * Creates a memory record with pattern details that can be referenced
+   * Creates a record with pattern details that can be referenced
    * in future pricing decisions.
    *
+   * Key schema:
+   * - PK: TENANT#{tenantId}#CATEGORY#{category}
+   * - SK: BRAND#{brand || 'all'}#DATE#{analysisDate}
+   *
    * @param pattern - Seasonal pattern to store
-   * @throws Error if API call fails
+   * @throws Error if DynamoDB write fails
    */
   async storeSeasonalPattern(pattern: SeasonalPattern): Promise<void> {
-    if (!this.mem0ApiUrl || !this.mem0ApiKey) {
-      console.warn('[PatternStorage] Storage disabled, skipping pattern persistence');
-      return;
-    }
-
-    if (process.env.MEM0_CLOUD_WRITES_ENABLED !== 'true') {
-      console.debug('[PatternStorage] mem0 writes disabled (MEM0_CLOUD_WRITES_ENABLED != true), skipping');
-      return;
-    }
-
     try {
-      const content = this.formatPatternContent(pattern);
-      const agentId = `${this.tenantId}:seasonal-analyzer`;
+      const summary = this.formatPatternContent(pattern);
 
-      const payload = {
-        content,
-        metadata: {
-          category: 'pricing:seasonal_pattern',
-          productCategory: pattern.category,
-          brand: pattern.brand || 'all',
-          peakMonths: pattern.peakMonths,
-          offSeasonMonths: pattern.offSeasonMonths,
-          seasonalityScore: pattern.seasonalityScore,
-          sampleSize: pattern.sampleSize,
-          analysisDate: pattern.analysisDate,
-          monthlyStats: JSON.stringify(pattern.monthlyStats),
-        },
+      const item = {
+        PK: `TENANT#${this.tenantId}#CATEGORY#${pattern.category}`,
+        SK: `BRAND#${pattern.brand || 'all'}#DATE#${pattern.analysisDate}`,
+        tenantId: this.tenantId,
+        category: pattern.category,
+        brand: pattern.brand || 'all',
+        peakMonths: pattern.peakMonths,
+        offSeasonMonths: pattern.offSeasonMonths,
+        seasonalityScore: pattern.seasonalityScore,
+        sampleSize: pattern.sampleSize,
+        analysisDate: pattern.analysisDate,
+        monthlyStats: pattern.monthlyStats,
+        summary,
+        createdAt: new Date().toISOString(),
       };
 
-      const response = await fetch(`${this.mem0ApiUrl}/agents/${agentId}/memory`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${this.mem0ApiKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(payload),
+      const command = new PutCommand({
+        TableName: this.tableName,
+        Item: item,
       });
 
-      if (!response.ok) {
-        const errorBody = await response.text();
-        throw new Error(`Failed to store pattern: ${response.statusText} - ${errorBody}`);
-      }
+      await this.docClient.send(command);
 
-      console.log('[PatternStorage] Stored seasonal pattern', {
+      console.log('[PatternStorage] Stored seasonal pattern to DynamoDB', {
         category: pattern.category,
         brand: pattern.brand,
         seasonalityScore: pattern.seasonalityScore.toFixed(2),
         sampleSize: pattern.sampleSize,
+        tableName: this.tableName,
       });
     } catch (error) {
-      console.error('[PatternStorage] Error storing pattern:', error);
+      console.error('[PatternStorage] Error storing pattern to DynamoDB:', error);
       throw error;
     }
   }

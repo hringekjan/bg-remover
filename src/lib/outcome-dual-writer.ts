@@ -77,7 +77,7 @@ export class OutcomeDualWriter {
 
   /**
    * Initialize the dual writer
-   * @param mem0BaseUrl — Mem0 API base URL (e.g., https://api.mem0.ai)
+   * @param mem0BaseUrl — Mem0 API base URL (internal gateway preferred, empty string disables mem0 writes)
    * @param mem0ApiKey — Mem0 API key (from env)
    * @param ddbClient — DynamoDB SDK client
    * @param ddbTableName — DynamoDB table name (e.g., lcp-outcomes-dev)
@@ -90,7 +90,7 @@ export class OutcomeDualWriter {
     ddbTableName: string,
     config?: DualWriteConfig
   ) {
-    this.mem0BaseUrl = mem0BaseUrl;
+    this.mem0BaseUrl = mem0BaseUrl || process.env.MEM0_API_ENDPOINT || '';
     this.mem0ApiKey = mem0ApiKey;
     this.ddbClient = ddbClient;
     this.ddbTableName = ddbTableName;
@@ -144,8 +144,14 @@ export class OutcomeDualWriter {
 
   /**
    * Write outcome to Mem0 with exponential backoff retry
+   * Skips gracefully if mem0BaseUrl is not configured
    */
   private async writeToMem0(outcome: Outcome): Promise<void> {
+    if (!this.mem0BaseUrl) {
+      console.debug('[OutcomeDualWriter] Mem0 base URL not configured, skipping write');
+      return;
+    }
+
     let lastError: Error | null = null;
 
     for (let attempt = 1; attempt <= this.config.maxRetries; attempt++) {

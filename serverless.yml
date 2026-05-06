@@ -66,7 +66,6 @@ provider:
     MEM0_API_ENDPOINT: https://api.${sls:stage}.carousellabs.co/mem0
     TENANT: ${env:TENANT, 'carousel-labs'}
     ENABLE_CLOUDWATCH_METRICS: ${param:enableCloudWatchMetrics, 'false'}
-    MEM0_CLOUD_WRITES_ENABLED: ${param:mem0CloudWritesEnabled, 'false'}
     CACHE_SERVICE_URL: https://api.${sls:stage}.carousellabs.co/cache
     CACHE_KEY_SECRET: ${ssm:/tf/${sls:stage}/${env:TENANT, 'carousel-labs'}/services/bg-remover/cache-key-secret}
     JOB_TOKEN_SECRET: ${ssm:/tf/${sls:stage}/platform/bg-remover/job-token-secret}
@@ -83,6 +82,7 @@ provider:
     EVENT_TRACKING_TABLE: event-tracking-${sls:stage}
     BEDROCK_VISION_REGION: us-east-1
     BEDROCK_TRANSLATION_REGION: eu-west-1
+    PRICING_PATTERNS_TABLE: bg-remover-${sls:stage}-pricing-patterns
 
   iam:
     role:
@@ -211,6 +211,7 @@ provider:
             - "arn:aws:dynamodb:${aws:region}:${aws:accountId}:table/${self:service}-${self:provider.stage}-sales-intelligence/index/*"
             - "arn:aws:dynamodb:${aws:region}:${aws:accountId}:table/event-tracking-${sls:stage}"
             - "arn:aws:dynamodb:${aws:region}:${aws:accountId}:table/event-tracking-${sls:stage}/index/*"
+            - "arn:aws:dynamodb:${aws:region}:${aws:accountId}:table/${self:service}-${sls:stage}-pricing-patterns"
         - Effect: Allow
           Action:
             - sqs:SendMessage
@@ -356,3 +357,24 @@ resources:
       Type: AWS::SQS::Queue
       Properties:
         QueueName: ${self:service}-${self:provider.stage}-process-worker-dlq
+
+    BgRemoverPricingPatternsTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:service}-${self:provider.stage}-pricing-patterns
+        BillingMode: PAY_PER_REQUEST
+        KeySchema:
+          - AttributeName: PK
+            KeyType: HASH
+          - AttributeName: SK
+            KeyType: RANGE
+        AttributeDefinitions:
+          - AttributeName: PK
+            AttributeType: S
+          - AttributeName: SK
+            AttributeType: S
+        Tags:
+          - Key: Stage
+            Value: ${self:provider.stage}
+          - Key: Service
+            Value: ${self:service}
