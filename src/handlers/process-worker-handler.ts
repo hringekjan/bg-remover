@@ -1149,6 +1149,7 @@ export class ProcessWorkerHandler extends BaseHandler {
         // Build complete product metadata matching CarouselProductRegistration schema
         const productData: CreateProductRequest = {
           productId: randomUUID(),
+          name: productName || `Product ${groupId}`,
           sku: `${groupId}-${Date.now()}`,
           content: {
             en: {
