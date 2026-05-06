@@ -15,13 +15,32 @@ try {
   // If Powertools Parameters is not available, use fallback mock
   console.warn('@aws-lambda-powertools/parameters not available, using fallback implementation');
   
+  // Real SSM fallback via AWS SDK v3 (powertools not bundled, but SDK is)
+  const { SSMClient, GetParameterCommand } = require('@aws-sdk/client-ssm');
+  const ssmClient = new SSMClient({ region: process.env.AWS_REGION || 'eu-west-1' });
+  const cache = new Map<string, { value: string; expiresAt: number }>();
+
   SSMProvider = class {
     constructor(options: any) {}
     async get(path: string, options?: any) {
-      return '{}';
+      const now = Date.now();
+      const cached = cache.get(path);
+      if (cached && cached.expiresAt > now) return cached.value;
+      try {
+        const resp = await ssmClient.send(new GetParameterCommand({
+          Name: path,
+          WithDecryption: options?.decrypt ?? true,
+        }));
+        const value = resp.Parameter?.Value ?? '{}';
+        cache.set(path, { value, expiresAt: now + 300_000 });
+        return value;
+      } catch (err: any) {
+        console.warn(`SSM fallback: failed to load ${path}:`, err.message);
+        return '{}';
+      }
     }
   };
-  
+
   ssmProvider = new SSMProvider({ maxCacheAge: 300 });
 }
 

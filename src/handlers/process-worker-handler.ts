@@ -911,7 +911,7 @@ export class ProcessWorkerHandler extends BaseHandler {
               if (processingOptions.generatePriceSuggestion || processingOptions.generateRatingSuggestion) {
                 try {
                   const visionService = new VisionAnalysisService();
-                  const visionResult = await visionService.analyzeCondition(primaryResult.outputBuffer);
+                  const visionResult = await visionService.assessVisualQuality(primaryResult.outputBuffer.toString('base64'));
                   visionScore = visionResult.conditionScore; // 1-10 scale
 
                   console.log('[Worker] Vision quality analysis complete', {

@@ -63,7 +63,7 @@ export async function removeBackground(
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     const isMarketplaceError = msg.includes('Marketplace') || msg.includes('Subscribe') || msg.includes('subscription');
-    const isAccessError = msg.includes('not authorized') || msg.includes('Access denied') || msg.includes('LEGACY');
+    const isAccessError = msg.includes('not authorized') || msg.includes('Access denied') || msg.includes('LEGACY') || msg.includes('IAM user or service') || msg.includes('access is denied');
 
     if (isMarketplaceError || isAccessError) {
       console.warn('[BackgroundRemover] Stability AI unavailable, using passthrough fallback', {
