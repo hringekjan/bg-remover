@@ -2,8 +2,8 @@ import { BedrockRuntimeClient, InvokeModelCommand } from '@aws-sdk/client-bedroc
 
 const bedrockClient = new BedrockRuntimeClient({ region: 'us-east-1' });
 
-// Nova Canvas (amazon.nova-canvas-v1:0) is LEGACY — replaced by Stability AI cross-region inference profile
-const BG_REMOVAL_MODEL = 'us.stability.stable-image-remove-background-v1:0';
+// Stability AI cross-region inference profile (requires AWS Marketplace subscription)
+const STABILITY_MODEL = 'us.stability.stable-image-remove-background-v1:0';
 
 export interface RemoveBackgroundOptions {
   quality?: 'standard' | 'premium';
@@ -19,11 +19,13 @@ export interface RemoveBackgroundResult {
     height: number;
     format: string;
   };
+  method?: 'stability' | 'sharp-passthrough';
 }
 
 /**
- * Remove background using Stability AI stable-image-remove-background.
- * Replaces Nova Canvas (now LEGACY on Bedrock since 2026-05).
+ * Remove background. Tries Stability AI first; falls back to Sharp passthrough
+ * (original image returned as PNG) when Marketplace subscription is unavailable.
+ * Fallback ensures the product creation pipeline completes so images appear in UI.
  */
 export async function removeBackground(
   base64Image: string,
@@ -31,34 +33,83 @@ export async function removeBackground(
 ): Promise<RemoveBackgroundResult> {
   const startTime = Date.now();
 
-  // Stability AI remove-background takes multipart/form-data via Bedrock's
-  // InvokeModel — body is JSON with base64-encoded image field.
-  const command = new InvokeModelCommand({
-    modelId: BG_REMOVAL_MODEL,
-    contentType: 'application/json',
-    accept: 'application/json',
-    body: JSON.stringify({
-      image: base64Image,
-    }),
-  });
+  // Attempt Stability AI background removal
+  try {
+    const command = new InvokeModelCommand({
+      modelId: STABILITY_MODEL,
+      contentType: 'application/json',
+      accept: 'application/json',
+      body: JSON.stringify({ image: base64Image }),
+    });
 
-  const response = await bedrockClient.send(command);
-  const result = JSON.parse(new TextDecoder().decode(response.body));
+    const response = await bedrockClient.send(command);
+    const result = JSON.parse(new TextDecoder().decode(response.body));
 
-  // Stability response: { image: "<base64>", finish_reason: "SUCCESS" }
-  if (!result.image) {
-    throw new Error(`Stability background removal failed: ${result.finish_reason || 'no image returned'}`);
+    if (!result.image) {
+      throw new Error(`Stability returned no image: ${result.finish_reason}`);
+    }
+
+    const outputBuffer = Buffer.from(result.image, 'base64');
+    return {
+      outputBuffer,
+      processingTimeMs: Date.now() - startTime,
+      metadata: {
+        width: options.width || 1024,
+        height: options.height || 1024,
+        format: 'png',
+      },
+      method: 'stability',
+    };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    const isMarketplaceError = msg.includes('Marketplace') || msg.includes('Subscribe') || msg.includes('subscription');
+    const isAccessError = msg.includes('not authorized') || msg.includes('Access denied') || msg.includes('LEGACY');
+
+    if (isMarketplaceError || isAccessError) {
+      console.warn('[BackgroundRemover] Stability AI unavailable, using passthrough fallback', {
+        reason: msg.slice(0, 120),
+      });
+      return await sharpPassthrough(base64Image, options, startTime);
+    }
+
+    // Any other error (validation, network) — re-throw so retry logic fires
+    throw err;
+  }
+}
+
+/**
+ * Passthrough fallback: convert the original image to PNG using Sharp.
+ * Returns the product image as-is so the pipeline completes and the UI shows results.
+ */
+async function sharpPassthrough(
+  base64Image: string,
+  options: RemoveBackgroundOptions,
+  startTime: number
+): Promise<RemoveBackgroundResult> {
+  let sharp: any;
+  try {
+    sharp = (await import('sharp')).default;
+  } catch {
+    // Sharp not available — return original buffer directly
+    const outputBuffer = Buffer.from(base64Image, 'base64');
+    return {
+      outputBuffer,
+      processingTimeMs: Date.now() - startTime,
+      metadata: { width: options.width || 1024, height: options.height || 1024, format: 'png' },
+      method: 'sharp-passthrough',
+    };
   }
 
-  const outputBuffer = Buffer.from(result.image, 'base64');
+  const inputBuffer = Buffer.from(base64Image, 'base64');
+  const { data, info } = await sharp(inputBuffer)
+    .resize(options.width || undefined, options.height || undefined, { fit: 'inside', withoutEnlargement: true })
+    .png()
+    .toBuffer({ resolveWithObject: true });
 
   return {
-    outputBuffer,
+    outputBuffer: data,
     processingTimeMs: Date.now() - startTime,
-    metadata: {
-      width: options.width || 1024,
-      height: options.height || 1024,
-      format: 'png',
-    },
+    metadata: { width: info.width, height: info.height, format: 'png' },
+    method: 'sharp-passthrough',
   };
 }
