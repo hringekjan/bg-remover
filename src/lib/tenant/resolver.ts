@@ -168,7 +168,7 @@ export const loadTenantConfig = async (tenant: string, stage: string): Promise<T
     tenant,
     stage,
     bedrockModelId: 'anthropic.claude-3-sonnet-20240229-v1:0',
-    s3OutputBucket: `carousel-processed-images-${stage}`,
+    s3OutputBucket: process.env.S3_OUTPUT_BUCKET || `carousel-bg-remover-output-${stage}`,
     creditsEnabled: true,
     maxImageSize: 10 * 1024 * 1024, // 10MB
     allowedFormats: ['image/jpeg', 'image/png', 'image/webp'],
