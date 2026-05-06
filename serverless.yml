@@ -134,6 +134,8 @@ provider:
             - "arn:aws:bedrock:us-west-2::foundation-model/stability.stable-image-remove-background-v1:0"
             - "arn:aws:bedrock:us-east-1:${aws:accountId}:inference-profile/us.mistral.pixtral-large-2502-v1:0"
             - "arn:aws:bedrock:us-east-1::foundation-model/mistral.pixtral-large-2502-v1:0"
+            - "arn:aws:bedrock:us-east-2::foundation-model/mistral.pixtral-large-2502-v1:0"
+            - "arn:aws:bedrock:us-west-2::foundation-model/mistral.pixtral-large-2502-v1:0"
         - Effect: Allow
           Action:
             - bedrock:InvokeModel
@@ -161,7 +163,7 @@ provider:
             - "arn:aws:s3:::bg-remover-temp-images-${self:provider.stage}"
             - "arn:aws:s3:::bg-remover-temp-images-${self:provider.stage}/*"
             - "arn:aws:s3:::carousel-processed-images-${self:provider.stage}"
-            - "arn:aws:s3:::carousel-processed-images-${self:provider.stage}/${env:TENANT, 'carousel-labs'}/*"
+            - "arn:aws:s3:::carousel-processed-images-${self:provider.stage}/*"
             - "arn:aws:s3:::smartgo-s3tables-${self:provider.stage}-${env:TENANT, 'carousel-labs'}"
             - "arn:aws:s3:::smartgo-s3tables-${self:provider.stage}-${env:TENANT, 'carousel-labs'}/*"
         - Effect: Allow
