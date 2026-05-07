@@ -69,7 +69,6 @@ export interface DualWriteResult {
  */
 export class OutcomeDualWriter {
   private mem0BaseUrl: string;
-  private mem0ApiKey: string;
   private ddbClient: DynamoDBClient;
   private ddbTableName: string;
   private config: Required<DualWriteConfig>;
@@ -78,20 +77,17 @@ export class OutcomeDualWriter {
   /**
    * Initialize the dual writer
    * @param mem0BaseUrl — Mem0 API base URL (internal gateway preferred, empty string disables mem0 writes)
-   * @param mem0ApiKey — Mem0 API key (from env)
    * @param ddbClient — DynamoDB SDK client
    * @param ddbTableName — DynamoDB table name (e.g., lcp-outcomes-dev)
    * @param config — Optional retry configuration
    */
   constructor(
     mem0BaseUrl: string,
-    mem0ApiKey: string,
     ddbClient: DynamoDBClient,
     ddbTableName: string,
     config?: DualWriteConfig
   ) {
     this.mem0BaseUrl = mem0BaseUrl || process.env.MEM0_API_ENDPOINT || '';
-    this.mem0ApiKey = mem0ApiKey;
     this.ddbClient = ddbClient;
     this.ddbTableName = ddbTableName;
     this.config = { ...DEFAULT_CONFIG, ...config };
@@ -160,7 +156,6 @@ export class OutcomeDualWriter {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${this.mem0ApiKey}`,
             'X-Outcome-ID': outcome.id,
             'X-Tenant-ID': outcome.tenantId,
           },

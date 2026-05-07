@@ -21,7 +21,6 @@ export const PRICING_MEMORY_CATEGORIES = {
  * Configuration for mem0 integration
  */
 export interface PricingMemoryConfig {
-  apiKey?: string;
   baseUrl?: string;
   userId?: string;
   tenantId?: string;
@@ -79,7 +78,6 @@ export class PricingMemoryIntegration {
 
   constructor(config: PricingMemoryConfig = {}) {
     this.config = {
-      apiKey: config.apiKey || process.env.MEM0_API_KEY,
       baseUrl: config.baseUrl || process.env.MEM0_BASE_URL || 'https://api.mem0.ai/v1',
       userId: config.userId || 'bg-remover-service',
       tenantId: config.tenantId || process.env.TENANT_ID || 'carousel-labs',
@@ -368,8 +366,17 @@ export class PricingMemoryIntegration {
 
   /**
    * Store memory entry in DynamoDB
+   *
+   * Gated behind MEM0_CLOUD_WRITES_ENABLED=true.
+   * Must be explicitly opted in — defaults to off so dev/test environments
+   * cannot pollute the production mem0/DynamoDB pricing store.
    */
   private async storeInDynamoDB(memory: Record<string, any>): Promise<void> {
+    if (process.env.MEM0_CLOUD_WRITES_ENABLED !== 'true') {
+      console.debug('[PricingMemory] mem0 cloud writes disabled (MEM0_CLOUD_WRITES_ENABLED != true), skipping write');
+      return;
+    }
+
     const { DynamoDBClient, PutItemCommand } = await import('@aws-sdk/client-dynamodb');
     const { DynamoDBDocumentClient, PutCommand } = await import('@aws-sdk/lib-dynamodb');
     
