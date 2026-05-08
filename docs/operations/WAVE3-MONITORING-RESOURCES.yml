@@ -1,0 +1,368 @@
+# Wave 3: Dual-Write Monitoring Resources for BG-Remover
+#
+# Add these resources to serverless.yml under the functions and resources sections
+# Timeline: 2026-04-29 to 2026-05-01 (48h validation window)
+#
+# Integration Steps:
+# 1. Add divergenceCheck function to functions: section (line ~463)
+# 2. Add divergenceNotifier function to functions: section
+# 3. Add resources to resources.Resources: section (line ~1032)
+# 4. Update environment variables in provider section
+# 5. Add IAM role statements for divergenceCheck and divergenceNotifier
+# 6. Deploy: serverless deploy --stage dev
+
+---
+# FUNCTIONS (add to functions: section around line 463)
+
+divergenceCheck:
+  handler: dist/handlers/divergence-check.handler
+  description: Query outcome divergence between carousel-main and lcp-api every 6h
+  timeout: 120
+  memorySize: 512
+  architecture: arm64
+  environment:
+    CAROUSEL_MAIN_TABLE: carousel-main-${self:provider.stage}
+    LCP_OUTCOMES_TABLE: lcp-outcomes-${self:provider.stage}
+    DIVERGENCE_ALERT_TOPIC_ARN: !Ref DivergenceAlertTopic
+  events:
+    # Run at 02:00, 08:00, 14:00, 20:00 UTC daily (every 6 hours)
+    - schedule:
+        rate: 'cron(0 2,8,14,20 * * ? *)'
+        description: 'Dual-write divergence check (6-hourly, Wave 3 validation window)'
+        input:
+          checkWindow: 6
+    # Also triggered by SNS alert if > 1% divergence detected
+    - sns:
+        arn: !Ref DivergenceAlertTopic
+        topicName: bg-remover-divergence-alert-${self:provider.stage}
+        filterPolicy:
+          status:
+            - WARN
+            - FAIL
+  iamRoleStatements:
+    - Effect: Allow
+      Action:
+        - dynamodb:Query
+        - dynamodb:GetItem
+      Resource:
+        - arn:aws:dynamodb:${aws:region}:${aws:accountId}:table/carousel-main-${self:provider.stage}
+        - arn:aws:dynamodb:${aws:region}:${aws:accountId}:table/carousel-main-${self:provider.stage}/index/*
+        - arn:aws:dynamodb:${aws:region}:${aws:accountId}:table/lcp-outcomes-${self:provider.stage}
+        - arn:aws:dynamodb:${aws:region}:${aws:accountId}:table/lcp-outcomes-${self:provider.stage}/index/*
+    - Effect: Allow
+      Action:
+        - cloudwatch:PutMetricData
+      Resource: '*'
+    - Effect: Allow
+      Action:
+        - sns:Publish
+      Resource: !Ref DivergenceAlertTopic
+
+divergenceNotifier:
+  handler: dist/handlers/divergence-notifier.handler
+  description: Process divergence alerts and send Slack notifications
+  timeout: 30
+  memorySize: 256
+  architecture: arm64
+  environment:
+    SLACK_WEBHOOK_URL: !Sub 'sm:bg-remover/slack-webhook-${self:provider.stage}'
+  events:
+    - sns:
+        arn: !Ref DivergenceAlertTopic
+        topicName: bg-remover-divergence-alert-${self:provider.stage}
+        filterPolicy:
+          status:
+            - WARN
+            - FAIL
+  iamRoleStatements:
+    - Effect: Allow
+      Action:
+        - ssm:GetParameter
+      Resource: !Sub 'arn:aws:ssm:${aws:region}:${aws:accountId}:parameter/bg-remover/slack-webhook-${self:provider.stage}'
+
+---
+# RESOURCES (add to resources.Resources: section around line 1032)
+
+# SNS Topic for divergence alerts
+DivergenceAlertTopic:
+  Type: AWS::SNS::Topic
+  Properties:
+    TopicName: bg-remover-divergence-alert-${self:provider.stage}
+    DisplayName: BG-Remover Dual-Write Divergence Alert
+    KmsMasterKeyId: alias/aws/sns
+
+# SNS Subscription for oncall (email or Lambda)
+# NOTE: Update to actual oncall email or SMS endpoint
+DivergenceAlertSubscription:
+  Type: AWS::SNS::Subscription
+  Properties:
+    Protocol: email
+    TopicArn: !Ref DivergenceAlertTopic
+    Endpoint: platform-oncall@carousel-labs.com  # TODO: Update to actual oncall email
+
+# CloudWatch Alarm: Divergence Detection (>1% in any 6h cohort)
+# Triggers when "divergence-detected" metric sum > 1 over 6h (1 divergence threshold)
+DivergenceAlarm:
+  Type: AWS::CloudWatch::Alarm
+  Properties:
+    AlarmName: bg-remover-divergence-alarm-${self:provider.stage}
+    AlarmDescription: Alert when dual-write divergence is detected (>1% threshold)
+    MetricName: divergence-check-divergence-percentage
+    Namespace: bg-remover/divergence-check
+    Statistic: Maximum
+    Period: 300  # 5 minutes
+    EvaluationPeriods: 1
+    Threshold: 1.0  # 1%
+    ComparisonOperator: GreaterThanOrEqualToThreshold
+    TreatMissingData: notBreaching
+    AlarmActions:
+      - !Ref DivergenceAlertTopic
+    Dimensions:
+      - Name: CheckWindow
+        Value: 6h
+
+# CloudWatch Alarm: Carousel-Main Write Failure Rate (>0.5%)
+CarouselMainFailureAlarm:
+  Type: AWS::CloudWatch::Alarm
+  Properties:
+    AlarmName: bg-remover-carousel-main-failure-alarm-${self:provider.stage}
+    AlarmDescription: Alert when Carousel-Main write success rate drops below 99.5%
+    Metrics:
+      - Id: m1
+        ReturnData: true
+        MetricStat:
+          Metric:
+            Namespace: bg-remover
+            MetricName: carousel-main/write-success
+            Dimensions: []
+          Period: 300
+          Stat: Sum
+      - Id: m2
+        ReturnData: false
+        MetricStat:
+          Metric:
+            Namespace: bg-remover
+            MetricName: carousel-main/write-failure
+            Dimensions: []
+          Period: 300
+          Stat: Sum
+      - Id: m3
+        ReturnData: true
+        Expression: '(m2 / (m1 + m2)) * 100'
+    EvaluationPeriods: 2
+    Threshold: 0.5  # 0.5%
+    ComparisonOperator: GreaterThanThreshold
+    TreatMissingData: notBreaching
+    AlarmActions:
+      - !Ref DivergenceAlertTopic
+
+# CloudWatch Alarm: LCP-API DLQ Depth (>50 messages for 1h)
+LcpApiDlqDepthAlarm:
+  Type: AWS::CloudWatch::Alarm
+  Properties:
+    AlarmName: bg-remover-lcp-dlq-depth-alarm-${self:provider.stage}
+    AlarmDescription: Alert when LCP-API DLQ accumulates unprocessed messages (operational issue)
+    MetricName: ApproximateNumberOfMessagesVisible
+    Namespace: AWS/SQS
+    Statistic: Average
+    Period: 300  # 5 minutes
+    EvaluationPeriods: 12  # 1 hour (12 * 5m)
+    Threshold: 50
+    ComparisonOperator: GreaterThanThreshold
+    TreatMissingData: notBreaching
+    Dimensions:
+      - Name: QueueName
+        Value: lcp-vendor-approval-recorder-dlq-${self:provider.stage}
+    AlarmActions:
+      - !Ref DivergenceAlertTopic
+
+# CloudWatch Alarm: Write Latency Degradation (p99 > 750ms for carousel-main)
+WriteLatencyAlarm:
+  Type: AWS::CloudWatch::Alarm
+  Properties:
+    AlarmName: bg-remover-write-latency-alarm-${self:provider.stage}
+    AlarmDescription: Alert when write latency exceeds acceptable thresholds
+    MetricName: carousel-main/write-duration
+    Namespace: bg-remover
+    Statistic: p99
+    Period: 300
+    EvaluationPeriods: 2
+    Threshold: 750  # milliseconds
+    ComparisonOperator: GreaterThanThreshold
+    TreatMissingData: notBreaching
+    AlarmActions:
+      - !Ref DivergenceAlertTopic
+
+# CloudWatch Dashboard: Dual-Write Validation
+DualWriteValidationDashboard:
+  Type: AWS::CloudWatch::Dashboard
+  Properties:
+    DashboardName: bg-remover-DualWrite-Validation
+    DashboardBody: !Sub |
+      {
+        "widgets": [
+          {
+            "type": "metric",
+            "x": 0,
+            "y": 0,
+            "width": 12,
+            "height": 6,
+            "properties": {
+              "metrics": [
+                ["bg-remover/divergence-check", "divergence-check-carousel-count", {"stat": "Sum", "label": "Carousel-Main Outcomes"}],
+                [".", "divergence-check-lcp-count", {"stat": "Sum", "label": "LCP-API Outcomes"}],
+                [".", "divergence-check-matched", {"stat": "Sum", "label": "Matched"}],
+                [".", "divergence-check-divergence-count", {"stat": "Sum", "label": "Divergences"}]
+              ],
+              "period": 300,
+              "stat": "Sum",
+              "region": "${AWS::Region}",
+              "title": "Dual-Write Outcome Counts (6-Hour Window)",
+              "yAxis": {"left": {"min": 0}},
+              "annotations": {
+                "horizontal": [
+                  {"value": 100, "label": "Alert Threshold (>1 divergence per 6h)"}
+                ]
+              }
+            }
+          },
+          {
+            "type": "metric",
+            "x": 12,
+            "y": 0,
+            "width": 12,
+            "height": 6,
+            "properties": {
+              "metrics": [
+                ["bg-remover/divergence-check", "divergence-check-divergence-percentage", {"stat": "Maximum", "label": "Divergence %"}]
+              ],
+              "period": 300,
+              "stat": "Maximum",
+              "region": "${AWS::Region}",
+              "title": "Divergence Percentage (6-Hour Window)",
+              "yAxis": {"left": {"min": 0, "max": 5}},
+              "annotations": {
+                "horizontal": [
+                  {"value": 1.0, "label": "ALERT Threshold: 1%"},
+                  {"value": 0.5, "label": "WARN Threshold: 0.5%"}
+                ]
+              }
+            }
+          },
+          {
+            "type": "metric",
+            "x": 0,
+            "y": 6,
+            "width": 12,
+            "height": 6,
+            "properties": {
+              "metrics": [
+                ["bg-remover", "carousel-main/write-duration", {"stat": "p99", "label": "Carousel-Main p99"}],
+                [".", "lcp-outcomes/write-duration", {"stat": "p99", "label": "LCP-API p99"}]
+              ],
+              "period": 300,
+              "stat": "p99",
+              "region": "${AWS::Region}",
+              "title": "Write Latency p99 (Milliseconds)",
+              "yAxis": {"left": {"min": 0, "max": 1000}},
+              "annotations": {
+                "horizontal": [
+                  {"value": 500, "label": "Carousel Target: <500ms"},
+                  {"value": 600, "label": "LCP Target: <600ms"},
+                  {"value": 750, "label": "ALARM Threshold: 750ms"}
+                ]
+              }
+            }
+          },
+          {
+            "type": "metric",
+            "x": 12,
+            "y": 6,
+            "width": 12,
+            "height": 6,
+            "properties": {
+              "metrics": [
+                ["bg-remover", "carousel-main/write-success", {"stat": "Sum", "label": "Carousel-Main Success"}],
+                [".", "carousel-main/write-failure", {"stat": "Sum", "label": "Carousel-Main Failure"}],
+                [".", "lcp-outcomes/write-success", {"stat": "Sum", "label": "LCP-API Success"}],
+                [".", "lcp-outcomes/write-failure", {"stat": "Sum", "label": "LCP-API Failure"}]
+              ],
+              "period": 300,
+              "stat": "Sum",
+              "region": "${AWS::Region}",
+              "title": "Per-System Write Success/Failure Counts"
+            }
+          },
+          {
+            "type": "metric",
+            "x": 0,
+            "y": 12,
+            "width": 12,
+            "height": 6,
+            "properties": {
+              "metrics": [
+                ["AWS/SQS", "ApproximateNumberOfMessagesVisible",
+                  {"dimensions": {"QueueName": "lcp-vendor-approval-recorder-dlq-${self:provider.stage}"},
+                   "label": "Recorder DLQ Depth"}]
+              ],
+              "period": 300,
+              "stat": "Average",
+              "region": "${AWS::Region}",
+              "title": "DLQ Depth (Failure Accumulation)",
+              "yAxis": {"left": {"min": 0}},
+              "annotations": {
+                "horizontal": [
+                  {"value": 50, "label": "ALARM Threshold: 50 messages"}
+                ]
+              }
+            }
+          },
+          {
+            "type": "metric",
+            "x": 12,
+            "y": 12,
+            "width": 12,
+            "height": 6,
+            "properties": {
+              "metrics": [
+                ["bg-remover", "dual-write-success", {"stat": "Sum", "label": "Dual Success"}],
+                [".", "dual-write-failure", {"stat": "Sum", "label": "Dual Failure"}],
+                [".", "divergence-detected", {"stat": "Sum", "label": "Partial Failure"}]
+              ],
+              "period": 300,
+              "stat": "Sum",
+              "region": "${AWS::Region}",
+              "title": "Dual-Write Outcome Status"
+            }
+          }
+        ]
+      }
+
+# Log Group for divergence-check Lambda (for CloudWatch Insights queries)
+DivergenceCheckLogGroup:
+  Type: AWS::Logs::LogGroup
+  Properties:
+    LogGroupName: /aws/lambda/bg-remover-${self:provider.stage}-divergence-check
+    RetentionInDays: 30  # Keep logs for 30 days post-validation window
+
+# Log Group for divergence-notifier Lambda
+DivergenceNotifierLogGroup:
+  Type: AWS::Logs::LogGroup
+  Properties:
+    LogGroupName: /aws/lambda/bg-remover-${self:provider.stage}-divergence-notifier
+    RetentionInDays: 30
+
+# CloudWatch Log Insights Query (saved for manual execution if needed)
+# Name: "Divergence Events Summary"
+# Query:
+#   fields @timestamp, outcomeId, divergenceReason, carouselStatus, lcpStatus
+#   | filter @message like /DIVERGENCE_DETECTED/
+#   | stats count() as divergenceCount, count_distinct(outcomeId) as affectedOutcomes by divergenceReason
+
+# CloudWatch Log Insights Query (saved for manual execution if needed)
+# Name: "Divergence-Check Summary"
+# Query:
+#   fields @timestamp, divergencePercentage, divergenceCount, carouselMainCount, lcpApiCount, status
+#   | filter @message like /DIVERGENCE_CHECK_COMPLETE/
+#   | stats max(divergencePercentage) as maxDivergence, avg(divergencePercentage) as avgDivergence,
+#           sum(divergenceCount) as totalDivergences by bin(6h)

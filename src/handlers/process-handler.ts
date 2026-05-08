@@ -101,7 +101,48 @@ export class ProcessHandler extends BaseHandler {
     // Load tenant-specific Cognito configuration for JWT validation
     let authContext;
     try {
-      authContext = extractAuthContext(event, { defaultTenantId: tenant });
+      // First try JWT Bearer token validation (for direct API Gateway calls without authorizer)
+      const authHeader = event.headers?.authorization || event.headers?.Authorization;
+      if (authHeader && authHeader.startsWith('Bearer ')) {
+        const { validateJWTFromEvent, getCognitoConfigForTenantAsync } = await import('../lib/auth/jwt-validator');
+        const cognitoConfig = await getCognitoConfigForTenantAsync(tenant, stage);
+        const jwtResult = await validateJWTFromEvent(event, cognitoConfig, {
+          required: true,
+          expectedTenant: tenant,
+        });
+        if (jwtResult.isValid && jwtResult.userId) {
+          // JWT groups might be empty if Cognito doesn't include cognito:groups in token
+          // Fall back to checking groups directly from Cognito
+          let roles = jwtResult.groups || [];
+          if (roles.length === 0) {
+            try {
+              // Use cognito:username (not sub) for AdminListGroupsForUser
+              const cognitoUsername = (jwtResult.payload as any)?.['cognito:username'] || jwtResult.userId;
+              const { CognitoIdentityProviderClient, AdminListGroupsForUserCommand } = await import('@aws-sdk/client-cognito-identity-provider');
+              const cognitoClient = new CognitoIdentityProviderClient({ region: cognitoConfig.region });
+              const groupsResp = await cognitoClient.send(new AdminListGroupsForUserCommand({
+                UserPoolId: cognitoConfig.userPoolId,
+                Username: cognitoUsername,
+              }));
+              roles = (groupsResp.Groups || []).map(g => g.GroupName || '').filter(Boolean);
+              console.log('[ProcessHandler] Fetched user groups from Cognito:', { username: cognitoUsername, roles });
+            } catch (err) {
+              console.warn('[ProcessHandler] Failed to fetch Cognito groups, using empty roles:', err);
+            }
+          }
+          authContext = {
+            userId: jwtResult.userId,
+            tenantId: jwtResult.tenantId || tenant,
+            email: jwtResult.email || '',
+            roles,
+          };
+        }
+      }
+
+      // Fallback to extractAuthContext for API Gateway authorizer or header-based auth
+      if (!authContext) {
+        authContext = extractAuthContext(event, { defaultTenantId: tenant });
+      }
 
       // Enforce tenant isolation
       if (authContext.tenantId !== tenant) {
@@ -259,7 +300,7 @@ export class ProcessHandler extends BaseHandler {
           productId,
           creditTransactionId,
           entityType: 'BG_REMOVER_JOB',
-        }),
+        }, { removeUndefinedValues: true }),
       }));
 
       console.info('Job created in DynamoDB', { jobId, tenant, userId });
@@ -311,7 +352,7 @@ export class ProcessHandler extends BaseHandler {
       const jobToken = issueJobToken({
         jobId,
         tenant,
-        userId: authResult.userId || undefined,
+        userId: authContext.userId || undefined,
       });
 
       // Return 202 Accepted immediately

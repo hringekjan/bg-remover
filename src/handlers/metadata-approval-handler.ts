@@ -91,6 +91,24 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
 
     logger.info('Metadata approval processed', { productId, tenantId, status: newStatus, requestId });
 
+    // EMF metric: AI enrichment accept/reject rate
+    // Zero-latency — CloudWatch agent picks this up from stdout automatically.
+    const emfDecision = status === 'approve' ? 'accepted' : 'rejected';
+    console.log(JSON.stringify({
+      _aws: {
+        Timestamp: Date.now(),
+        CloudWatchMetrics: [{
+          Namespace: 'Carousel/AIEnrichment',
+          Dimensions: [['Decision'], ['TenantId']],
+          Metrics: [{ Name: 'EnrichmentDecision', Unit: 'Count' }],
+        }],
+      },
+      Decision: emfDecision,
+      TenantId: tenantId,
+      ProductId: productId,
+      EnrichmentDecision: 1,
+    }));
+
     return createSuccessResponse({
       success: true,
       message: `Product ${productId} successfully ${newStatus.toLowerCase()}.`,

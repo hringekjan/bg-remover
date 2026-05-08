@@ -2,14 +2,19 @@ import { CloudWatchClient, PutMetricDataCommand } from '@aws-sdk/client-cloudwat
 
 /**
  * LCP Outcomes Metrics Emitter
- * 
- * Emits CloudWatch custom metrics for dual-write operations:
- * - mem0-success, mem0-failure
- * - ddb-success, ddb-failure
+ *
+ * Emits CloudWatch custom metrics for triple-write operations (Layer 2 dual-write):
+ * - carousel-main-success, carousel-main-failure (primary: DynamoDB)
+ * - lcp-api-success, lcp-api-failure (secondary: LCP-API for 48h validation)
+ * - mem0-success, mem0-failure (knowledge store)
  * - dual-write-discrepancy (divergence indicator)
- * 
- * Namespace: lcp-outcomes
- * Dimensions: OutcomeType, Tenant, Stage
+ * - dual-write-complete (both primary and secondary succeeded)
+ *
+ * Validation window: 2026-04-29 to 2026-05-01 (48h)
+ * Success criteria: < 1% divergence between carousel-main and LCP-API
+ *
+ * Namespace: bg-remover/outcomes
+ * Dimensions: OutcomeType, TenantId, Stage
  */
 export class OutcomesMetrics {
   private cloudWatch: CloudWatchClient;
@@ -102,6 +107,39 @@ export class OutcomesMetrics {
     await this.putMetric('dual-write-discrepancy', 1, {
       OutcomeType: outcomeType,
       Tenant: tenant,
+      Stage: stage,
+    });
+  }
+
+  /**
+   * Record successful LCP-API write (secondary/Layer 2)
+   */
+  async recordLcpApiSuccess(outcomeType: string, tenantId: string, stage: string): Promise<void> {
+    await this.putMetric('lcp-api-success', 1, {
+      OutcomeType: outcomeType,
+      TenantId: tenantId,
+      Stage: stage,
+    });
+  }
+
+  /**
+   * Record failed LCP-API write (secondary/Layer 2)
+   */
+  async recordLcpApiFailure(outcomeType: string, tenantId: string, stage: string): Promise<void> {
+    await this.putMetric('lcp-api-failure', 1, {
+      OutcomeType: outcomeType,
+      TenantId: tenantId,
+      Stage: stage,
+    });
+  }
+
+  /**
+   * Record successful dual-write completion (both primary and secondary succeeded)
+   */
+  async recordDualWriteComplete(outcomeType: string, tenantId: string, stage: string): Promise<void> {
+    await this.putMetric('dual-write-complete', 1, {
+      OutcomeType: outcomeType,
+      TenantId: tenantId,
       Stage: stage,
     });
   }

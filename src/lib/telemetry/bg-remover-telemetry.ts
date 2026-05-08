@@ -7,8 +7,20 @@
  * @module bg-remover/lib/telemetry
  */
 
-// Import from local type definitions instead of backend-kit package
-import type { AgentTelemetry, AgentTaskMetrics } from '../../types/backend-kit';
+// Import types from local type definitions
+import type { AgentTaskMetrics } from '../../types/backend-kit';
+
+// Runtime AgentTelemetry class loaded dynamically (may not be available if backend-kit not installed)
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const AgentTelemetry = typeof require !== 'undefined' ? (() => {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const bk = require('@carousellabs/backend-kit');
+    return bk.AgentTelemetry || null;
+  } catch {
+    return null;
+  }
+})() : null;
 
 const AGENT_ID = 'bg-remover';
 
@@ -96,7 +108,7 @@ export function calculateBgRemoverCost(params: BgRemoverCostParams): number {
  * Singleton instance for tracking bg-remover operations
  */
 class BgRemoverTelemetry {
-  private telemetry: AgentTelemetry | null;
+  private telemetry: any | null;
   private stage: string;
   private tenantId: string;
 
@@ -105,13 +117,18 @@ class BgRemoverTelemetry {
     this.tenantId = process.env.TENANT || 'carousel-labs';
 
     try {
-      this.telemetry = new AgentTelemetry({
-        stage: this.stage,
-        tenantId: this.tenantId,
-        eventBusName: process.env.EVENT_BUS_NAME || `${this.tenantId}-${this.stage}-agent-events`,
-        enableCloudWatch: true,
-        samplingRate: 1.0, // 100% sampling for production
-      });
+      if (!AgentTelemetry) {
+        console.warn('[BgRemoverTelemetry] AgentTelemetry class not available (@carousellabs/backend-kit not installed), telemetry disabled');
+        this.telemetry = null;
+      } else {
+        this.telemetry = new AgentTelemetry({
+          stage: this.stage,
+          tenantId: this.tenantId,
+          eventBusName: process.env.EVENT_BUS_NAME || `${this.tenantId}-${this.stage}-agent-events`,
+          enableCloudWatch: true,
+          samplingRate: 1.0, // 100% sampling for production
+        });
+      }
     } catch (error) {
       console.error('[BgRemoverTelemetry] Failed to initialize AgentTelemetry:', error);
       this.telemetry = null; // Graceful degradation
