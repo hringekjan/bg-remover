@@ -37,7 +37,6 @@ provider:
   tracing:
     lambda: true
   httpApi:
-    id: 6b3bf1bqk3
     payload: '2.0'
     cors: false
   environment:

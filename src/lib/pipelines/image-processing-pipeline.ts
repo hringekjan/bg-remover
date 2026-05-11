@@ -5,6 +5,7 @@
  */
 
 import { removeBackground, type RemoveBackgroundOptions } from '../bedrock/background-remover';
+import { removeBackgroundStability, type StabilityRemoveBackgroundOptions } from '../bedrock/background-remover-stability';
 import { analyzeWithRekognition } from '../rekognition/analyzer';
 import { analyzeWithMistralPixtral } from '../bedrock/mistral-pixtral-analyzer';
 import { type ProductDescription, type BilingualProductDescription } from '../types';
@@ -32,12 +33,16 @@ export interface ProcessImageInput {
 
 export interface ProcessImageResult {
   outputBuffer: Buffer;
+  outputBufferStability?: Buffer; // Stability AI bg removal result
   metadata: {
     width: number;
     height: number;
     originalSize: number;
     processedSize: number;
+    processedSizeStability?: number;
     processingTimeMs: number;
+    processingTimeMsStability?: number;
+    bgMethods: string[]; // ['rembg', 'stability-ai']
   };
   productDescription?: ProductDescription;
   bilingualDescription?: BilingualProductDescription;
@@ -64,7 +69,7 @@ export async function processImage(input: ProcessImageInput): Promise<ProcessIma
   const { base64Image, options, tenant } = input;
   const { format, quality, targetSize, generateDescription, productName, autoTrim, enhanceColors, centerSubject } = options;
 
-  console.log('✨ Pipeline: Background removal + Rekognition in parallel', {
+  console.log('✨ Pipeline: Background removal (rembg + Stability AI) + Rekognition in parallel', {
     tenant,
     productName,
     format: format || 'png'
@@ -72,15 +77,19 @@ export async function processImage(input: ProcessImageInput): Promise<ProcessIma
 
   const imageBuffer = Buffer.from(base64Image, 'base64');
 
-  // Step 1: Parallel execution - Background removal + Rekognition analysis
+  // Step 1: Parallel execution - rembg + Stability AI bg removal + Rekognition analysis
   const bgOptions: RemoveBackgroundOptions = {
     quality: quality === 'high' ? 'premium' : 'standard',
     height: targetSize?.height,
     width: targetSize?.width
   };
+  const stabilityOptions: StabilityRemoveBackgroundOptions = {
+    quality: quality === 'high' ? 'premium' : 'standard',
+  };
 
-  const [bgResult, rekResult] = await Promise.all([
+  const [bgResult, stabilityResult, rekResult] = await Promise.all([
     removeBackground(base64Image, bgOptions),
+    removeBackgroundStability(base64Image, stabilityOptions),
     analyzeWithRekognition(imageBuffer)
   ]);
 
@@ -190,10 +199,16 @@ export async function processImage(input: ProcessImageInput): Promise<ProcessIma
 
   return {
     outputBuffer: finalBuffer,
-    metadata: resultMetadata,
+    outputBufferStability: stabilityResult.outputBuffer,
+    metadata: {
+      ...resultMetadata,
+      processedSizeStability: stabilityResult.outputBuffer.length,
+      processingTimeMsStability: stabilityResult.processingTimeMs,
+      bgMethods: ['rembg', 'stability-ai']
+    },
     productDescription,
     bilingualDescription,
-    mistralResult, // Include Mistral analysis for pricing/rating suggestions
+    mistralResult,
     rekognitionAnalysis: {
       labels: rekResult.labels,
       colors: rekResult.colors,

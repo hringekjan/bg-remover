@@ -670,7 +670,7 @@ export class ProcessWorkerHandler extends BaseHandler {
           // Update step: uploading
           this.updateImageStatusInMemory(imageStates, index, 'processing', undefined, 'uploading');
 
-          // Store processed image
+          // Store processed image (rembg result)
           const contentType = (processingOptions.outputFormat || 'png') === 'png' ? 'image/png' :
                              (processingOptions.outputFormat || 'png') === 'webp' ? 'image/webp' : 'image/jpeg';
           const outputKey = generateOutputKey(tenant, jobId, processingOptions.outputFormat || 'png');
@@ -685,14 +685,50 @@ export class ProcessWorkerHandler extends BaseHandler {
               groupId,
               filename: image.filename,
               source: image.s3Key || 'base64',
+              bgMethod: 'rembg',
             }
           );
+
+          // Upload Stability AI result in parallel (if available)
+          let stabilityOutputUrl: string | undefined;
+          let stabilityOutputKey: string | undefined;
+          if (result.outputBufferStability) {
+            try {
+              const stabilityKey = generateOutputKey(tenant, jobId, 'png').replace('.png', '_stability.png');
+              const stabilityUrl = await uploadProcessedImage(
+                outputBucket,
+                stabilityKey,
+                result.outputBufferStability,
+                'image/png',
+                {
+                  tenant,
+                  jobId,
+                  groupId,
+                  filename: image.filename,
+                  source: image.s3Key || 'base64',
+                  bgMethod: 'stability-ai',
+                }
+              );
+              stabilityOutputUrl = stabilityUrl;
+              stabilityOutputKey = stabilityKey;
+              console.log(`[Worker] Stability AI bg removal uploaded: ${stabilityKey}`);
+            } catch (stabilityError) {
+              console.warn('[Worker] Failed to upload Stability AI result, continuing with rembg only', {
+                error: stabilityError instanceof Error ? stabilityError.message : String(stabilityError),
+              });
+            }
+          }
 
           // Update image status to completed
           this.updateImageStatusInMemory(imageStates, index, 'completed', {
             outputUrl,
             outputKey,
-            metadata: result.metadata,
+            stabilityOutputUrl,
+            stabilityOutputKey,
+            metadata: {
+              ...result.metadata,
+              bgMethods: result.metadata.bgMethods || ['rembg'],
+            },
             productDescription: image.isPrimary ? result.productDescription : undefined,
           });
 
@@ -708,8 +744,13 @@ export class ProcessWorkerHandler extends BaseHandler {
             filename: image.filename,
             outputUrl,
             outputKey,
+            stabilityOutputUrl,
+            stabilityOutputKey,
             isPrimary: image.isPrimary,
-            metadata: result.metadata,
+            metadata: {
+              ...result.metadata,
+              bgMethods: result.metadata.bgMethods || ['rembg'],
+            },
             productDescription: image.isPrimary ? result.productDescription : undefined,
           };
         } catch (error) {
@@ -1230,7 +1271,9 @@ export class ProcessWorkerHandler extends BaseHandler {
             format: 'png' as const,
             fileSize: processedImages[0].metadata?.processedSize || 0,
             sourceImageKey: images[0]?.s3Key || '',
-            processedImageKey: processedImages[0].outputKey || ''
+            processedImageKey: processedImages[0].outputKey || '',
+            stabilityProcessedImageKey: processedImages[0].stabilityOutputKey || '',
+            bgMethods: processedImages[0].metadata?.bgMethods || ['rembg'],
           } : undefined,
           sizing: normalizedSizingPayload,
           status: 'DRAFT' as const
