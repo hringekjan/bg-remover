@@ -3,6 +3,7 @@ title: bg-remover — Project Structure
 description: Auto-generated scout output. Run /sentinels:scout to refresh.
 generated: true
 last_generated: 2026-05-11
+last_refreshed: 2026-05-11T23:30Z
 ---
 
 # bg-remover
@@ -31,17 +32,17 @@ TypeScript · Node 22 · Serverless Framework v4 · AWS Lambda (arm64, eu-west-1
 
 ## Lambda Functions & HTTP Routes
 
-| Function | Route | Method | Auth |
-| -------- | ----- | ------ | ---- |
-| `health` | `/carousel/bg-remover/health` | ANY | none |
-| `process` | `/carousel/bg-remover/process` | POST | required |
-| `processWorker` | _(internal, invoked by process)_ | — | — |
-| `status` | `/carousel/bg-remover/status/{jobId}` | GET | none |
-| `processGroups` | `/carousel/bg-remover/process-groups` | POST | required |
-| `batchStatus` | `/carousel/bg-remover/status/batch/{requestId}` | GET | none |
-| `uploadUrls` | `/carousel/bg-remover/upload-urls` | POST | none |
+| Function | Route | Method | Gateway Auth | In-Lambda JWT |
+| -------- | ----- | ------ | ------------ | ------------- |
+| `health` | `/carousel/bg-remover/health` | ANY | `authorizer: null` | none |
+| `process` | `/carousel/bg-remover/process` | POST | not declared | yes |
+| `processWorker` | _(internal, SQS-invoked)_ | — | — | uses authToken from SQS payload (see Open Issues — propagation gap) |
+| `status` | `/carousel/bg-remover/status/{jobId}` | GET | `authorizer: null` | none |
+| `processGroups` | `/carousel/bg-remover/process-groups` | POST | not declared | yes |
+| `batchStatus` | `/carousel/bg-remover/status/batch/{requestId}` | GET | `authorizer: null` | none |
+| `uploadUrls` | `/carousel/bg-remover/upload-urls` | POST | `authorizer: null` | yes (`validateJWTFromEvent`, `enforceTenantMatch: true`) |
 
-> **BFF routing note:** The correct Next.js BFF route is `app/api/bg-remover/upload-urls/route.ts` (uses `BG_REMOVER_API_URL`). The legacy path `app/api/carousel/bg-remover/upload-urls/route.ts` is stale — it resolves to the shared platform gateway where the catch-all returns 404.
+> **BFF routing note (corrected 2026-05-11 scout refresh):** Canonical Next.js BFF routes live under `services/platform/carousel/app/web/app/api/carousel/bg-remover/*`. Routes consolidated to this path by commit `675db988 refactor(bg-remover): consolidate all BFF routes under /api/carousel/bg-remover/`. The unprefixed `app/api/bg-remover/` path does NOT exist in the carousel-frontend. Earlier synthesis claims that the carousel-prefixed path was "stale" are inverted — `bg-remover-client.ts` calls `/api/carousel/bg-remover/*` exclusively.
 
 ## AI Model Stack
 
@@ -138,9 +139,13 @@ bg-remover/
 
 ## Open Issues
 
-- **Stale BFF route**: `app/api/carousel/bg-remover/upload-urls/route.ts` still routes through shared gateway → 404/401. Use `app/api/bg-remover/upload-urls/route.ts` instead. Observed 2026-05-11 on `carousel.dev.hringekjan.is/api/carousel/bg-remover/upload-urls` returning 401.
-- **mem0 data residency (ADR-001)**: bg-remover writes pricing patterns to `api.mem0.ai` (cloud SaaS) — SOC 2 CC6.7 / GDPR Art. 5 violation. Fix gated on R4/R5 (approved 2026-04-28); migration target is DynamoDB-direct.
-- **batchStatus 400**: `GET /carousel/bg-remover/status/batch/{requestId}` returning 400 — active investigation.
+- **`upload-urls` 401 on `carousel.dev.hringekjan.is`** (active, 2026-05-11). The BFF `withAuth` middleware returns `"Authentication required - no token found in Authorization header or cookies"` — Gate 2 of the auth chain. Root cause: `useBulkUpload.requestUploadUrls` was using `authToken!` (TS non-null assertion) when `getAuthToken()` returned null, sending the request with no `Authorization` header. **Fix committed in carousel submodule as `6cd39af2 fix(bg-remover/bulk-upload): guard null authToken instead of authToken!`** — NOT YET DEPLOYED to `carousel-frontend-dev-server` (Lambda last modified 19:09 UTC; commit landed 23:11 UTC). The deeper question — why `getAuthToken()` returns null for a user with a valid Amplify session — is unresolved.
+- **`mem0` data residency (ADR-001)**: bg-remover writes pricing patterns to `api.mem0.ai` (cloud SaaS) — SOC 2 CC6.7 / GDPR Art. 5 violation. Fix gated on R4/R5 (approved 2026-04-28); migration target is DynamoDB-direct.
+- **`batchStatus` 400**: `GET /carousel/bg-remover/status/batch/{requestId}` returning 400 — active investigation.
+- **`processWorker` authToken propagation gap**: `process-worker-handler.ts` extracts `authToken` from the SQS event payload, but `handler.ts` does not include `authToken` in the enqueued payload. Product creation via `createProductInCarouselApi` likely silently fails (logged as warning, not error).
+- **Recipe orchestration**: `services/platform/sentinels/agentic/recipes/bg-remover-ghost-pipeline.yml` exists (committed `3dd18640`), but `sentinels.api.recipe_api.run_recipe` returns shape-only no-ops because `SentinelsOrchestrator` is unreachable from the `sentinels.*` namespace at runtime. Recipe cannot actually drive the pipeline today. Downstream PRD phase 3/4 work.
+- **Credits dev-disabled**: `REQUIRE_CREDITS=false` in dev `serverless.yml`. Credits path implemented but never exercised in dev.
+- **`ghost_register_enabled` SSM key missing**: Recipe references `/tf/{stage}/{tenant_id}/services/bg-remover/settings` key `ghost_register_enabled` — actual SSM only contains product-identity config.
 
 ## `upload-urls` Auth Reference (2026-05-11)
 
