@@ -2,7 +2,7 @@
 title: bg-remover — Project Structure
 description: Auto-generated scout output. Run /sentinels:scout to refresh.
 generated: true
-last_generated: 2026-05-05
+last_generated: 2026-05-11
 ---
 
 # bg-remover
@@ -138,6 +138,28 @@ bg-remover/
 
 ## Open Issues
 
-- **Stale BFF route**: `app/api/carousel/bg-remover/upload-urls/route.ts` still routes through shared gateway → 404. Use `app/api/bg-remover/upload-urls/route.ts` instead.
+- **Stale BFF route**: `app/api/carousel/bg-remover/upload-urls/route.ts` still routes through shared gateway → 404/401. Use `app/api/bg-remover/upload-urls/route.ts` instead. Observed 2026-05-11 on `carousel.dev.hringekjan.is/api/carousel/bg-remover/upload-urls` returning 401.
 - **mem0 data residency (ADR-001)**: bg-remover writes pricing patterns to `api.mem0.ai` (cloud SaaS) — SOC 2 CC6.7 / GDPR Art. 5 violation. Fix gated on R4/R5 (approved 2026-04-28); migration target is DynamoDB-direct.
 - **batchStatus 400**: `GET /carousel/bg-remover/status/batch/{requestId}` returning 400 — active investigation.
+
+## `upload-urls` Auth Reference (2026-05-11)
+
+`uploadUrls` is registered with `authorizer: null` at the HTTP API Gateway layer. **Authentication runs entirely inside the Lambda** via `validateJWTFromEvent({ required: true, enforceTenantMatch: true })`. Tenant resolution priority: `x-tenant-id` header → `Host` regex → `Origin` regex → env fallback.
+
+For `carousel.dev.hringekjan.is`:
+- Tenant resolves to `hringekjan` (hostname-suffix special case in `src/lib/tenant/resolver.ts`).
+- Per-tenant Cognito config loaded from SSM `/tf/dev/hringekjan/services/carousel/cognito_config` → user pool `eu-west-1_PRuF4zx1a`, web client `17i0n22ret5j7pt5dr3u03gqkb`.
+
+### 401 cause ranking
+
+| Cause | Where to look |
+| ----- | ------------- |
+| Missing `Authorization: Bearer` header | Browser devtools request headers |
+| Expired JWT (`exp` past) | Decode token; CloudWatch `[JWTValidator]` log |
+| Token issued for `carousel-labs` pool (wrong `iss`) | Decode `iss` claim |
+| `custom:tenant_id` claim ≠ `hringekjan` (`enforceTenantMatch`) | Decode payload |
+| Tenant resolver fell back to `carousel-labs` | Add explicit `x-tenant-id: hringekjan` header as safety net |
+| SSM read failure → handler uses default platform pool | Lambda IAM role + `[CognitoConfig]` FATAL log |
+| Routing miss: no CF behavior for `/carousel/*` on hringekjan apex | Compare with `api.dev.carousellabs.co` per [[routing-asymmetry]]; if Lambda has no log entry the request never reached it |
+
+Authoritative synthesis: `services/platform/agentic/brains/guardians/technical/syntheses/2026-05-11-bg-remover-upload-urls-auth-and-401-causes.md`.
